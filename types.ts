@@ -1,0 +1,138 @@
+
+import React from 'react';
+
+export type Tab = 'dashboard' | 'kanban' | 'timeline' | 'calendar' | 'settings' | 'image-gen' | 'projects';
+
+export interface MetricCardProps {
+  title: string;
+  value: string | number;
+  change?: string;
+  icon: React.ElementType;
+  color: 'blue' | 'green' | 'purple' | 'red' | 'orange';
+  onClick?: () => void;
+}
+
+export type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
+
+export interface ImageGenerationConfig {
+  prompt: string;
+  aspectRatio: AspectRatio;
+}
+
+export interface GeneratedImage {
+  url: string;
+  prompt: string;
+  aspectRatio: AspectRatio;
+  timestamp: number;
+}
+
+export type TaskStatus = string;
+export type TaskPriority = 'High' | 'Medium' | 'Low';
+
+export interface Subtask {
+  id: string;
+  title: string;
+  completed: boolean;
+}
+
+export interface Comment {
+  id: string;
+  user: string;
+  text: string;
+  timestamp: string;
+}
+
+export type ActivityType = 'create' | 'update' | 'status_change' | 'priority_change' | 'comment' | 'attachment' | 'assign' | 'move' | 'alert' | 'generic';
+
+export interface ActivityLog {
+  id: string;
+  action: string;
+  timestamp: string;
+  userName?: string;
+  userId?: string;
+  userAvatar?: string;
+  details?: string;
+  type?: ActivityType;
+}
+
+export interface Attachment {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  uploadedAt: string;
+}
+
+export interface Tag {
+  id: string;
+  name: string;
+  colorClass: string;
+}
+
+export interface Task {
+  id: string;
+  ownerId: string;
+  projectId?: string;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  startDate: string;
+  dueDate: string;
+  assignee: string; // Display Name or Initials
+  assigneeId?: string; // UID of the assignee
+  assigneeAvatar?: string; // Avatar URL of the assignee
+  description?: string;
+  subtasks?: Subtask[];
+  comments?: Comment[];
+  activityLog?: ActivityLog[];
+  attachments?: Attachment[];
+  tags?: Tag[];
+  estimatedCost?: number;
+  actualCost?: number;
+  createdAt?: any;
+  updatedAt?: any;
+  importedAt?: string;
+  reminderDays?: number; // -1 (None), 0 (Same day), 1 (1 day before), etc.
+}
+
+export interface KanbanColumn {
+  id: string;
+  title: string;
+  color: string;
+}
+
+export interface ProjectMember {
+  uid: string | null;
+  email: string;
+  displayName: string;
+  role: 'admin' | 'editor' | 'viewer';
+  avatar?: string;
+  status?: 'active' | 'pending';
+}
+
+export interface Project {
+  id: string;
+  ownerId: string;
+  name: string;
+  clientName: string;
+  address: string;
+  status: string;
+  createdAt: string;
+  members?: ProjectMember[];
+  memberUIDs?: string[];
+}
+
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  password: string;
+  avatar?: string;
+  jobTitle?: string;
+  kanbanColumns?: KanbanColumn[];
+}
+
+export interface UserSettings {
+  userName: string;
+  userTitle: string;
+  defaultView: Tab;
+}
