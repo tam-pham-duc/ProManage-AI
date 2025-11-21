@@ -16,7 +16,7 @@ import {
   Check,
   Layers
 } from 'lucide-react';
-import { Tab, Project } from '../types';
+import { Tab, Project, ProjectRole } from '../types';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -33,6 +33,7 @@ interface SidebarProps {
   onSelectProject: (projectId: string | null) => void;
   onCreateProject: () => void;
   isDesktopOpen: boolean;
+  currentUserRole?: ProjectRole; // Added role prop
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -49,7 +50,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   selectedProjectId,
   onSelectProject,
   onCreateProject,
-  isDesktopOpen
+  isDesktopOpen,
+  currentUserRole
 }) => {
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -76,7 +78,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   const handleNavClick = (tab: Tab) => {
-    // Logic: If Dashboard is clicked but no project is selected, go to Project Hub ('projects')
     if (tab === 'dashboard' && !selectedProjectId) {
       setActiveTab('projects');
     } else {
@@ -94,6 +95,16 @@ const Sidebar: React.FC<SidebarProps> = ({
     ? userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
     : 'U';
 
+  // Helper to get badge color based on role
+  const getRoleBadgeColor = (role?: ProjectRole) => {
+      switch(role) {
+          case 'admin': return 'bg-purple-500 text-white';
+          case 'guest': return 'bg-slate-500 text-white';
+          case 'member': return 'bg-blue-500 text-white';
+          default: return 'hidden';
+      }
+  };
+
   return (
     <>
       {isMobileOpen && (
@@ -107,16 +118,13 @@ const Sidebar: React.FC<SidebarProps> = ({
         fixed inset-y-0 left-0 z-40 bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col
         transition-all duration-300 ease-in-out whitespace-nowrap
         
-        /* Mobile: Slide in/out */
         w-72 transform
         ${isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
         
-        /* Desktop: Push/Collapse logic */
         md:translate-x-0 md:static md:h-screen
         ${isDesktopOpen ? 'md:w-72' : 'md:w-0 md:overflow-hidden md:border-r-0'}
       `}>
         
-        {/* Inner Container: Fixed width to prevent content squashing during transition */}
         <div className="w-72 flex flex-col h-full">
             
             {/* Sidebar Header: Project Switcher */}
@@ -191,7 +199,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 setIsMobileOpen(false);
                 }}
                 className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 px-4 rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!selectedProjectId}
+                disabled={!selectedProjectId || currentUserRole === 'guest'} 
             >
                 <Plus size={20} strokeWidth={3} />
                 New Task
@@ -203,7 +211,6 @@ const Sidebar: React.FC<SidebarProps> = ({
                 const isActive = activeTab === item.id;
                 const Icon = item.icon;
                 
-                // Updated Logic: Dashboard is always enabled. Others disabled only if no project. Settings always enabled.
                 const isDisabled = !selectedProjectId && item.id !== 'settings' && item.id !== 'dashboard';
                 
                 return (
@@ -247,12 +254,25 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
 
             <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={() => setActiveTab('settings')}>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-400 to-purple-400 border border-white/10 shadow-lg shadow-black/20 shrink-0 flex items-center justify-center text-white font-bold text-sm ring-1 ring-black/20">
-                {initials}
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-400 to-purple-400 border border-white/10 shadow-lg shadow-black/20 shrink-0 flex items-center justify-center text-white font-bold text-sm ring-1 ring-black/20 relative">
+                    {initials}
+                    {/* Role Badge */}
+                    {selectedProjectId && currentUserRole && (
+                        <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-900 flex items-center justify-center text-[8px] ${getRoleBadgeColor(currentUserRole)}`} title={currentUserRole}>
+                            {currentUserRole.charAt(0).toUpperCase()}
+                        </div>
+                    )}
                 </div>
                 <div className="min-w-0">
                 <p className="text-sm font-bold text-white truncate">{userName}</p>
-                <p className="text-xs text-slate-400 truncate font-medium">{userTitle}</p>
+                <div className="flex items-center gap-1.5">
+                    <p className="text-xs text-slate-400 truncate font-medium">{userTitle}</p>
+                    {selectedProjectId && currentUserRole && (
+                        <span className={`text-[9px] px-1.5 py-0 rounded-sm uppercase font-bold tracking-wider ${currentUserRole === 'admin' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}`}>
+                            {currentUserRole}
+                        </span>
+                    )}
+                </div>
                 </div>
             </div>
             </div>

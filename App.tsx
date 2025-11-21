@@ -16,8 +16,9 @@ import ProjectHub from './components/ProjectHub';
 import DevToolbar from './components/DevToolbar';
 import BackgroundLayer from './components/BackgroundLayer';
 import ReminderModal from './components/ReminderModal';
+import NotificationCenter from './components/NotificationCenter';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
-import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember } from './types';
+import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole } from './types';
 
 // Firebase Imports
 import { auth, db } from './firebase';
@@ -161,6 +162,18 @@ const ProManageApp: React.FC = () => {
       return [];
     }
   });
+
+  // --- Permission Logic Hook ---
+  const currentProject = projects.find(p => p.id === selectedProjectId);
+  
+  const userRole = useMemo<ProjectRole>(() => {
+      if (!currentProject || !currentUser) return 'guest';
+      // If owner, assume admin
+      if (currentProject.ownerId === currentUser.id) return 'admin';
+      
+      const member = currentProject.members?.find(m => m.uid === currentUser.id);
+      return member?.role || 'guest';
+  }, [currentProject, currentUser]);
 
   // --- Firebase Auth Listener ---
   useEffect(() => {
@@ -343,14 +356,21 @@ const ProManageApp: React.FC = () => {
   const handleCreateProject = async (projectData: Partial<Project>) => {
       if (!currentUser) return;
       try {
-          const members: ProjectMember[] = projectData.members || [{
-              uid: currentUser.id,
-              email: currentUser.email,
-              displayName: currentUser.username,
-              role: 'admin',
-              status: 'active',
-              avatar: currentUser.avatar
-          }];
+          // Logic ensures current user is Admin even if invitations were sent in wizard
+          let members: ProjectMember[] = projectData.members || [];
+          
+          // Check if current user is in the list, if not add them as admin
+          if (!members.find(m => m.uid === currentUser.id)) {
+              members.unshift({
+                  uid: currentUser.id,
+                  email: currentUser.email,
+                  displayName: currentUser.username,
+                  role: 'admin',
+                  status: 'active',
+                  avatar: currentUser.avatar
+              });
+          }
+
           const memberUIDs = members.map(m => m.uid).filter((uid): uid is string => uid !== null);
 
           const docRef = await addDoc(collection(db, 'projects'), {
@@ -374,6 +394,11 @@ const ProManageApp: React.FC = () => {
 
   const handleUpdateProject = async (projectData: Partial<Project>) => {
       if (!projectToEdit) return;
+      if (userRole !== 'admin') {
+          notify('error', "Only admins can update project settings.");
+          return;
+      }
+
       try {
           const projectRef = doc(db, 'projects', projectToEdit.id);
           let updatedMembers = projectData.members || projectToEdit.members || [];
@@ -395,32 +420,51 @@ const ProManageApp: React.FC = () => {
       }
   };
 
-  const handleDeleteProject = async () => {
-      const project = projects.find(p => p.id === selectedProjectId);
+  const handleDeleteProject = async (projectIdToDelete?: string) => {
+      // Use the passed ID or fall back to the selected project
+      const id = projectIdToDelete || selectedProjectId;
+      if (!id) return;
+
+      const project = projects.find(p => p.id === id);
+      
       if (!project) return;
       
+      // Only Owner can delete
       if (project.ownerId !== currentUser?.id) {
           notify('warning', "Only the project owner can delete this project.");
           return;
       }
 
-      const confirmName = window.prompt(`WARNING: This will permanently delete "${project.name}" and ALL its tasks.\n\nType the project name to confirm:`);
-      if (confirmName !== project.name) {
-          if (confirmName) notify('info', "Project name did not match. Deletion cancelled.");
-          return;
-      }
+      // Secure Confirmation
+      const isConfirmed = window.confirm("This will delete the project and ALL its tasks. This cannot be undone.");
+      if (!isConfirmed) return;
 
       try {
           const batch = writeBatch(db);
+          
+          // 1. Delete Project Document
           const projectRef = doc(db, 'projects', project.id);
           batch.delete(projectRef);
+          
+          // 2. Delete All Associated Tasks
           const tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', project.id));
           const tasksSnap = await getDocs(tasksQuery);
           tasksSnap.forEach(doc => batch.delete(doc.ref));
+          
+          // Commit Batch
           await batch.commit();
           
-          setSelectedProjectId(null);
-          notify('success', "Project deleted successfully");
+          // 3. Cleanup State & Redirect
+          if (selectedProjectId === project.id) {
+            setSelectedProjectId(null);
+            setActiveTab('projects'); // Return to Hub
+          }
+          
+          setIsProjectModalOpen(false);
+          setIsProjectSettingsOpen(false);
+          setProjectToEdit(null);
+          
+          notify('success', "Project and all associated data deleted.");
       } catch (e) {
           console.error("Error deleting project:", e);
           notify('error', "Failed to delete project");
@@ -488,6 +532,23 @@ const ProManageApp: React.FC = () => {
 
   const handleSaveTask = async (taskData: Partial<Task>) => {
     if (!currentUser) return;
+    
+    // Permissions check for editing
+    if (editingTask) {
+        const isOwner = editingTask.createdBy === currentUser.id || editingTask.ownerId === currentUser.id;
+        const canEdit = userRole !== 'guest' || isOwner;
+        if (!canEdit) {
+            notify('error', "You do not have permission to edit this task.");
+            return;
+        }
+    } else {
+        // Create permission check
+        if (userRole === 'guest') {
+            notify('error', "Guests cannot create tasks.");
+            return;
+        }
+    }
+
     const timestamp = new Date().toISOString();
     const newActivityLog: ActivityLog[] = [];
 
@@ -538,6 +599,7 @@ const ProManageApp: React.FC = () => {
             }
             const newTaskData = {
                 ownerId: currentUser.id,
+                createdBy: currentUser.id, // Store creator for ownership rules
                 projectId: selectedProjectId, 
                 title: taskData.title || 'New Task',
                 status: taskData.status || columns[0]?.title || 'To Do',
@@ -573,7 +635,19 @@ const ProManageApp: React.FC = () => {
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    if (!window.confirm("Are you sure you want to delete this task?")) return;
+    if (!currentUser) return;
+    const taskToDelete = tasks.find(t => t.id === taskId);
+    
+    // Check Permission
+    const isOwner = taskToDelete?.createdBy === currentUser.id || taskToDelete?.ownerId === currentUser.id;
+    const canDelete = userRole === 'admin' || isOwner;
+
+    if (!canDelete) {
+        notify('error', "You do not have permission to delete this task.");
+        return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete this task permanently?")) return;
     try {
       await deleteDoc(doc(db, 'tasks', taskId));
       setIsTaskModalOpen(false);
@@ -587,6 +661,11 @@ const ProManageApp: React.FC = () => {
 
   const handleDropTask = async (taskId: string, newStatus: TaskStatus) => {
     if (!currentUser) return;
+    if (userRole === 'guest') {
+        notify('warning', "Guests cannot move tasks.");
+        return;
+    }
+
     const timestamp = new Date().toISOString();
     try {
         const taskToUpdate = tasks.find(t => t.id === taskId);
@@ -601,7 +680,6 @@ const ProManageApp: React.FC = () => {
         const updatedLogs = [...(taskToUpdate.activityLog || []), newLog];
         const taskRef = doc(db, 'tasks', taskId);
         await updateDoc(taskRef, { status: newStatus, activityLog: updatedLogs, updatedAt: serverTimestamp() });
-        // Optional: notify('info', `Task moved to ${newStatus}`, 1000); 
     } catch (error) {
         console.error("Error updating task status:", error);
     }
@@ -610,6 +688,10 @@ const ProManageApp: React.FC = () => {
   const openNewTaskModal = (date?: string) => {
     if (!selectedProjectId) {
         notify('info', "Please select or create a project first");
+        return;
+    }
+    if (userRole === 'guest') {
+        notify('warning', "Guests cannot create tasks.");
         return;
     }
     setEditingTask(undefined);
@@ -623,7 +705,31 @@ const ProManageApp: React.FC = () => {
     setIsTaskModalOpen(true);
   };
 
-  const currentProject = projects.find(p => p.id === selectedProjectId);
+  // Calculate permissions for currently edited task
+  const modalPermissions = useMemo(() => {
+      if (!currentUser) return { canEdit: false, canDelete: false, isReadOnly: true };
+      
+      if (!editingTask) {
+          // Creating new task
+          return { 
+              canEdit: userRole !== 'guest', 
+              canDelete: true, // Irrelevant for new
+              isReadOnly: userRole === 'guest' 
+          };
+      }
+
+      const isOwner = editingTask.createdBy === currentUser.id || editingTask.ownerId === currentUser.id;
+      const isAdmin = userRole === 'admin';
+      
+      // Rules:
+      // Edit: Not Guest OR Owner OR Admin
+      // Delete: Admin OR Owner
+      return {
+          canEdit: userRole !== 'guest' || isOwner || isAdmin,
+          canDelete: isAdmin || isOwner,
+          isReadOnly: userRole === 'guest' && !isOwner
+      };
+  }, [editingTask, userRole, currentUser]);
 
   const renderContent = () => {
     if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings') {
@@ -632,6 +738,8 @@ const ProManageApp: React.FC = () => {
                   onSelectProject={handleSelectProject} 
                   userName={userSettings.userName} 
                   onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
+                  onDeleteProject={handleDeleteProject}
+                  currentUserId={currentUser?.id}
                 />;
     }
     const NoResultsState = () => (
@@ -658,6 +766,8 @@ const ProManageApp: React.FC = () => {
             onSelectProject={handleSelectProject} 
             userName={userSettings.userName} 
             onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
+            onDeleteProject={handleDeleteProject}
+            currentUserId={currentUser?.id}
         />
       );
       case 'kanban': return (
@@ -673,6 +783,7 @@ const ProManageApp: React.FC = () => {
               tasks={filteredTasks} columns={columns} 
               onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} 
               onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn}
+              isReadOnly={userRole === 'guest'}
             />}
         </div>
       );
@@ -756,6 +867,7 @@ const ProManageApp: React.FC = () => {
           projects={projects} selectedProjectId={selectedProjectId} onSelectProject={handleSelectProject}
           onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
           isDesktopOpen={isSidebarOpen}
+          currentUserRole={userRole}
         />
         <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
           <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
@@ -782,44 +894,51 @@ const ProManageApp: React.FC = () => {
                 )}
              </div>
              
-             {selectedProjectId && (
-                <div className="relative">
-                   <button 
-                     onClick={() => setIsProjectSettingsOpen(!isProjectSettingsOpen)}
-                     className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"
-                   >
-                      <Settings size={20} />
-                   </button>
-                   {isProjectSettingsOpen && (
-                     <>
-                       <div className="fixed inset-0 z-40" onClick={() => setIsProjectSettingsOpen(false)}></div>
-                       <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 overflow-hidden">
-                          <button 
-                             onClick={() => {
-                                setProjectToEdit(currentProject || null);
-                                setIsProjectModalOpen(true);
-                                setIsProjectSettingsOpen(false);
-                             }}
-                             className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
-                          >
-                             <Edit3 size={16} /> Project Settings
-                          </button>
-                          {currentProject?.ownerId === currentUser.id && (
-                              <button 
-                                onClick={() => {
-                                    handleDeleteProject();
-                                    setIsProjectSettingsOpen(false);
-                                }}
-                                className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                              >
-                                 <Trash2 size={16} /> Delete Project
-                              </button>
-                          )}
-                       </div>
-                     </>
-                   )}
-                </div>
-             )}
+             {/* Right Header Section */}
+             <div className="flex items-center gap-2 relative">
+                {/* Notification Center */}
+                <NotificationCenter />
+
+                {selectedProjectId && (
+                  <div className="relative">
+                    {/* Only show settings button if Admin */}
+                    {userRole === 'admin' && (
+                        <button 
+                          onClick={() => setIsProjectSettingsOpen(!isProjectSettingsOpen)}
+                          className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"
+                          title="Project Settings"
+                        >
+                            <Settings size={20} />
+                        </button>
+                    )}
+                    {isProjectSettingsOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setIsProjectSettingsOpen(false)}></div>
+                        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 overflow-hidden">
+                            <button 
+                              onClick={() => {
+                                  setProjectToEdit(currentProject || null);
+                                  setIsProjectModalOpen(true);
+                                  setIsProjectSettingsOpen(false);
+                              }}
+                              className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
+                            >
+                              <Edit3 size={16} /> Project Settings
+                            </button>
+                            {currentProject?.ownerId === currentUser.id && (
+                                <button 
+                                  onClick={() => handleDeleteProject(currentProject.id)}
+                                  className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                >
+                                  <Trash2 size={16} /> Delete Project
+                                </button>
+                            )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+             </div>
           </div>
 
           <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar relative z-10">
@@ -833,12 +952,17 @@ const ProManageApp: React.FC = () => {
         onDelete={editingTask ? handleDeleteTask : undefined} task={editingTask}
         currentUser={currentUser.username} availableTags={availableTags} onCreateTag={handleCreateTag}
         columns={columns} projectMembers={currentProject?.members || []} initialDate={initialTaskDate}
+        isReadOnly={modalPermissions.isReadOnly}
+        canEdit={modalPermissions.canEdit}
+        canDelete={modalPermissions.canDelete}
       />
 
       <ProjectModal
          isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)}
          onSubmit={projectToEdit ? handleUpdateProject : handleCreateProject}
          project={projectToEdit} currentUser={{ uid: currentUser.id, email: currentUser.email, displayName: currentUser.username }}
+         currentUserRole={userRole}
+         onDelete={handleDeleteProject}
       />
 
       <ReminderModal 

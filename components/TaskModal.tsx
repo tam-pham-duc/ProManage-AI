@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember } from '../types';
 import RichTextEditor from './RichTextEditor';
 
@@ -15,7 +15,12 @@ interface TaskModalProps {
   onCreateTag: (name: string) => Tag;
   columns: KanbanColumn[];
   projectMembers?: ProjectMember[];
-  initialDate?: string; // New prop for pre-filling dates
+  initialDate?: string;
+  
+  // Permissions
+  isReadOnly?: boolean;
+  canEdit?: boolean;
+  canDelete?: boolean;
 }
 
 const TaskModal: React.FC<TaskModalProps> = ({ 
@@ -29,7 +34,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
   onCreateTag,
   columns,
   projectMembers = [],
-  initialDate
+  initialDate,
+  isReadOnly = false,
+  canEdit = true,
+  canDelete = true
 }) => {
   const [activeTab, setActiveTab] = useState<'details' | 'discussion'>('details');
   
@@ -40,12 +48,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [priority, setPriority] = useState<TaskPriority>('Medium');
   const [startDate, setStartDate] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [reminderDays, setReminderDays] = useState<number>(1); // Default 1 day before
+  const [reminderDays, setReminderDays] = useState<number>(1);
   
   // Assignee State
-  const [assignee, setAssignee] = useState(''); // Display Name
-  const [assigneeId, setAssigneeId] = useState(''); // UID
-  const [assigneeAvatar, setAssigneeAvatar] = useState(''); // Avatar URL
+  const [assignee, setAssignee] = useState('');
+  const [assigneeId, setAssigneeId] = useState('');
+  const [assigneeAvatar, setAssigneeAvatar] = useState('');
   
   const [estimatedCost, setEstimatedCost] = useState('');
   const [actualCost, setActualCost] = useState('');
@@ -75,12 +83,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [tagInput, setTagInput] = useState('');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
 
-  // Filter active members only for assignment
   const activeMembers = useMemo(() => {
-      return projectMembers.filter(m => (m.status === 'active' || !m.status) && m.uid !== null); // Support legacy without status and ensure UID exists
+      return projectMembers.filter(m => (m.status === 'active' || !m.status) && m.uid !== null);
   }, [projectMembers]);
 
-  // Reset or Populate form
   useEffect(() => {
     if (isOpen) {
       if (task) {
@@ -92,14 +98,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
         setDueDate(task.dueDate);
         setReminderDays(task.reminderDays !== undefined ? task.reminderDays : 1);
         
-        // Load Assignee
         setAssignee(task.assignee);
         setAssigneeId(task.assigneeId || '');
         setAssigneeAvatar(task.assigneeAvatar || '');
         
-        // Fallback logic: if no ID but name exists, try to find in members to update logic
         if (!task.assigneeId && task.assignee && task.assignee !== 'UN' && projectMembers.length > 0) {
-           // Try to match by initials or display name (imperfect but helpful)
            const found = projectMembers.find(m => m.displayName === task.assignee);
            if (found && found.uid) {
                setAssigneeId(found.uid);
@@ -119,10 +122,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
         setDescription('');
         setStatus(columns.length > 0 ? columns[0].title : 'To Do');
         setPriority('Medium');
-        // Use initialDate if provided, otherwise today
         const defaultDate = initialDate || new Date().toISOString().split('T')[0];
         setStartDate(defaultDate);
-        setDueDate(initialDate || ''); // Only set due date if initialDate exists, otherwise blank forces user choice
+        setDueDate(initialDate || '');
         setReminderDays(1);
         setAssignee('Unassigned');
         setAssigneeId('UN');
@@ -148,7 +150,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }
   }, [isOpen, task, columns, projectMembers, initialDate]);
 
-  // Filtered Members for Mentions (Allow mentioning anyone, even pending if needed, but usually active)
   const filteredMembers = useMemo(() => {
     if (!mentionQuery) return activeMembers;
     return activeMembers.filter(m => 
@@ -158,7 +159,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Keep legacy markdown parser for Comments/Activity Logs
+  // Helpers...
   const parseMarkdown = (text: string) => {
     if (!text) return '<p class="text-slate-500 italic text-sm">No content.</p>';
     let html = text
@@ -174,57 +175,80 @@ const TaskModal: React.FC<TaskModalProps> = ({
     return html;
   };
 
+  // Handlers modified to respect isReadOnly...
   const handleAddSubtask = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!newSubtaskTitle.trim()) return;
+    if (isReadOnly || !newSubtaskTitle.trim()) return;
     const newSubtask: Subtask = { id: Date.now().toString(), title: newSubtaskTitle, completed: false };
     setSubtasks([...subtasks, newSubtask]);
     setNewSubtaskTitle('');
   };
 
-  const handleDeleteSubtask = (id: string) => setSubtasks(subtasks.filter(st => st.id !== id));
+  const handleDeleteSubtask = (id: string) => {
+    if (isReadOnly) return;
+    setSubtasks(subtasks.filter(st => st.id !== id));
+  };
+  
   const handleToggleSubtask = (id: string) => {
+    if (isReadOnly) return;
     const updatedSubtasks = subtasks.map(st => st.id === id ? { ...st, completed: !st.completed } : st);
     setSubtasks(updatedSubtasks);
   };
 
   const handleAddAttachment = () => {
-    if (!newFileName.trim() || !newFileUrl.trim()) return;
+    if (isReadOnly || !newFileName.trim() || !newFileUrl.trim()) return;
     const newAttachment: Attachment = { id: Date.now().toString(), fileName: newFileName, fileUrl: newFileUrl, uploadedAt: new Date().toLocaleString() };
     setAttachments([...attachments, newAttachment]);
     setNewFileName('');
     setNewFileUrl('');
   };
 
-  const handleDeleteAttachment = (id: string) => setAttachments(attachments.filter(att => att.id !== id));
+  const handleDeleteAttachment = (id: string) => {
+      if (isReadOnly) return;
+      setAttachments(attachments.filter(att => att.id !== id));
+  };
 
-  const handleAddTag = (tag: Tag) => { if (!tags.find(t => t.id === tag.id)) setTags([...tags, tag]); setTagInput(''); setShowTagDropdown(false); };
-  const handleCreateTag = () => { if (!tagInput.trim()) return; handleAddTag(onCreateTag(tagInput.trim())); };
-  const handleRemoveTag = (tagId: string) => setTags(tags.filter(t => t.id !== tagId));
+  const handleAddTag = (tag: Tag) => { 
+      if (isReadOnly) return;
+      if (!tags.find(t => t.id === tag.id)) setTags([...tags, tag]); setTagInput(''); setShowTagDropdown(false); 
+  };
+  
+  const handleCreateTag = () => { 
+      if (isReadOnly) return;
+      if (!tagInput.trim()) return; handleAddTag(onCreateTag(tagInput.trim())); 
+  };
+  
+  const handleRemoveTag = (tagId: string) => {
+      if (isReadOnly) return;
+      setTags(tags.filter(t => t.id !== tagId));
+  };
 
   const handleSendComment = () => {
     if (!newComment.trim()) return;
+    // Comments allowed even in read-only (usually) - but for strict Guest mode, maybe not?
+    // Requirement says: Guest = All false (Read-only mode). 
+    // Assuming Guests can't comment either if "All false".
+    if (isReadOnly) return; 
+    
     setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toLocaleString() }]);
     setNewComment('');
     setShowMentionList(false);
   };
 
-  // --- Mention Logic ---
-  
+  // Mention Logic
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    if (isReadOnly) return;
     const val = e.target.value;
     setNewComment(val);
-
     const cursorPos = e.target.selectionStart;
     const textBefore = val.slice(0, cursorPos);
-    // Regex to find an @ symbol at the end of the text or preceded by a space
     const match = textBefore.match(/(?:^|\s)@(\w*)$/);
 
     if (match) {
       const query = match[1];
       setMentionQuery(query);
       setShowMentionList(true);
-      setMentionHighlightIndex(0); // Reset highlight
+      setMentionHighlightIndex(0);
     } else {
       setShowMentionList(false);
     }
@@ -232,25 +256,16 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   const handleInsertMention = (memberName: string) => {
     if (!commentInputRef.current) return;
-    
     const cursorPos = commentInputRef.current.selectionStart;
     const textBefore = newComment.slice(0, cursorPos);
     const textAfter = newComment.slice(cursorPos);
-    
-    // Find the trigger @... to replace
     const match = textBefore.match(/(?:^|\s)@(\w*)$/);
-    
     if (match) {
-        // Calculate where the @ started
         const matchIndex = match.index! + (match[0].startsWith(' ') ? 1 : 0);
         const prefix = newComment.slice(0, matchIndex);
-        
         const mentionTag = `@[${memberName}] `;
         const newText = prefix + mentionTag + textAfter;
-        
         setNewComment(newText);
-        
-        // Restore focus and move cursor
         setTimeout(() => {
             if (commentInputRef.current) {
                 commentInputRef.current.focus();
@@ -259,23 +274,18 @@ const TaskModal: React.FC<TaskModalProps> = ({
             }
         }, 0);
     } else {
-        // Manual button click case (append)
         setNewComment(prev => prev + `@[${memberName}] `);
     }
-    
     setShowMentionList(false);
     setMentionQuery('');
   };
 
   const handleCommentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Send on Enter (if list not open)
     if (e.key === 'Enter' && !e.shiftKey && !showMentionList) {
         e.preventDefault();
         handleSendComment();
         return;
     }
-
-    // Mention List Navigation
     if (showMentionList && filteredMembers.length > 0) {
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -295,6 +305,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly || !canEdit) return;
     onSubmit({
       title, description, status, priority, startDate, dueDate, 
       assignee: assignee || 'Unassigned',
@@ -312,7 +323,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const filteredAvailableTags = availableTags.filter(at => at.name.toLowerCase().includes(tagInput.toLowerCase()) && !tags.find(t => t.id === at.id));
   const streamItems = [...comments.map(c => ({ ...c, type: 'comment' })), ...activityLog.map(l => ({ ...l, type: 'log' }))].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  const inputBaseClass = "w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm";
+  const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
@@ -323,6 +334,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
               <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <div className="w-2 h-6 bg-indigo-500 rounded-full shadow-sm"></div>
                 {task ? 'Edit Task' : 'New Task'}
+                {isReadOnly && <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md flex items-center gap-1"><Lock size={10} /> Read Only</span>}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">ID: {task?.id || 'Draft'}</p>
             </div>
@@ -333,19 +345,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
         {/* Tabs */}
         <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6">
-          <button
-            onClick={() => setActiveTab('details')}
-            className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-          >
-            Details
-          </button>
-          <button
-            onClick={() => setActiveTab('discussion')}
-            className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-          >
-            Discussion 
-            <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length}</span>
-          </button>
+          <button onClick={() => setActiveTab('details')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Details</button>
+          <button onClick={() => setActiveTab('discussion')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Discussion <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length}</span></button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-white dark:bg-slate-800">
@@ -354,33 +355,34 @@ const TaskModal: React.FC<TaskModalProps> = ({
               <>
                 <div>
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Task Title</label>
-                    <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} className={`${inputBaseClass} text-lg`} placeholder="Task Name" />
+                    <input type="text" required readOnly={isReadOnly} value={title} onChange={(e) => setTitle(e.target.value)} className={`${inputBaseClass} text-lg`} placeholder="Task Name" />
                 </div>
 
                 <div>
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <FileText size={12} /> Description
                     </label>
-                    {/* Rich Text Editor Replacement */}
-                    <RichTextEditor 
-                        value={description} 
-                        onChange={setDescription} 
-                        placeholder="Add detailed description here..." 
-                    />
+                    {/* If readOnly, show parsed markdown instead of editor */}
+                    {isReadOnly ? (
+                        <div 
+                            className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl min-h-[100px] prose prose-sm dark:prose-invert max-w-none"
+                            dangerouslySetInnerHTML={{ __html: parseMarkdown(description) }}
+                        />
+                    ) : (
+                        <RichTextEditor value={description} onChange={setDescription} placeholder="Add detailed description here..." />
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Status</label>
-                        <select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className={inputBaseClass}>
-                            {columns.map(col => (
-                                <option key={col.id} value={col.title}>{col.title}</option>
-                            ))}
+                        <select disabled={isReadOnly} value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className={inputBaseClass}>
+                            {columns.map(col => <option key={col.id} value={col.title}>{col.title}</option>)}
                         </select>
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Priority</label>
-                        <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)} className={inputBaseClass}>
+                        <select disabled={isReadOnly} value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)} className={inputBaseClass}>
                             <option value="Low">Low</option>
                             <option value="Medium">Medium</option>
                             <option value="High">High</option>
@@ -392,15 +394,16 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Calendar size={12} /> Start</label>
-                        <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputBaseClass} />
+                        <input type="date" required readOnly={isReadOnly} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputBaseClass} />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertCircle size={12} /> Due</label>
-                        <input type="date" required value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputBaseClass} />
+                        <input type="date" required readOnly={isReadOnly} value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputBaseClass} />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><User size={12} /> Assignee</label>
                         <select 
+                          disabled={isReadOnly}
                           value={assigneeId} 
                           onChange={(e) => {
                               const uid = e.target.value;
@@ -434,6 +437,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                        <Bell size={12} /> Remind me
                     </label>
                     <select 
+                        disabled={isReadOnly}
                         value={reminderDays} 
                         onChange={(e) => setReminderDays(Number(e.target.value))} 
                         className={`${inputBaseClass} cursor-pointer`}
@@ -453,23 +457,25 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     {tags.map(tag => (
                       <span key={tag.id} className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 ${tag.colorClass}`}>
                         {tag.name}
-                        <button type="button" onClick={() => handleRemoveTag(tag.id)} className="hover:bg-black/10 rounded-full p-0.5"><X size={12} /></button>
+                        {!isReadOnly && <button type="button" onClick={() => handleRemoveTag(tag.id)} className="hover:bg-black/10 rounded-full p-0.5"><X size={12} /></button>}
                       </span>
                     ))}
                   </div>
-                  <div className="relative">
-                    <input type="text" value={tagInput} onChange={(e) => { setTagInput(e.target.value); setShowTagDropdown(true); }} onFocus={() => setShowTagDropdown(true)} onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)} placeholder="+ Add tag" className={inputBaseClass} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateTag(); } }} />
-                    {showTagDropdown && (tagInput || filteredAvailableTags.length > 0) && (
-                      <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-40 overflow-y-auto">
-                         {filteredAvailableTags.map(tag => (
-                           <button key={tag.id} type="button" onClick={() => handleAddTag(tag)} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${tag.colorClass.split(' ')[0]}`}></span>{tag.name}</button>
-                         ))}
-                         {tagInput && !filteredAvailableTags.find(t => t.name.toLowerCase() === tagInput.toLowerCase()) && (
-                           <button type="button" onClick={handleCreateTag} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 font-bold">Create "{tagInput}"</button>
-                         )}
-                      </div>
-                    )}
-                  </div>
+                  {!isReadOnly && (
+                      <div className="relative">
+                        <input type="text" value={tagInput} onChange={(e) => { setTagInput(e.target.value); setShowTagDropdown(true); }} onFocus={() => setShowTagDropdown(true)} onBlur={() => setTimeout(() => setShowTagDropdown(false), 200)} placeholder="+ Add tag" className={inputBaseClass} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateTag(); } }} />
+                        {showTagDropdown && (tagInput || filteredAvailableTags.length > 0) && (
+                        <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-40 overflow-y-auto">
+                            {filteredAvailableTags.map(tag => (
+                            <button key={tag.id} type="button" onClick={() => handleAddTag(tag)} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${tag.colorClass.split(' ')[0]}`}></span>{tag.name}</button>
+                            ))}
+                            {tagInput && !filteredAvailableTags.find(t => t.name.toLowerCase() === tagInput.toLowerCase()) && (
+                            <button type="button" onClick={handleCreateTag} className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 font-bold">Create "{tagInput}"</button>
+                            )}
+                        </div>
+                        )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Financials */}
@@ -478,12 +484,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                      <div className="relative">
                         <span className="absolute left-4 top-3.5 text-slate-400 font-bold">$</span>
-                        <input type="number" value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)} className={`${inputBaseClass} pl-8`} placeholder="0.00" />
+                        <input type="number" readOnly={isReadOnly} value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)} className={`${inputBaseClass} pl-8`} placeholder="0.00" />
                         <label className="block text-[10px] font-bold text-slate-500 mt-1 ml-1 uppercase">Estimated</label>
                      </div>
                      <div className="relative">
                         <span className="absolute left-4 top-3.5 text-slate-400 font-bold">$</span>
-                        <input type="number" value={actualCost} onChange={(e) => setActualCost(e.target.value)} className={`${inputBaseClass} pl-8`} placeholder="0.00" />
+                        <input type="number" readOnly={isReadOnly} value={actualCost} onChange={(e) => setActualCost(e.target.value)} className={`${inputBaseClass} pl-8`} placeholder="0.00" />
                         <label className="block text-[10px] font-bold text-slate-500 mt-1 ml-1 uppercase">Actual</label>
                      </div>
                   </div>
@@ -503,16 +509,18 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   <div className="space-y-2 mb-4">
                     {subtasks.map((st) => (
                       <div key={st.id} className="flex items-center gap-3 group p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-600">
-                        <button type="button" onClick={() => handleToggleSubtask(st.id)} className={`flex-shrink-0 w-5 h-5 rounded border transition-all flex items-center justify-center ${st.completed ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400 bg-white dark:bg-slate-800'}`}>{st.completed && <CheckSquare size={14} />}</button>
+                        <button type="button" onClick={() => handleToggleSubtask(st.id)} disabled={isReadOnly} className={`flex-shrink-0 w-5 h-5 rounded border transition-all flex items-center justify-center ${st.completed ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400 bg-white dark:bg-slate-800'}`}>{st.completed && <CheckSquare size={14} />}</button>
                         <span className={`flex-1 text-sm font-medium transition-all ${st.completed ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{st.title}</span>
-                        <button type="button" onClick={() => handleDeleteSubtask(st.id)} className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"><Trash2 size={16} /></button>
+                        {!isReadOnly && <button type="button" onClick={() => handleDeleteSubtask(st.id)} className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"><Trash2 size={16} /></button>}
                       </div>
                     ))}
                   </div>
-                  <div className="flex gap-2">
-                    <input type="text" value={newSubtaskTitle} onChange={(e) => setNewSubtaskTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())} className={inputBaseClass} placeholder="Add an item..." />
-                    <button type="button" onClick={handleAddSubtask} disabled={!newSubtaskTitle.trim()} className="px-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-colors disabled:opacity-50"><Plus size={20} /></button>
-                  </div>
+                  {!isReadOnly && (
+                    <div className="flex gap-2">
+                        <input type="text" value={newSubtaskTitle} onChange={(e) => setNewSubtaskTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())} className={inputBaseClass} placeholder="Add an item..." />
+                        <button type="button" onClick={handleAddSubtask} disabled={!newSubtaskTitle.trim()} className="px-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-colors disabled:opacity-50"><Plus size={20} /></button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Attachments */}
@@ -527,16 +535,18 @@ const TaskModal: React.FC<TaskModalProps> = ({
                              <a href={att.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 truncate">{att.fileName}<ExternalLink size={12} /></a>
                              <p className="text-[10px] text-slate-400 font-medium">Uploaded {att.uploadedAt}</p>
                           </div>
-                          <button type="button" onClick={() => handleDeleteAttachment(att.id)} className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"><Trash2 size={16} /></button>
+                          {!isReadOnly && <button type="button" onClick={() => handleDeleteAttachment(att.id)} className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"><Trash2 size={16} /></button>}
                         </div>
                       ))}
                     </div>
                   )}
-                  <div className="flex gap-2">
-                      <input type="text" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} className={`${inputBaseClass} w-1/3`} placeholder="Name" />
-                      <input type="url" value={newFileUrl} onChange={(e) => setNewFileUrl(e.target.value)} className={`${inputBaseClass} flex-1`} placeholder="URL" />
-                      <button type="button" onClick={handleAddAttachment} disabled={!newFileName.trim() || !newFileUrl.trim()} className="px-4 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-colors disabled:opacity-50 font-bold">Add</button>
-                  </div>
+                  {!isReadOnly && (
+                    <div className="flex gap-2">
+                        <input type="text" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} className={`${inputBaseClass} w-1/3`} placeholder="Name" />
+                        <input type="url" value={newFileUrl} onChange={(e) => setNewFileUrl(e.target.value)} className={`${inputBaseClass} flex-1`} placeholder="URL" />
+                        <button type="button" onClick={handleAddAttachment} disabled={!newFileName.trim() || !newFileUrl.trim()} className="px-4 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-colors disabled:opacity-50 font-bold">Add</button>
+                    </div>
+                  )}
                 </div>
 
               </>
@@ -578,64 +588,72 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     ))
                   )}
                 </div>
-                <div className="pt-4 border-t border-slate-100 dark:border-slate-700 relative">
-                   {/* Smart Mention Popup */}
-                   {showMentionList && filteredMembers.length > 0 && (
-                     <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-20 animate-fade-in">
-                       <div className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700 text-xs font-bold text-slate-500 flex justify-between">
-                           <span>Mention Member</span>
-                           <span className="text-[10px] opacity-70">↑↓ to navigate, Enter to select</span>
-                       </div>
-                       <div className="max-h-48 overflow-y-auto custom-scrollbar">
-                         {filteredMembers.map((m, index) => (
-                           <button 
-                             key={m.uid || m.email}
-                             type="button"
-                             onClick={() => handleInsertMention(m.displayName)}
-                             className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors
-                                ${index === mentionHighlightIndex 
-                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' 
-                                    : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
-                                }
-                             `}
-                           >
-                             <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden shrink-0">
-                               {m.avatar && m.avatar.startsWith('http') ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> : m.displayName.charAt(0)}
-                             </div>
-                             <span className="truncate font-medium">{m.displayName}</span>
-                           </button>
-                         ))}
-                       </div>
-                     </div>
-                   )}
+                
+                {/* Comment Input (Hidden if Read-Only Guest) */}
+                {!isReadOnly && (
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-700 relative">
+                    {showMentionList && filteredMembers.length > 0 && (
+                        <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden z-20 animate-fade-in">
+                        <div className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border-b border-slate-100 dark:border-slate-700 text-xs font-bold text-slate-500 flex justify-between">
+                            <span>Mention Member</span>
+                            <span className="text-[10px] opacity-70">↑↓ to navigate, Enter to select</span>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                            {filteredMembers.map((m, index) => (
+                            <button 
+                                key={m.uid || m.email}
+                                type="button"
+                                onClick={() => handleInsertMention(m.displayName)}
+                                className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 transition-colors
+                                    ${index === mentionHighlightIndex 
+                                        ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' 
+                                        : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
+                                    }
+                                `}
+                            >
+                                <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden shrink-0">
+                                {m.avatar && m.avatar.startsWith('http') ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> : m.displayName.charAt(0)}
+                                </div>
+                                <span className="truncate font-medium">{m.displayName}</span>
+                            </button>
+                            ))}
+                        </div>
+                        </div>
+                    )}
 
-                  <div className="flex gap-2 items-end">
-                    <div className="relative flex-1">
-                      <textarea 
-                        ref={commentInputRef}
-                        value={newComment} 
-                        onChange={handleCommentChange}
-                        onKeyDown={handleCommentKeyDown}
-                        placeholder="Write a comment... (Use @ to mention)" 
-                        className={`${inputBaseClass} resize-none py-3 pr-10`} 
-                        rows={1} 
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => {
-                            setMentionQuery(''); // Clear query for full list
-                            setShowMentionList(!showMentionList);
-                            if (!showMentionList) setTimeout(() => commentInputRef.current?.focus(), 0);
-                        }}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-indigo-500 rounded-lg transition-colors"
-                        title="Mention someone"
-                      >
-                        <AtSign size={18} />
-                      </button>
+                    <div className="flex gap-2 items-end">
+                        <div className="relative flex-1">
+                        <textarea 
+                            ref={commentInputRef}
+                            value={newComment} 
+                            onChange={handleCommentChange}
+                            onKeyDown={handleCommentKeyDown}
+                            placeholder="Write a comment... (Use @ to mention)" 
+                            className={`${inputBaseClass} resize-none py-3 pr-10`} 
+                            rows={1} 
+                        />
+                        <button 
+                            type="button"
+                            onClick={() => {
+                                setMentionQuery('');
+                                setShowMentionList(!showMentionList);
+                                if (!showMentionList) setTimeout(() => commentInputRef.current?.focus(), 0);
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-indigo-500 rounded-lg transition-colors"
+                            title="Mention someone"
+                        >
+                            <AtSign size={18} />
+                        </button>
+                        </div>
+                        <button type="button" onClick={handleSendComment} disabled={!newComment.trim()} className="h-[46px] w-[46px] flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shadow-md"><Send size={20} /></button>
                     </div>
-                    <button type="button" onClick={handleSendComment} disabled={!newComment.trim()} className="h-[46px] w-[46px] flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 shadow-md"><Send size={20} /></button>
-                  </div>
-                </div>
+                    </div>
+                )}
+                {isReadOnly && (
+                    <div className="pt-4 border-t border-slate-100 dark:border-slate-700 text-center text-slate-400 text-xs italic">
+                        Read-only mode: Comments are disabled.
+                    </div>
+                )}
               </div>
             )}
           </form>
@@ -644,11 +662,13 @@ const TaskModal: React.FC<TaskModalProps> = ({
         {/* Footer */}
         {activeTab === 'details' && (
           <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 shrink-0 flex gap-3 items-center backdrop-blur-sm">
-              {task && onDelete && (
+              {task && onDelete && canDelete && (
                 <button type="button" onClick={() => onDelete(task.id)} className="p-3.5 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border border-transparent hover:border-red-100 dark:hover:border-red-900"><Trash2 size={20} /></button>
               )}
               <button type="button" onClick={onClose} className="flex-1 py-3.5 px-4 rounded-xl font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all active:scale-95">Cancel</button>
-              <button type="submit" form="taskForm" className="flex-1 py-3.5 px-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 active:scale-95 hover:-translate-y-0.5">{task ? 'Save Changes' : 'Create Task'}</button>
+              {(!isReadOnly && canEdit) && (
+                  <button type="submit" form="taskForm" className="flex-1 py-3.5 px-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 active:scale-95 hover:-translate-y-0.5">{task ? 'Save Changes' : 'Create Task'}</button>
+              )}
           </div>
         )}
       </div>

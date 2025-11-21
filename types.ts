@@ -28,6 +28,7 @@ export interface GeneratedImage {
 
 export type TaskStatus = string;
 export type TaskPriority = 'High' | 'Medium' | 'Low';
+export type ProjectRole = 'admin' | 'member' | 'guest';
 
 export interface Subtask {
   id: string;
@@ -71,6 +72,7 @@ export interface Tag {
 export interface Task {
   id: string;
   ownerId: string;
+  createdBy?: string; // The UID of the user who created the task
   projectId?: string;
   title: string;
   status: TaskStatus;
@@ -104,7 +106,7 @@ export interface ProjectMember {
   uid: string | null;
   email: string;
   displayName: string;
-  role: 'admin' | 'editor' | 'viewer';
+  role: ProjectRole;
   avatar?: string;
   status?: 'active' | 'pending';
 }

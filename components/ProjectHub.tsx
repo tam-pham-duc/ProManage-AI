@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Plus, Briefcase, MapPin, Clock, ArrowRight, Folder, User, Copy, Loader2, X, Search, Filter, ArrowUpDown, FolderPlus } from 'lucide-react';
+import { Plus, Briefcase, MapPin, Clock, ArrowRight, Folder, User, Copy, Loader2, X, Search, Filter, ArrowUpDown, FolderPlus, Trash2 } from 'lucide-react';
 import { Project } from '../types';
 import { auth, db } from '../firebase';
 import { collection, query, where, addDoc, serverTimestamp, getDocs, doc } from 'firebase/firestore';
@@ -12,9 +12,11 @@ interface ProjectHubProps {
   onSelectProject: (projectId: string) => void;
   onCreateProject: () => void;
   userName?: string;
+  onDeleteProject?: (projectId: string) => void;
+  currentUserId?: string;
 }
 
-const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCreateProject, userName }) => {
+const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCreateProject, userName, onDeleteProject, currentUserId }) => {
   const { notify } = useNotification();
   const [isCloning, setIsCloning] = useState(false);
   const [duplicateModal, setDuplicateModal] = useState<{ isOpen: boolean; sourceProject: Project | null; newName: string }>({
@@ -208,7 +210,10 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
           </div>
 
           {/* Existing Projects */}
-          {filteredProjects.map(project => (
+          {filteredProjects.map(project => {
+            const isOwner = currentUserId === project.ownerId;
+            
+            return (
             <div 
               key={project.id}
               onClick={() => onSelectProject(project.id)}
@@ -247,6 +252,18 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                     Created {new Date(project.createdAt || Date.now()).toLocaleDateString()}
                   </span>
                   <div className="flex items-center gap-2">
+                    {onDeleteProject && isOwner && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteProject(project.id);
+                            }}
+                            className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors z-20"
+                            title="Delete Project"
+                        >
+                            <Trash2 size={18} />
+                        </button>
+                    )}
                     <button 
                         onClick={(e) => openDuplicateModal(e, project)}
                         className="p-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors z-20"
@@ -261,7 +278,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                 </div>
               </div>
             </div>
-          ))}
+          )})}
       </div>
       
       {/* Empty Search State (If grid is empty besides Create Card) */}
