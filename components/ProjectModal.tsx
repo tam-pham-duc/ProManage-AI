@@ -4,6 +4,7 @@ import { X, Briefcase, User, MapPin, Plus, Trash2, Shield, Mail, Loader2, Clock,
 import { Project, ProjectMember } from '../types';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { useNotification } from '../context/NotificationContext';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ interface ProjectModalProps {
 }
 
 const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, project, currentUser }) => {
+  const { notify } = useNotification();
   const [activeTab, setActiveTab] = useState<'details' | 'members'>('details');
   
   // Details State
@@ -36,9 +38,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         setClientName(project.clientName);
         setAddress(project.address);
         
-        // Migration: Ensure owner is a member if members array is empty/undefined
         if (!project.members || project.members.length === 0) {
-            // If currentUser is owner, add them.
             if (currentUser && project.ownerId === currentUser.uid) {
                 setMembers([{
                     uid: currentUser.uid,
@@ -58,7 +58,6 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         setName('');
         setClientName('');
         setAddress('');
-        // Default current user as admin member for new projects
         if (currentUser) {
           setMembers([{
             uid: currentUser.uid,
@@ -84,22 +83,19 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
     const email = inviteEmail.trim();
     if (!email) return;
 
-    // Simple Regex validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-        alert("Please enter a valid email address.");
+        notify('warning', "Please enter a valid email address.");
         return;
     }
 
-    // Check for duplicates
     if (members.some(m => m.email.toLowerCase() === email.toLowerCase())) {
-      alert("User is already a member or invited.");
+      notify('info', "User is already a member or invited.");
       return;
     }
 
     setIsInviting(true);
     try {
-      // Step 1: Check if user exists in 'users' collection
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('email', '==', email));
       const querySnapshot = await getDocs(q);
@@ -107,20 +103,18 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
       let newMember: ProjectMember;
 
       if (!querySnapshot.empty) {
-        // Step 2: Handle Existing User (Active)
         const userDoc = querySnapshot.docs[0];
         const userData = userDoc.data();
         newMember = {
           uid: userDoc.id,
           email: userData.email,
           displayName: userData.username || email.split('@')[0],
-          role: 'viewer', // Default role
+          role: 'viewer',
           status: 'active',
           avatar: userData.avatar || userData.username?.charAt(0).toUpperCase()
         };
-        alert("User added successfully.");
+        notify('success', `Added ${newMember.displayName} to project`);
       } else {
-        // Step 3: Handle Non-Existing User (Pending Invite)
         newMember = {
             uid: null,
             email: email,
@@ -129,7 +123,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             status: 'pending',
             avatar: undefined
         };
-        alert(`Invitation sent to ${email}. They will be added when they register.`);
+        notify('info', `Invitation sent to ${email}`);
       }
       
       setMembers([...members, newMember]);
@@ -137,7 +131,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
       
     } catch (error) {
       console.error("Error finding user:", error);
-      alert("Error searching for user. Please try again.");
+      notify('error', "Error searching for user.");
     } finally {
       setIsInviting(false);
     }
@@ -145,8 +139,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
 
   const handleRemoveMember = (email: string) => {
     if (members.filter(m => m.status === 'active').length <= 1 && members.find(m => m.email === email)?.status === 'active') {
-        // Basic check to prevent removing the last active member if they are likely admin
-        alert("Cannot remove the last active member.");
+        notify('warning', "Cannot remove the last active member.");
         return;
     }
     setMembers(members.filter(m => m.email !== email));
@@ -156,14 +149,13 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
     e.preventDefault();
     
     if (!name.trim()) {
-        alert("Project name is required.");
+        notify('warning', "Project name is required.");
         return;
     }
 
     setIsSaving(true);
 
     try {
-        // Filter out null UIDs when saving to memberUIDs list for query rules
         const memberUIDs = members.map(m => m.uid).filter((uid): uid is string => uid !== null);
         
         const projectPayload = {
@@ -175,31 +167,25 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         };
 
         if (project) {
-            // --- EDIT MODE: Direct Firestore Update ---
             const projectRef = doc(db, 'projects', project.id);
             await updateDoc(projectRef, projectPayload);
             
-            // Small delay for UX
             setTimeout(() => {
                 setIsSaving(false);
                 onClose();
             }, 500);
         } else {
-            // --- CREATE MODE: Delegate to Parent ---
-            // Parent (App.tsx) handles creation logic
             await onSubmit(projectPayload);
             setIsSaving(false);
-            // Parent usually closes modal, but we can ensure it here if needed
         }
 
     } catch (error) {
         console.error("Error saving project:", error);
-        alert("Failed to save project. Please try again.");
+        notify('error', "Failed to save project.");
         setIsSaving(false);
     }
   };
 
-  // Check if current user is owner or admin in the members list to allow editing members
   const canEditMembers = !project || (currentUser && project.ownerId === currentUser.uid);
 
   return (

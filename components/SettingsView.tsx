@@ -5,6 +5,7 @@ import { Task, UserSettings, Tab, TaskPriority, KanbanColumn } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { useNotification } from '../context/NotificationContext';
 
 interface SettingsViewProps {
   tasks: Task[];
@@ -93,6 +94,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteColumn,
   onClose
 }) => {
+  const { notify } = useNotification();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   
   // --- General Tab State ---
@@ -139,12 +141,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      // Basic size check (e.g., 2MB limit for Firestore Base64)
       if (file.size > 2 * 1024 * 1024) {
-        alert("Image is too large. Please choose an image under 2MB.");
+        notify('warning', "Image is too large. Please choose under 2MB.");
         return;
       }
-
       const reader = new FileReader();
       reader.onloadend = () => {
         setAvatarPreview(reader.result as string);
@@ -157,12 +157,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     e.preventDefault();
     
     if (newPassword && newPassword !== confirmPassword) {
-        alert("Passwords do not match.");
+        notify('error', "Passwords do not match.");
         return;
     }
     
     if (newPassword && newPassword.length < 6) {
-        alert("Password should be at least 6 characters.");
+        notify('warning', "Password should be at least 6 characters.");
         return;
     }
 
@@ -172,43 +172,38 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         const user = auth.currentUser;
         if (!user) throw new Error("No user logged in");
 
-        // 1. Update Firebase Auth Profile
         await updateProfile(user, {
             displayName: profileName,
             photoURL: avatarPreview
         });
 
-        // 2. Update Password if provided
         if (newPassword) {
             await updatePassword(user, newPassword);
         }
 
-        // 3. Update Firestore Document (Source of Truth for App)
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
             username: profileName,
             jobTitle: profileTitle,
-            avatar: avatarPreview || undefined, // Save base64 string or URL
-            // Only update these if they changed
+            avatar: avatarPreview || undefined,
         });
 
-        // 4. Update Local App State
         setUserSettings(prev => ({
             ...prev,
             userName: profileName,
             userTitle: profileTitle
         }));
 
-        alert("Profile updated successfully!");
+        notify('success', "Profile updated successfully!");
         setNewPassword('');
         setConfirmPassword('');
         
     } catch (error: any) {
         console.error("Error updating profile:", error);
         if (error.code === 'auth/requires-recent-login') {
-            alert("For security, please log out and log back in to change your password.");
+            notify('warning', "Please log out and in to change password.", 5000);
         } else {
-            alert("Failed to update profile. " + error.message);
+            notify('error', "Failed to update profile.");
         }
     } finally {
         setIsSavingProfile(false);
@@ -228,6 +223,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    notify('success', "Export started");
   };
 
   const handleImportClick = () => {
@@ -245,7 +241,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         const parsedData = JSON.parse(content);
         
         if (!Array.isArray(parsedData)) {
-          alert("Invalid backup file format. The file must contain an array of tasks.");
+          notify('error', "Invalid backup file format.");
           return;
         }
 
@@ -253,7 +249,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
             setIsImporting(true);
             const currentUser = auth.currentUser;
             if (!currentUser) {
-                alert("You must be logged in to import tasks.");
+                notify('error', "You must be logged in to import tasks.");
                 setIsImporting(false);
                 return;
             }
@@ -269,11 +265,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                 });
                 count++;
             }
-            alert(`Successfully imported ${count} tasks!`);
+            notify('success', `Successfully imported ${count} tasks!`);
         }
       } catch (error) {
         console.error("Import error:", error);
-        alert("Failed to import data. See console for details.");
+        notify('error', "Failed to import data.");
       } finally {
         setIsImporting(false);
         if (fileInputRef.current) {
@@ -285,7 +281,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   const handleLoadTemplate = async () => {
-    if (!window.confirm("This will add standard tasks for a Wood-frame House project to your database. Continue?")) {
+    if (!window.confirm("This will add standard tasks for a Wood-frame House project. Continue?")) {
       return;
     }
 
@@ -299,10 +295,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         for (const templateItem of HOUSE_TEMPLATE_DATA) {
             const startDate = new Date(today);
             startDate.setDate(today.getDate() + currentOffset);
-            
             const dueDate = new Date(startDate);
             dueDate.setDate(startDate.getDate() + templateItem.days);
-            
             currentOffset += templateItem.days;
 
             await addDoc(collection(db, 'tasks'), {
@@ -332,10 +326,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                 createdAt: serverTimestamp()
             });
         }
-        alert("Template tasks created successfully!");
+        notify('success', "Template loaded successfully!");
     } catch (e) {
         console.error("Error loading template", e);
-        alert("Failed to load template tasks.");
+        notify('error', "Failed to load template tasks.");
     }
   };
 

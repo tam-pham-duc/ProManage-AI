@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check } from 'lucide-react';
+import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle } from 'lucide-react';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 
 interface KanbanBoardProps {
@@ -27,7 +27,17 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
     Low: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800',
   };
 
-  const isOverdue = new Date(task.dueDate) < new Date() && task.status !== 'Done';
+  // Date Logic
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(task.dueDate);
+  // Fix timezone offset issues by treating the string as local date if needed, 
+  // but standard comparison usually works if consistent. 
+  // To be safe for "Day" comparison:
+  const dueDateAtMidnight = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+  
+  const isOverdue = dueDateAtMidnight < today && task.status !== 'Done';
+  const isDueToday = dueDateAtMidnight.getTime() === today.getTime() && task.status !== 'Done';
   
   const subtasks = task.subtasks || [];
   const totalSubtasks = subtasks.length;
@@ -37,6 +47,15 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
   const attachmentCount = task.attachments?.length || 0;
   const commentCount = task.comments?.length || 0;
 
+  // Dynamic Border/Shadow Classes based on status
+  let cardStateClass = "border-slate-200/60 dark:border-slate-700 hover:shadow-lg"; // Default
+  
+  if (isOverdue) {
+      cardStateClass = "border-red-500 dark:border-red-500 shadow-[0_0_0_1px_rgba(239,68,68,0.2)] dark:shadow-[0_0_0_1px_rgba(239,68,68,0.4)]";
+  } else if (isDueToday) {
+      cardStateClass = "border-amber-400 dark:border-amber-500 shadow-[0_0_0_1px_rgba(251,191,36,0.2)] dark:shadow-[0_0_0_1px_rgba(245,158,11,0.4)]";
+  }
+
   return (
     <div 
       draggable={true}
@@ -44,7 +63,8 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/60 dark:border-slate-700 shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer group relative select-none flex flex-col justify-between min-h-[140px]
+        bg-white dark:bg-slate-800 p-4 rounded-xl border shadow-sm transition-all duration-300 cursor-pointer group relative select-none flex flex-col justify-between min-h-[140px]
+        ${cardStateClass}
         ${isDragging ? 'opacity-60 rotate-2 scale-95 ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900' : 'hover:-translate-y-1'}
       `}
     >
@@ -132,9 +152,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
                ${task.estimatedCost.toLocaleString()}
              </div>
            )}
-           <div className={`flex items-center gap-1 text-[10px] font-medium ${isOverdue ? 'text-red-600 dark:text-red-400' : 'text-slate-400 dark:text-slate-500'}`}>
-             <Clock size={12} />
-             <span>{new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+           <div className={`flex items-center gap-1 text-[10px] font-bold ${isOverdue ? 'text-red-600 dark:text-red-400 animate-pulse' : isDueToday ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400 dark:text-slate-500'}`}>
+             {isOverdue ? <AlertCircle size={12} /> : <Clock size={12} />}
+             <span>
+                {isDueToday ? 'Today' : new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+             </span>
            </div>
         </div>
       </div>

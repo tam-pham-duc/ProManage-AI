@@ -16,6 +16,7 @@ import ProjectHub from './components/ProjectHub';
 import DevToolbar from './components/DevToolbar';
 import BackgroundLayer from './components/BackgroundLayer';
 import ReminderModal from './components/ReminderModal';
+import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember } from './types';
 
 // Firebase Imports
@@ -49,21 +50,14 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: 'col-3', title: 'Done', color: 'emerald' },
 ];
 
-// Helper to sanitize Firestore data (convert Timestamps to ISO strings, etc.)
 const sanitizeFirestoreData = (data: any): any => {
   if (data === null || data === undefined) return data;
-
-  // Check for Firestore Timestamp (has toDate method)
   if (data && typeof data.toDate === 'function') {
     return data.toDate().toISOString();
   }
-
-  // Handle Arrays
   if (Array.isArray(data)) {
     return data.map(item => sanitizeFirestoreData(item));
   }
-
-  // Handle Objects
   if (typeof data === 'object') {
     const sanitized: any = {};
     for (const key in data) {
@@ -73,15 +67,16 @@ const sanitizeFirestoreData = (data: any): any => {
     }
     return sanitized;
   }
-
   return data;
 };
 
-const App: React.FC = () => {
+const ProManageApp: React.FC = () => {
+  const { notify } = useNotification();
+  
   // --- Auth State ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); 
-  const [isSeeding, setIsSeeding] = useState(false); // New State for Admin Seeding
+  const [isSeeding, setIsSeeding] = useState(false);
 
   // --- Project State ---
   const [projects, setProjects] = useState<Project[]>([]);
@@ -118,7 +113,6 @@ const App: React.FC = () => {
   });
 
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  // Sidebar Toggle State
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     try {
       const saved = localStorage.getItem(SIDEBAR_KEY);
@@ -130,7 +124,7 @@ const App: React.FC = () => {
 
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
-  const [initialTaskDate, setInitialTaskDate] = useState<string | undefined>(undefined); // For calendar click
+  const [initialTaskDate, setInitialTaskDate] = useState<string | undefined>(undefined);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [columns, setColumns] = useState<KanbanColumn[]>(DEFAULT_COLUMNS);
 
@@ -172,14 +166,11 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        // User is signed in
         const userRef = doc(db, 'users', firebaseUser.uid);
-        
         const unsubUser = onSnapshot(userRef, (docSnap) => {
            if (docSnap.exists()) {
                const data = docSnap.data();
                const sanitizedData = sanitizeFirestoreData(data);
-
                const user: User = {
                  id: firebaseUser.uid,
                  username: firebaseUser.displayName || 'User',
@@ -189,14 +180,12 @@ const App: React.FC = () => {
                  avatar: firebaseUser.photoURL || undefined,
                  kanbanColumns: sanitizedData.kanbanColumns
                };
-
                setCurrentUser(user);
                setUserSettings(prev => ({
                    ...prev,
                    userName: user.username,
                    userTitle: user.jobTitle || 'Member'
                }));
-
                if (sanitizedData.kanbanColumns && Array.isArray(sanitizedData.kanbanColumns)) {
                  setColumns(sanitizedData.kanbanColumns);
                } else {
@@ -213,7 +202,6 @@ const App: React.FC = () => {
            }
            setLoading(false);
         });
-
         return () => unsubUser();
       } else {
         setCurrentUser(null);
@@ -222,7 +210,6 @@ const App: React.FC = () => {
         localStorage.removeItem(PROJECT_KEY);
       }
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -232,8 +219,6 @@ const App: React.FC = () => {
         setProjects([]);
         return;
     }
-
-    // Query projects where user is owner OR member
     const q = query(
         collection(db, 'projects'),
         or(
@@ -241,14 +226,10 @@ const App: React.FC = () => {
             where('memberUIDs', 'array-contains', currentUser.id)
         )
     );
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetchedProjects: Project[] = snapshot.docs.map(doc => {
             const data = doc.data();
-            return {
-                id: doc.id,
-                ...sanitizeFirestoreData(data)
-            };
+            return { id: doc.id, ...sanitizeFirestoreData(data) };
         }) as Project[];
         
         fetchedProjects.sort((a, b) => {
@@ -256,15 +237,11 @@ const App: React.FC = () => {
            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
            return dateB - dateA;
         });
-
         setProjects(fetchedProjects);
-        
-        // If selected project is no longer in list (e.g. removed from members), deselect
         if (selectedProjectId && !fetchedProjects.find(p => p.id === selectedProjectId)) {
             setSelectedProjectId(null);
         }
     });
-
     return () => unsubscribe();
   }, [currentUser?.id]);
 
@@ -274,27 +251,16 @@ const App: React.FC = () => {
         setTasks([]);
         return;
     }
-
-    const q = query(
-        collection(db, 'tasks'), 
-        where('projectId', '==', selectedProjectId)
-    );
-
+    const q = query(collection(db, 'tasks'), where('projectId', '==', selectedProjectId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetchedTasks: Task[] = snapshot.docs.map(doc => {
             const data = doc.data();
-            // Sanitize entire data object to handle nested Timestamps in activityLog/comments
-            return {
-                id: doc.id, 
-                ...sanitizeFirestoreData(data)
-            };
+            return { id: doc.id, ...sanitizeFirestoreData(data) };
         }) as Task[];
-        
         setTasks(fetchedTasks);
     }, (error) => {
         console.error("Error fetching tasks:", error);
     });
-
     return () => unsubscribe();
   }, [currentUser?.id, selectedProjectId]);
 
@@ -303,52 +269,33 @@ const App: React.FC = () => {
     if (tasks.length === 0) return;
     
     const checkReminders = () => {
-        // 1. Check Snooze
         const snoozeUntil = localStorage.getItem(SNOOZE_KEY);
-        if (snoozeUntil && Date.now() < parseInt(snoozeUntil)) {
-             return; // Still in snooze period
-        }
-
-        // 2. Check Session (Fallback to prevent spam on refresh if not explicitly snoozed)
-        // Only check session if snooze isn't set/expired. 
-        // If snooze expired, we show it regardless of session.
+        if (snoozeUntil && Date.now() < parseInt(snoozeUntil)) return;
         if (!snoozeUntil) {
             const shownSession = sessionStorage.getItem('promanage_reminder_shown');
             if (shownSession) return;
         }
-
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-
         const dueTasks = tasks.filter(t => {
             if (t.status === 'Done') return false;
-            const reminderSetting = t.reminderDays !== undefined ? t.reminderDays : 1; // Default 1 day before
+            const reminderSetting = t.reminderDays !== undefined ? t.reminderDays : 1;
             if (reminderSetting === -1) return false;
-
             const dueDate = new Date(t.dueDate);
             dueDate.setHours(0,0,0,0);
-            
             const diffTime = dueDate.getTime() - today.getTime();
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-            // Trigger if within reminder window (e.g., due in 1 day and setting is 1)
-            // Also include overdue tasks (diffDays < 0)
             return diffDays <= reminderSetting;
         });
-
         if (dueTasks.length > 0) {
             setReminderTasks(dueTasks);
             setIsReminderModalOpen(true);
             sessionStorage.setItem('promanage_reminder_shown', 'true');
-            // If we show it, we can clear the old snooze key as it's consumed/irrelevant
             localStorage.removeItem(SNOOZE_KEY);
         }
     };
-
-    // Small delay to ensure data is stable
     const timer = setTimeout(checkReminders, 1000);
     return () => clearTimeout(timer);
-
   }, [tasks]); 
 
   // --- Persistence Effects ---
@@ -368,6 +315,7 @@ const App: React.FC = () => {
     setSelectedProjectId(null);
     sessionStorage.removeItem('promanage_reminder_shown'); 
     localStorage.removeItem(SNOOZE_KEY);
+    notify('info', 'Logged out successfully');
   };
 
   const handleSelectProject = (projectId: string | null) => {
@@ -379,14 +327,14 @@ const App: React.FC = () => {
   const handleSnooze = (untilTimestamp: number) => {
       localStorage.setItem(SNOOZE_KEY, untilTimestamp.toString());
       setIsReminderModalOpen(false);
+      notify('info', 'Reminders snoozed');
   };
 
-  // --- Navigation Logic ---
   const handleDashboardNavigation = (tab: Tab, filterStatus?: string) => {
     setActiveTab(tab);
     if (filterStatus) {
         setFilterStatus(filterStatus);
-        setFilterPriority('All'); // Reset priority when navigating from dashboard
+        setFilterPriority('All');
         setSearchQuery('');
     }
   };
@@ -403,11 +351,7 @@ const App: React.FC = () => {
               status: 'active',
               avatar: currentUser.avatar
           }];
-
-          // Generate valid memberUIDs (exclude pending invites which have null UIDs)
-          const memberUIDs = members
-              .map(m => m.uid)
-              .filter((uid): uid is string => uid !== null);
+          const memberUIDs = members.map(m => m.uid).filter((uid): uid is string => uid !== null);
 
           const docRef = await addDoc(collection(db, 'projects'), {
               ownerId: currentUser.id,
@@ -421,9 +365,10 @@ const App: React.FC = () => {
           });
           setIsProjectModalOpen(false);
           handleSelectProject(docRef.id);
+          notify('success', `Project "${projectData.name}" created!`);
       } catch (e) {
           console.error("Error creating project:", e);
-          alert("Failed to create project");
+          notify('error', "Failed to create project");
       }
   };
 
@@ -431,17 +376,8 @@ const App: React.FC = () => {
       if (!projectToEdit) return;
       try {
           const projectRef = doc(db, 'projects', projectToEdit.id);
-          
           let updatedMembers = projectData.members || projectToEdit.members || [];
-          // Safety check: Ensure owner is not removed accidentally
-          if (!updatedMembers.find(m => m.uid === projectToEdit.ownerId)) {
-             // Logic handled in UI usually
-          }
-          
-          // Generate valid memberUIDs (exclude pending invites)
-          const memberUIDs = updatedMembers
-              .map(m => m.uid)
-              .filter((uid): uid is string => uid !== null);
+          const memberUIDs = updatedMembers.map(m => m.uid).filter((uid): uid is string => uid !== null);
 
           await updateDoc(projectRef, {
               name: projectData.name,
@@ -452,9 +388,10 @@ const App: React.FC = () => {
           });
           setIsProjectModalOpen(false);
           setProjectToEdit(null);
+          notify('success', "Project updated successfully");
       } catch (e) {
           console.error("Error updating project:", e);
-          alert("Failed to update project");
+          notify('error', "Failed to update project");
       }
   };
 
@@ -463,45 +400,38 @@ const App: React.FC = () => {
       if (!project) return;
       
       if (project.ownerId !== currentUser?.id) {
-          alert("Only the project owner can delete this project.");
+          notify('warning', "Only the project owner can delete this project.");
           return;
       }
 
       const confirmName = window.prompt(`WARNING: This will permanently delete "${project.name}" and ALL its tasks.\n\nType the project name to confirm:`);
       if (confirmName !== project.name) {
-          if (confirmName) alert("Project name did not match. Deletion cancelled.");
+          if (confirmName) notify('info', "Project name did not match. Deletion cancelled.");
           return;
       }
 
       try {
           const batch = writeBatch(db);
-          
           const projectRef = doc(db, 'projects', project.id);
           batch.delete(projectRef);
-
           const tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', project.id));
           const tasksSnap = await getDocs(tasksQuery);
-          tasksSnap.forEach(doc => {
-              batch.delete(doc.ref);
-          });
-
+          tasksSnap.forEach(doc => batch.delete(doc.ref));
           await batch.commit();
           
           setSelectedProjectId(null);
-          alert("Project deleted successfully.");
+          notify('success', "Project deleted successfully");
       } catch (e) {
           console.error("Error deleting project:", e);
-          alert("Failed to delete project.");
+          notify('error', "Failed to delete project");
       }
   };
 
-  // --- Filtering Logic ---
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesPriority = filterPriority === 'All' || task.priority === filterPriority;
       const matchesStatus = filterStatus === 'All' || task.status === filterStatus;
-      
       return matchesSearch && matchesPriority && matchesStatus;
     });
   }, [tasks, searchQuery, filterPriority, filterStatus]);
@@ -512,21 +442,18 @@ const App: React.FC = () => {
     setFilterStatus('All');
   };
 
-  // --- Column Handlers ---
   const handleAddColumn = async (title: string, color: string) => {
     if (!currentUser) return;
-    const newColumn: KanbanColumn = {
-      id: `col-${Date.now()}`,
-      title,
-      color
-    };
+    const newColumn: KanbanColumn = { id: `col-${Date.now()}`, title, color };
     const updatedColumns = [...columns, newColumn];
     setColumns(updatedColumns);
     try {
       const userRef = doc(db, 'users', currentUser.id);
       await updateDoc(userRef, { kanbanColumns: updatedColumns });
+      notify('success', `Column "${title}" added`);
     } catch (e) {
       console.error("Error adding column:", e);
+      notify('error', "Failed to save column setting");
     }
   };
 
@@ -537,7 +464,7 @@ const App: React.FC = () => {
 
     const hasTasks = tasks.some(t => t.status === columnToDelete.title);
     if (hasTasks) {
-      alert(`Cannot delete column "${columnToDelete.title}" because it contains tasks. Please move or delete them first.`);
+      notify('warning', `Cannot delete column "${columnToDelete.title}" because it contains tasks.`);
       return;
     }
 
@@ -546,26 +473,22 @@ const App: React.FC = () => {
     try {
       const userRef = doc(db, 'users', currentUser.id);
       await updateDoc(userRef, { kanbanColumns: updatedColumns });
+      notify('success', "Column deleted");
     } catch (e) {
       console.error("Error deleting column:", e);
     }
   };
 
-  // --- Task Handlers ---
   const handleCreateTag = (name: string) => {
     const randomColor = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
-    const newTag: Tag = {
-      id: Date.now().toString(),
-      name: name,
-      colorClass: randomColor
-    };
+    const newTag: Tag = { id: Date.now().toString(), name: name, colorClass: randomColor };
     setAvailableTags(prev => [...prev, newTag]);
     return newTag;
   };
 
   const handleSaveTask = async (taskData: Partial<Task>) => {
     if (!currentUser) return;
-    const timestamp = new Date().toISOString(); // Use ISO for new logs
+    const timestamp = new Date().toISOString();
     const newActivityLog: ActivityLog[] = [];
 
     try {
@@ -575,68 +498,44 @@ const App: React.FC = () => {
                     id: Date.now().toString() + Math.random(), 
                     action: 'changed status', 
                     details: `From ${editingTask.status} → ${taskData.status}`,
-                    timestamp,
-                    userName: currentUser.username,
-                    userId: currentUser.id,
-                    type: 'status_change'
+                    timestamp, userName: currentUser.username, userId: currentUser.id, type: 'status_change'
                 });
             }
-
             if (taskData.priority && taskData.priority !== editingTask.priority) {
                 newActivityLog.push({ 
                     id: Date.now().toString() + Math.random(), 
                     action: 'changed priority', 
                     details: `From ${editingTask.priority} → ${taskData.priority}`,
-                    timestamp,
-                    userName: currentUser.username,
-                    userId: currentUser.id,
-                    type: 'priority_change'
+                    timestamp, userName: currentUser.username, userId: currentUser.id, type: 'priority_change'
                 });
             }
-
             if (taskData.assignee && taskData.assignee !== editingTask.assignee) {
                newActivityLog.push({
                   id: Date.now().toString() + Math.random(),
                   action: 'assigned task',
                   details: `Assigned to ${taskData.assignee}`,
-                  timestamp,
-                  userName: currentUser.username,
-                  userId: currentUser.id,
-                  type: 'assign'
+                  timestamp, userName: currentUser.username, userId: currentUser.id, type: 'assign'
                });
             }
-            
-            // Handle Attachments logging if added (simple check)
             if (taskData.attachments && taskData.attachments.length > (editingTask.attachments?.length || 0)) {
                newActivityLog.push({
                    id: Date.now().toString() + Math.random(),
                    action: 'uploaded attachment',
                    details: 'Added a new file',
-                   timestamp,
-                   userName: currentUser.username,
-                   userId: currentUser.id,
-                   type: 'attachment'
+                   timestamp, userName: currentUser.username, userId: currentUser.id, type: 'attachment'
                });
             }
 
-            const finalActivityLog = [
-                ...(taskData.activityLog || []), 
-                ...newActivityLog
-            ];
-            
+            const finalActivityLog = [...(taskData.activityLog || []), ...newActivityLog];
             const taskRef = doc(db, 'tasks', editingTask.id);
-            await updateDoc(taskRef, {
-                ...taskData,
-                activityLog: finalActivityLog,
-                updatedAt: serverTimestamp()
-            });
+            await updateDoc(taskRef, { ...taskData, activityLog: finalActivityLog, updatedAt: serverTimestamp() });
+            notify('success', "Task updated");
 
         } else {
             if (!selectedProjectId) {
-                alert("Please select a project first.");
+                notify('warning', "Please select a project first");
                 return;
             }
-            
             const newTaskData = {
                 ownerId: currentUser.id,
                 projectId: selectedProjectId, 
@@ -652,10 +551,7 @@ const App: React.FC = () => {
                 activityLog: [{ 
                     id: Date.now().toString(), 
                     action: 'created this task', 
-                    timestamp,
-                    userName: currentUser.username,
-                    userId: currentUser.id,
-                    type: 'create'
+                    timestamp, userName: currentUser.username, userId: currentUser.id, type: 'create'
                 }],
                 attachments: taskData.attachments || [],
                 tags: taskData.tags || [],
@@ -664,27 +560,28 @@ const App: React.FC = () => {
                 description: taskData.description || '',
                 createdAt: serverTimestamp()
             };
-            
             await addDoc(collection(db, 'tasks'), newTaskData);
+            notify('success', "Task created successfully");
         }
         setIsTaskModalOpen(false);
         setEditingTask(undefined);
         setInitialTaskDate(undefined);
     } catch (error) {
         console.error("Error saving task:", error);
-        alert("Failed to save task. Please check your connection.");
+        notify('error', "Failed to save task");
     }
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    if (!window.confirm("Are you sure you want to delete this task? This cannot be undone.")) return;
+    if (!window.confirm("Are you sure you want to delete this task?")) return;
     try {
       await deleteDoc(doc(db, 'tasks', taskId));
       setIsTaskModalOpen(false);
       setEditingTask(undefined);
+      notify('success', "Task deleted");
     } catch (error) {
       console.error("Error deleting task:", error);
-      alert("Failed to delete task.");
+      notify('error', "Failed to delete task");
     }
   };
 
@@ -693,27 +590,18 @@ const App: React.FC = () => {
     const timestamp = new Date().toISOString();
     try {
         const taskToUpdate = tasks.find(t => t.id === taskId);
-        if (!taskToUpdate) return;
+        if (!taskToUpdate || taskToUpdate.status === newStatus) return;
         
-        if (taskToUpdate.status === newStatus) return;
-
         const newLog = { 
             id: Date.now().toString() + Math.random(), 
             action: 'changed status', 
             details: `Moved to ${newStatus}`,
-            timestamp,
-            userName: currentUser.username,
-            userId: currentUser.id,
-            type: 'move' as const
+            timestamp, userName: currentUser.username, userId: currentUser.id, type: 'move' as const
         };
         const updatedLogs = [...(taskToUpdate.activityLog || []), newLog];
-
         const taskRef = doc(db, 'tasks', taskId);
-        await updateDoc(taskRef, {
-            status: newStatus,
-            activityLog: updatedLogs,
-            updatedAt: serverTimestamp()
-        });
+        await updateDoc(taskRef, { status: newStatus, activityLog: updatedLogs, updatedAt: serverTimestamp() });
+        // Optional: notify('info', `Task moved to ${newStatus}`, 1000); 
     } catch (error) {
         console.error("Error updating task status:", error);
     }
@@ -721,7 +609,7 @@ const App: React.FC = () => {
 
   const openNewTaskModal = (date?: string) => {
     if (!selectedProjectId) {
-        alert("Please select or create a project first.");
+        notify('info', "Please select or create a project first");
         return;
     }
     setEditingTask(undefined);
@@ -739,9 +627,13 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings') {
-         return <ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} />;
+         return <ProjectHub 
+                  projects={projects} 
+                  onSelectProject={handleSelectProject} 
+                  userName={userSettings.userName} 
+                  onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
+                />;
     }
-
     const NoResultsState = () => (
       <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl animate-fade-in bg-white dark:bg-slate-800/50">
         <Search size={48} className="mb-4 opacity-20" />
@@ -753,34 +645,34 @@ const App: React.FC = () => {
     switch (activeTab) {
       case 'dashboard': return (
         <Dashboard 
-            tasks={tasks} 
-            projects={projects}
-            columns={columns}
-            onAddTask={() => openNewTaskModal()} 
-            onTaskClick={openEditTaskModal}
-            onNavigate={handleDashboardNavigation}
-            userName={userSettings.userName}
+            tasks={tasks} projects={projects} columns={columns}
+            onAddTask={() => openNewTaskModal()} onTaskClick={openEditTaskModal}
+            onNavigate={handleDashboardNavigation} userName={userSettings.userName}
+            onStatusChange={handleDropTask}
         />
       );
       case 'image-gen': return <ImageGenerator />;
-      case 'projects': return <ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} />;
+      case 'projects': return (
+        <ProjectHub 
+            projects={projects} 
+            onSelectProject={handleSelectProject} 
+            userName={userSettings.userName} 
+            onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
+        />
+      );
       case 'kanban': return (
         <div className="flex flex-col h-full">
             <FilterBar 
               searchQuery={searchQuery} setSearchQuery={setSearchQuery} 
               filterPriority={filterPriority} setFilterPriority={setFilterPriority} 
               filterStatus={filterStatus} setFilterStatus={setFilterStatus} 
-              onReset={resetFilters} 
-              columns={columns}
+              onReset={resetFilters} columns={columns}
             />
             {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : 
             <KanbanBoard 
-              tasks={filteredTasks} 
-              columns={columns} 
-              onAddTask={() => openNewTaskModal()} 
-              onDropTask={handleDropTask} 
-              onTaskClick={openEditTaskModal} 
-              onAddColumn={handleAddColumn}
+              tasks={filteredTasks} columns={columns} 
+              onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} 
+              onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn}
             />}
         </div>
       );
@@ -790,8 +682,7 @@ const App: React.FC = () => {
                searchQuery={searchQuery} setSearchQuery={setSearchQuery} 
                filterPriority={filterPriority} setFilterPriority={setFilterPriority} 
                filterStatus={filterStatus} setFilterStatus={setFilterStatus} 
-               onReset={resetFilters}
-               columns={columns} 
+               onReset={resetFilters} columns={columns} 
              />
              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : 
              <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />}
@@ -803,36 +694,21 @@ const App: React.FC = () => {
                searchQuery={searchQuery} setSearchQuery={setSearchQuery} 
                filterPriority={filterPriority} setFilterPriority={setFilterPriority} 
                filterStatus={filterStatus} setFilterStatus={setFilterStatus} 
-               onReset={resetFilters}
-               columns={columns} 
+               onReset={resetFilters} columns={columns} 
              />
              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : 
-             <CalendarView 
-               tasks={filteredTasks} 
-               onTaskClick={openEditTaskModal} 
-               onAddTask={openNewTaskModal} 
-             />}
+             <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />}
         </div>
       );
       case 'settings': return (
         <SettingsView 
-            tasks={filteredTasks} 
-            setTasks={setTasks} 
-            userSettings={userSettings} 
-            setUserSettings={setUserSettings} 
-            isDarkMode={isDarkMode} 
-            toggleDarkMode={toggleDarkMode}
-            onLogout={handleLogout}
-            columns={columns}
-            onAddColumn={handleAddColumn}
-            onDeleteColumn={handleDeleteColumn}
-            onClose={() => {
-                if (selectedProjectId) setActiveTab('dashboard');
-                else setActiveTab('projects');
-            }}
+            tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} 
+            isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout}
+            columns={columns} onAddColumn={handleAddColumn} onDeleteColumn={handleDeleteColumn}
+            onClose={() => { if (selectedProjectId) setActiveTab('dashboard'); else setActiveTab('projects'); }}
         />
       );
-      default: return <Dashboard tasks={filteredTasks} projects={projects} columns={columns} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} />;
+      default: return <Dashboard tasks={filteredTasks} projects={projects} columns={columns} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} />;
     }
   };
 
@@ -873,37 +749,22 @@ const App: React.FC = () => {
         {currentUser.email === 'admin@dev.com' && <DevToolbar currentUser={currentUser} />}
 
         <Sidebar 
-          activeTab={activeTab} 
-          setActiveTab={setActiveTab}
-          isMobileOpen={isMobileOpen}
-          setIsMobileOpen={setIsMobileOpen}
-          onAddTask={() => openNewTaskModal()}
-          isDarkMode={isDarkMode}
-          toggleDarkMode={toggleDarkMode}
-          userName={userSettings.userName}
-          userTitle={userSettings.userTitle}
-          projects={projects}
-          selectedProjectId={selectedProjectId}
-          onSelectProject={handleSelectProject}
-          onCreateProject={() => {
-              setProjectToEdit(null);
-              setIsProjectModalOpen(true);
-          }}
+          activeTab={activeTab} setActiveTab={setActiveTab}
+          isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen}
+          onAddTask={() => openNewTaskModal()} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}
+          userName={userSettings.userName} userTitle={userSettings.userTitle}
+          projects={projects} selectedProjectId={selectedProjectId} onSelectProject={handleSelectProject}
+          onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
           isDesktopOpen={isSidebarOpen}
         />
         <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
-          {/* Dynamic Watermark Background */}
           <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
 
-          {/* Main Header */}
           <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between sticky top-0 z-40 h-16 relative">
              <div className="flex items-center gap-3">
-                {/* Mobile Trigger */}
                 <button onClick={() => setIsMobileOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">
                    <Menu size={24} />
                 </button>
-                
-                {/* Desktop Sidebar Toggle */}
                 <button 
                   onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
                   className="hidden md:flex p-2 -ml-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
@@ -911,7 +772,6 @@ const App: React.FC = () => {
                 >
                    <PanelLeft size={20} />
                 </button>
-
                 {currentProject && (
                    <div>
                       <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{currentProject.name}</h2>
@@ -930,7 +790,6 @@ const App: React.FC = () => {
                    >
                       <Settings size={20} />
                    </button>
-                   
                    {isProjectSettingsOpen && (
                      <>
                        <div className="fixed inset-0 z-40" onClick={() => setIsProjectSettingsOpen(false)}></div>
@@ -945,7 +804,6 @@ const App: React.FC = () => {
                           >
                              <Edit3 size={16} /> Project Settings
                           </button>
-                          {/* Only owner can delete */}
                           {currentProject?.ownerId === currentUser.id && (
                               <button 
                                 onClick={() => {
@@ -970,42 +828,33 @@ const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Modals */}
       <TaskModal 
-        isOpen={isTaskModalOpen} 
-        onClose={() => setIsTaskModalOpen(false)} 
-        onSubmit={handleSaveTask}
-        onDelete={editingTask ? handleDeleteTask : undefined}
-        task={editingTask}
-        currentUser={currentUser.username}
-        availableTags={availableTags}
-        onCreateTag={handleCreateTag}
-        columns={columns}
-        projectMembers={currentProject?.members || []}
-        initialDate={initialTaskDate}
+        isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} onSubmit={handleSaveTask}
+        onDelete={editingTask ? handleDeleteTask : undefined} task={editingTask}
+        currentUser={currentUser.username} availableTags={availableTags} onCreateTag={handleCreateTag}
+        columns={columns} projectMembers={currentProject?.members || []} initialDate={initialTaskDate}
       />
 
       <ProjectModal
-         isOpen={isProjectModalOpen}
-         onClose={() => setIsProjectModalOpen(false)}
+         isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)}
          onSubmit={projectToEdit ? handleUpdateProject : handleCreateProject}
-         project={projectToEdit}
-         currentUser={{
-           uid: currentUser.id,
-           email: currentUser.email,
-           displayName: currentUser.username
-         }}
+         project={projectToEdit} currentUser={{ uid: currentUser.id, email: currentUser.email, displayName: currentUser.username }}
       />
 
       <ReminderModal 
-        isOpen={isReminderModalOpen}
-        onClose={() => setIsReminderModalOpen(false)}
-        tasks={reminderTasks}
-        onTaskClick={openEditTaskModal}
-        onSnooze={handleSnooze}
+        isOpen={isReminderModalOpen} onClose={() => setIsReminderModalOpen(false)}
+        tasks={reminderTasks} onTaskClick={openEditTaskModal} onSnooze={handleSnooze}
       />
     </div>
   );
 };
+
+const App = () => {
+  return (
+    <NotificationProvider>
+      <ProManageApp />
+    </NotificationProvider>
+  )
+}
 
 export default App;

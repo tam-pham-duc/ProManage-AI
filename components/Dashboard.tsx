@@ -18,7 +18,8 @@ import {
   Paperclip,
   AlertTriangle,
   MoveRight,
-  Calendar
+  Calendar,
+  ChevronDown
 } from 'lucide-react';
 import { MetricCardProps, Task, Project, Tab, KanbanColumn } from '../types';
 import WelcomeBanner from './WelcomeBanner';
@@ -30,6 +31,7 @@ interface DashboardProps {
   onAddTask?: () => void;
   onTaskClick?: (task: Task) => void;
   onNavigate?: (tab: Tab, filterStatus?: string) => void;
+  onStatusChange?: (taskId: string, newStatus: string) => void;
   userName?: string;
 }
 
@@ -98,7 +100,16 @@ const StickyNote: React.FC = () => {
 };
 
 // --- Upcoming Deadlines Component ---
-const UpcomingDeadlines: React.FC<{ tasks: Task[]; onTaskClick?: (task: Task) => void }> = ({ tasks, onTaskClick }) => {
+interface UpcomingDeadlinesProps {
+  tasks: Task[];
+  onTaskClick?: (task: Task) => void;
+  onStatusChange?: (taskId: string, newStatus: string) => void;
+  columns?: KanbanColumn[];
+}
+
+const UpcomingDeadlines: React.FC<UpcomingDeadlinesProps> = ({ tasks, onTaskClick, onStatusChange, columns = [] }) => {
+    const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+
     const deadlines = useMemo(() => {
         return tasks
             .filter(t => t.status !== 'Done')
@@ -132,7 +143,7 @@ const UpcomingDeadlines: React.FC<{ tasks: Task[]; onTaskClick?: (task: Task) =>
                         <div
                             key={task.id}
                             onClick={() => onTaskClick && onTaskClick(task)}
-                            className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 cursor-pointer transition-all group"
+                            className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 cursor-pointer transition-all group relative"
                         >
                             <div className="flex justify-between items-start mb-1">
                                 <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 line-clamp-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mr-2">
@@ -144,17 +155,56 @@ const UpcomingDeadlines: React.FC<{ tasks: Task[]; onTaskClick?: (task: Task) =>
                                     <Clock size={14} className="text-amber-500 shrink-0" />
                                 ) : null}
                             </div>
-                            <div className="flex justify-between items-center text-xs">
+                            <div className="flex justify-between items-center text-xs relative z-10">
                                 <span className={`font-medium ${isOverdue ? 'text-red-600 dark:text-red-400' : isToday ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
                                     {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                                 </span>
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                    task.priority === 'High' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300' : 
-                                    task.priority === 'Medium' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300' : 
-                                    'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
-                                }`}>
-                                    {task.priority}
-                                </span>
+                                
+                                <div className="relative">
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveDropdown(activeDropdown === task.id ? null : task.id);
+                                        }}
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 hover:brightness-95 transition-all border border-transparent hover:border-black/10 dark:hover:border-white/20 ${
+                                            task.priority === 'High' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300' : 
+                                            task.priority === 'Medium' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300' : 
+                                            'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400'
+                                        }`}
+                                        title="Click to change status"
+                                    >
+                                        {task.priority}
+                                        <ChevronDown size={10} className="opacity-60" />
+                                    </button>
+
+                                    {/* Status Dropdown */}
+                                    {activeDropdown === task.id && (
+                                        <>
+                                            <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setActiveDropdown(null); }}></div>
+                                            <div className="absolute right-0 bottom-full mb-1 w-36 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-fade-in">
+                                                <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                                    Move to...
+                                                </div>
+                                                <div className="max-h-32 overflow-y-auto custom-scrollbar p-1">
+                                                    {columns.map(col => (
+                                                        <button
+                                                            key={col.id}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (onStatusChange) onStatusChange(task.id, col.title);
+                                                                setActiveDropdown(null);
+                                                            }}
+                                                            className={`w-full text-left px-2 py-1.5 rounded-md text-xs font-medium flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors ${task.status === col.title ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20' : 'text-slate-700 dark:text-slate-300'}`}
+                                                        >
+                                                            {col.title}
+                                                            {task.status === col.title && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )
@@ -279,7 +329,7 @@ const formatCurrency = (amount: number) => {
   }).format(amount);
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [], onAddTask, onTaskClick, onNavigate, userName }) => {
+const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [], onAddTask, onTaskClick, onNavigate, onStatusChange, userName }) => {
   const stats = useMemo(() => {
     const total = tasks.length;
     const inProgress = tasks.filter(t => t.status === 'In Progress').length;
@@ -558,7 +608,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
 
         {/* Upcoming Deadlines (New) */}
         <div className="lg:col-span-1">
-          <UpcomingDeadlines tasks={tasks} onTaskClick={onTaskClick} />
+          <UpcomingDeadlines tasks={tasks} onTaskClick={onTaskClick} onStatusChange={onStatusChange} columns={columns} />
         </div>
       </div>
 

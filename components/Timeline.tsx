@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { Task } from '../types';
-import { User, Calendar, AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { User, Calendar, AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Clock } from 'lucide-react';
 
 interface TimelineProps {
   tasks: Task[];
@@ -36,13 +36,14 @@ interface TimelineTaskCardProps {
   width: number;
   top: number;
   isOverdue: boolean;
+  isDueToday: boolean;
   status: string;
   priority: string;
   onClick?: (task: Task) => void;
 }
 
 const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({ 
-    task, left, width, top, isOverdue, status, priority, onClick 
+    task, left, width, top, isOverdue, isDueToday, status, priority, onClick 
 }) => {
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -67,9 +68,14 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
       bgClass = 'bg-rose-100 border-rose-200 text-rose-800 dark:bg-rose-900/40 dark:border-rose-800 dark:text-rose-300';
   }
 
-  // Overdue Override (Higher Z-Index z-20)
-  if (isOverdue) {
-      bgClass = 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-300 ring-1 ring-red-500 z-20';
+  // Due Today Override (High Visibility but not Panic)
+  if (isDueToday && status !== 'Done') {
+      bgClass = 'bg-amber-50 border-amber-400 text-amber-800 dark:bg-amber-900/40 dark:border-amber-500 dark:text-amber-200 ring-1 ring-amber-400 z-20';
+  }
+
+  // Overdue Override (Highest Z-Index z-30)
+  if (isOverdue && status !== 'Done') {
+      bgClass = 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-300 ring-1 ring-red-500 z-30 shadow-sm';
   }
 
   return (
@@ -84,7 +90,7 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
         if (onClick) onClick(task);
       }}
       className={`
-          absolute h-8 rounded-lg border flex items-center text-sm font-bold cursor-pointer hover:brightness-95 hover:scale-[1.01] transition-all shadow-sm group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800 z-10 overflow-hidden
+          absolute h-8 rounded-lg border flex items-center text-sm font-bold cursor-pointer hover:brightness-95 hover:scale-[1.01] transition-all shadow-sm group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800 overflow-hidden
           ${bgClass}
       `}
       style={{
@@ -97,6 +103,8 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
       <div className="sticky left-0 z-20 flex items-center px-2 h-full max-w-full gap-1.5">
           {isOverdue ? (
               <AlertTriangle size={14} className="shrink-0 animate-pulse text-red-600 dark:text-red-400 drop-shadow-sm" aria-hidden="true" />
+          ) : isDueToday ? (
+              <Clock size={14} className="shrink-0 text-amber-600 dark:text-amber-400 drop-shadow-sm" aria-hidden="true" />
           ) : status === 'Done' ? (
               <CheckCircle2 size={14} className="shrink-0 text-emerald-600 dark:text-emerald-400 opacity-90 drop-shadow-sm" aria-hidden="true" />
           ) : null}
@@ -109,6 +117,8 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
           <p className="font-bold text-sm">{task.title}</p>
           <p className="text-slate-300">{status} • {priority}</p>
           <p className="text-slate-400">{startDateStr} - {dueDateStr}</p>
+          {isDueToday && <p className="text-amber-400 font-bold mt-1">Due Today</p>}
+          {isOverdue && <p className="text-red-400 font-bold mt-1">Overdue</p>}
       </div>
     </div>
   );
@@ -121,10 +131,11 @@ interface TimelineRowProps {
   windowEndTimestamp: number;
   pixelsPerDay: number;
   nowTs: number;
+  todayDateString: string;
   onTaskClick?: (task: Task) => void;
 }
 
-const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineStartTimestamp, windowEndTimestamp, pixelsPerDay, nowTs, onTaskClick }) => {
+const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineStartTimestamp, windowEndTimestamp, pixelsPerDay, nowTs, todayDateString, onTaskClick }) => {
   
   // Helper to calculate positioning numbers (returns primitives)
   const getTaskCoords = (task: ProcessedTask, laneIdx: number) => {
@@ -137,9 +148,14 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
       const left = startOffsetDays * pixelsPerDay;
       const width = Math.max(durationDays * pixelsPerDay, 4);
       const top = (laneIdx * 38) + 6;
+      
       const isOverdue = task.dueTs < nowTs && task.status !== 'Done';
+      
+      // Check Due Today: Compare task due date string with today's date string
+      const dueDateStr = new Date(task.dueTs).toDateString();
+      const isDueToday = dueDateStr === todayDateString && task.status !== 'Done';
 
-      return { left, width, top, isOverdue };
+      return { left, width, top, isOverdue, isDueToday };
   };
 
   return (
@@ -188,6 +204,7 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
                           width={coords.width}
                           top={coords.top}
                           isOverdue={coords.isOverdue}
+                          isDueToday={coords.isDueToday}
                           status={task.status}
                           priority={task.priority}
                           onClick={onTaskClick} 
@@ -214,6 +231,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
   // Memoize timestamp for passing to pure components
   const timelineStartTimestamp = useMemo(() => timelineStartDate.getTime(), [timelineStartDate]);
   const nowTs = useMemo(() => Date.now(), []);
+  const todayDateString = useMemo(() => new Date().toDateString(), []);
 
   // --- Optimization: Pre-process tasks to use timestamps ---
   const processedTasks = useMemo(() => {
@@ -473,9 +491,9 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
                     <div className="w-2.5 h-2.5 rounded-full bg-emerald-400"></div>
                     <span>Done</span>
                 </div>
-                <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-rose-400"></div>
-                    <span>High Priority</span>
+                 <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400 ring-1 ring-amber-400/50"></div>
+                    <span>Due Today</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                     <div className="w-2.5 h-2.5 rounded-full border-2 border-red-500 bg-red-50 dark:bg-red-900/50"></div>
@@ -574,6 +592,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
                       pixelsPerDay={pixelsPerDay}
                       onTaskClick={onTaskClick}
                       nowTs={nowTs}
+                      todayDateString={todayDateString}
                     />
                 ))}
 

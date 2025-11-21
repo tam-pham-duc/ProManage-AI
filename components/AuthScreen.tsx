@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, Loader2, LayoutDashboard, KanbanSquare, BarChart3 } from 'lucide-react';
+import { Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, Loader2, LayoutDashboard, KanbanSquare, Briefcase as BriefcaseIcon } from 'lucide-react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -29,62 +29,82 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
     setLoadingText('');
 
     const cleanEmail = email.trim();
-    let loginEmail = cleanEmail;
-    let loginPass = password;
     
+    // --- DEV ADMIN BYPASS LOGIC ---
     const isAdminShortcut = isLogin && cleanEmail === 'Admin' && password === 'admin';
 
     if (isAdminShortcut) {
-       loginEmail = 'admin@dev.com';
-       loginPass = 'admin123456';
+       const targetEmail = 'admin@dev.com';
+       const targetPass = 'admin123456';
+       
        if (onSeedingStart) onSeedingStart();
+       setLoadingText('Initializing Dev Environment...');
+
+       try {
+            // Step 1: Try Login
+            await signInWithEmailAndPassword(auth, targetEmail, targetPass);
+            
+            // Step 2: If successful, re-seed data
+            setLoadingText('Seeding Database...');
+            if (auth.currentUser) {
+                await clearDevData(auth.currentUser.uid);
+                await generateDemoData(auth.currentUser.uid);
+            }
+            
+            if (onSeedingEnd) onSeedingEnd();
+            onLoginSuccess();
+            return;
+
+       } catch (err: any) {
+            // Step 3: Handle User Not Found (First Run)
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/invalid-login-credentials') {
+                try {
+                    setLoadingText('Provisioning Admin Account...');
+                    const userCredential = await createUserWithEmailAndPassword(auth, targetEmail, targetPass);
+                    const user = userCredential.user;
+
+                    await updateProfile(user, { displayName: 'Dev Admin' });
+                    await setDoc(doc(db, 'users', user.uid), {
+                        username: 'Dev Admin',
+                        email: targetEmail,
+                        jobTitle: 'System Administrator',
+                        avatar: 'D',
+                        createdAt: new Date().toISOString()
+                    });
+
+                    setLoadingText('Generating Demo Data...');
+                    await generateDemoData(user.uid);
+                    
+                    if (onSeedingEnd) onSeedingEnd();
+                    onLoginSuccess();
+                    return;
+                } catch (createErr: any) {
+                    console.error("Dev account creation failed:", createErr);
+                    setError("Failed to provision dev account: " + createErr.message);
+                    if (onSeedingEnd) onSeedingEnd();
+                    setIsLoading(false);
+                    return;
+                }
+            } else {
+                console.error("Dev login failed:", err);
+                setError("Dev login failed: " + err.message);
+                if (onSeedingEnd) onSeedingEnd();
+                setIsLoading(false);
+                return;
+            }
+       }
     }
 
+    // --- STANDARD AUTH FLOW ---
     try {
       if (isLogin) {
-        try {
-            if (isAdminShortcut) setLoadingText('Authenticating Admin...');
-            const userCred = await signInWithEmailAndPassword(auth, loginEmail, loginPass);
-            
-            if (isAdminShortcut) {
-                setLoadingText('Setting up Demo Environment...');
-                await clearDevData(userCred.user.uid);
-                await generateDemoData(userCred.user.uid);
-                if (onSeedingEnd) onSeedingEnd();
-            }
-
-        } catch (loginErr: any) {
-            if (loginEmail === 'admin@dev.com' && 
-               (loginErr.code === 'auth/user-not-found' || 
-                loginErr.code === 'auth/invalid-login-credentials' || 
-                loginErr.code === 'auth/invalid-credential')) {
-                
-                setLoadingText('Provisioning Admin Account...');
-                const userCredential = await createUserWithEmailAndPassword(auth, loginEmail, loginPass);
-                const user = userCredential.user;
-                
-                await updateProfile(user, { displayName: 'Dev Admin' });
-                await setDoc(doc(db, 'users', user.uid), {
-                    username: 'Dev Admin',
-                    email: loginEmail,
-                    jobTitle: 'System Administrator',
-                    avatar: 'D',
-                    createdAt: new Date().toISOString()
-                });
-
-                setLoadingText('Generating Demo Data...');
-                await generateDemoData(user.uid);
-                if (onSeedingEnd) onSeedingEnd();
-            } else {
-                if (isAdminShortcut && onSeedingEnd) onSeedingEnd();
-                throw loginErr;
-            }
-        }
+        setLoadingText('Signing in...');
+        await signInWithEmailAndPassword(auth, cleanEmail, password);
       } else {
         if (!username || !cleanEmail || !password) {
           throw new Error('Please fill in all fields');
         }
-
+        setLoadingText('Creating account...');
         const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
         const user = userCredential.user;
 
@@ -103,12 +123,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
       }
       onLoginSuccess();
     } catch (err: any) {
-      if (err.code !== 'auth/invalid-email' && err.code !== 'auth/wrong-password') {
-          console.error(err);
-      }
-      
-      if (isAdminShortcut && onSeedingEnd) onSeedingEnd();
-      
+      console.error(err);
       let msg = 'An unexpected error occurred';
       if (err.code === 'auth/invalid-email') msg = 'Invalid email address format.';
       if (err.code === 'auth/user-disabled') msg = 'This account has been disabled.';
@@ -120,9 +135,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
       if (err.code === 'auth/weak-password') msg = 'Password should be at least 6 characters.';
       
       setError(msg);
-    } finally {
       setIsLoading(false);
-      setLoadingText('');
     }
   };
 
@@ -426,12 +439,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
                      {isLogin ? 'Sign up now' : 'Log in'}
                    </button>
                  </p>
-                 
-                 {isLogin && (
-                    <div className="mt-6 inline-block text-xs text-slate-500 dark:text-slate-500 bg-slate-50 dark:bg-slate-900 py-2 px-4 rounded-full border border-slate-100 dark:border-slate-800">
-                        <span className="font-bold text-slate-700 dark:text-slate-400">Dev Hint:</span> User: <code className="text-indigo-500 font-mono">Admin</code> / Pass: <code className="text-indigo-500 font-mono">admin</code>
-                    </div>
-                 )}
             </div>
          </div>
 
@@ -446,12 +453,5 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
   );
 };
 
-// Simple Icon Component
-const BriefcaseIcon = ({ size, className }: { size: number, className?: string }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-        <rect width="20" height="14" x="2" y="7" rx="2" ry="2" />
-        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-    </svg>
-);
-
 export default AuthScreen;
+    
