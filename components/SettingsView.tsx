@@ -1,10 +1,10 @@
 
-import React, { useRef, useState } from 'react';
-import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck } from 'lucide-react';
 import { Task, UserSettings, Tab, TaskPriority, KanbanColumn } from '../types';
 import { auth, db } from '../firebase';
-import { signOut } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { signOut, updateProfile, updatePassword } from 'firebase/auth';
+import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 
 interface SettingsViewProps {
   tasks: Task[];
@@ -17,7 +17,7 @@ interface SettingsViewProps {
   columns?: KanbanColumn[];
   onAddColumn?: (title: string, color: string) => void;
   onDeleteColumn?: (columnId: string) => void;
-  onClose: () => void; // New prop for closing settings
+  onClose: () => void; 
 }
 
 type SettingsTab = 'general' | 'preferences' | 'data';
@@ -93,13 +93,33 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteColumn,
   onClose
 }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('preferences'); // Default to preferences to show new feature
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
+  
+  // --- General Tab State ---
+  const [profileName, setProfileName] = useState(userSettings.userName);
+  const [profileTitle, setProfileTitle] = useState(userSettings.userTitle);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(auth.currentUser?.photoURL || null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Data Tab State ---
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   
-  // Kanban Column Local State
+  // --- Kanban Column Local State ---
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [newColumnColor, setNewColumnColor] = useState('blue');
+
+  // Sync local state if props change (optional, mostly for initial load)
+  useEffect(() => {
+    setProfileName(userSettings.userName);
+    setProfileTitle(userSettings.userTitle);
+    if (auth.currentUser?.photoURL) {
+        setAvatarPreview(auth.currentUser.photoURL);
+    }
+  }, [userSettings]);
 
   const handleLogout = async () => {
     try {
@@ -109,6 +129,93 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         console.error("Error signing out:", error);
     }
   };
+
+  // --- Profile Handlers ---
+
+  const handleAvatarClick = () => {
+    avatarInputRef.current?.click();
+  };
+
+  const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      // Basic size check (e.g., 2MB limit for Firestore Base64)
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Image is too large. Please choose an image under 2MB.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAvatarPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (newPassword && newPassword !== confirmPassword) {
+        alert("Passwords do not match.");
+        return;
+    }
+    
+    if (newPassword && newPassword.length < 6) {
+        alert("Password should be at least 6 characters.");
+        return;
+    }
+
+    setIsSavingProfile(true);
+
+    try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("No user logged in");
+
+        // 1. Update Firebase Auth Profile
+        await updateProfile(user, {
+            displayName: profileName,
+            photoURL: avatarPreview
+        });
+
+        // 2. Update Password if provided
+        if (newPassword) {
+            await updatePassword(user, newPassword);
+        }
+
+        // 3. Update Firestore Document (Source of Truth for App)
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
+            username: profileName,
+            jobTitle: profileTitle,
+            avatar: avatarPreview || undefined, // Save base64 string or URL
+            // Only update these if they changed
+        });
+
+        // 4. Update Local App State
+        setUserSettings(prev => ({
+            ...prev,
+            userName: profileName,
+            userTitle: profileTitle
+        }));
+
+        alert("Profile updated successfully!");
+        setNewPassword('');
+        setConfirmPassword('');
+        
+    } catch (error: any) {
+        console.error("Error updating profile:", error);
+        if (error.code === 'auth/requires-recent-login') {
+            alert("For security, please log out and log back in to change your password.");
+        } else {
+            alert("Failed to update profile. " + error.message);
+        }
+    } finally {
+        setIsSavingProfile(false);
+    }
+  };
+
+  // --- Data Handlers ---
 
   const handleExport = () => {
     const dataStr = JSON.stringify(tasks, null, 2);
@@ -305,50 +412,130 @@ const SettingsView: React.FC<SettingsViewProps> = ({
           {/* Tab: General */}
           {activeTab === 'general' && (
             <div className="max-w-xl space-y-8 animate-fade-in">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Profile Information</h2>
-                <div className="space-y-6">
-                   <div className="flex items-center gap-4">
-                      <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg">
-                        {userSettings.userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-900 dark:text-white">Profile Picture</p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Generated automatically from your name.</p>
-                      </div>
-                   </div>
+              <form onSubmit={handleSaveProfile} className="space-y-8">
+                {/* Profile Header with Avatar */}
+                <div className="flex items-center gap-6">
+                  <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-3xl font-bold text-white shadow-lg overflow-hidden border-4 border-white dark:border-slate-700">
+                      {avatarPreview ? (
+                        <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" />
+                      ) : (
+                        profileName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+                      )}
+                    </div>
+                    {/* Camera Overlay */}
+                    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Camera className="text-white" size={24} />
+                    </div>
+                    <input 
+                        type="file" 
+                        ref={avatarInputRef} 
+                        onChange={handleAvatarChange} 
+                        className="hidden" 
+                        accept="image/*" 
+                    />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Profile Information</h2>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Update your photo and personal details.</p>
+                  </div>
+                </div>
 
+                {/* Editable Fields */}
+                <div className="space-y-5">
                    <div>
-                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Display Name</label>
+                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Display Name</label>
                      <input 
                        type="text" 
-                       value={userSettings.userName}
-                       readOnly
-                       className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 cursor-not-allowed"
+                       value={profileName}
+                       onChange={(e) => setProfileName(e.target.value)}
+                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all"
+                       required
                      />
                    </div>
 
                    <div>
-                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Job Title</label>
+                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Job Title</label>
                      <input 
                        type="text" 
-                       value={userSettings.userTitle}
-                       readOnly
-                       className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-600 cursor-not-allowed"
+                       value={profileTitle}
+                       onChange={(e) => setProfileTitle(e.target.value)}
+                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all"
+                       placeholder="e.g. Project Manager"
                      />
-                   </div>
-
-                   <div className="pt-6 mt-6 border-t border-slate-100 dark:border-slate-700">
-                      <button 
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 text-red-600 dark:text-red-400 font-medium hover:text-red-700 dark:hover:text-red-300 transition-colors px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                      >
-                        <LogOut size={18} />
-                        Log Out
-                      </button>
                    </div>
                 </div>
-              </div>
+
+                <div className="h-px bg-slate-100 dark:bg-slate-700 my-6"></div>
+
+                {/* Account Security */}
+                <div className="space-y-5">
+                    <div className="flex items-center gap-2 mb-2">
+                        <ShieldCheck className="text-indigo-600 dark:text-indigo-400" size={20} />
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Account Security</h3>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Email Address</label>
+                        <div className="relative">
+                            <input 
+                                type="email" 
+                                value={auth.currentUser?.email || ''}
+                                disabled
+                                className="w-full pl-4 pr-10 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed font-medium"
+                            />
+                            <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1.5">Contact admin to change email.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">New Password</label>
+                            <input 
+                                type="password" 
+                                value={newPassword}
+                                onChange={(e) => setNewPassword(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all"
+                                placeholder="••••••••"
+                                autoComplete="new-password"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Confirm Password</label>
+                            <input 
+                                type="password" 
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className={`w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all ${confirmPassword && newPassword !== confirmPassword ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
+                                placeholder="••••••••"
+                                autoComplete="new-password"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="pt-6 flex items-center justify-between border-t border-slate-100 dark:border-slate-700">
+                    <button 
+                        type="button"
+                        onClick={handleLogout}
+                        className="flex items-center gap-2 text-red-600 dark:text-red-400 font-bold hover:text-red-700 dark:hover:text-red-300 transition-colors px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
+                    >
+                        <LogOut size={16} />
+                        Log Out
+                    </button>
+
+                    <button 
+                        type="submit"
+                        disabled={isSavingProfile}
+                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 disabled:opacity-70"
+                    >
+                        {isSavingProfile ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                        Save Changes
+                    </button>
+                </div>
+              </form>
             </div>
           )}
 

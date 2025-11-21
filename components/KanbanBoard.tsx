@@ -44,51 +44,54 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/60 dark:border-slate-700 shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer group relative select-none
+        bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/60 dark:border-slate-700 shadow-sm hover:shadow-lg transition-all duration-300 cursor-pointer group relative select-none flex flex-col justify-between min-h-[140px]
         ${isDragging ? 'opacity-60 rotate-2 scale-95 ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900' : 'hover:-translate-y-1'}
       `}
     >
-      {/* Header: Tags & Priority */}
-      <div className="flex justify-between items-start mb-3 gap-2">
-        <div className="flex flex-wrap gap-1.5 flex-1">
-           {task.tags && task.tags.length > 0 ? (
-              task.tags.map(tag => (
-                <span key={tag.id} className={`px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide ${tag.colorClass}`}>
-                  {tag.name}
-                </span>
-              ))
-           ) : (
-             <span className="h-4"></span> // Spacer
-           )}
+      {/* Top Section: Content Wrapper */}
+      <div>
+        {/* Header: Tags & Priority */}
+        <div className="flex justify-between items-start mb-2 gap-2">
+          <div className="flex flex-wrap gap-1.5 flex-1">
+             {task.tags && task.tags.length > 0 ? (
+                task.tags.map(tag => (
+                  <span key={tag.id} className={`px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-wide ${tag.colorClass}`}>
+                    {tag.name}
+                  </span>
+                ))
+             ) : (
+               <span className="h-4"></span> // Spacer to maintain height if no tags
+             )}
+          </div>
+          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${priorityStyles[task.priority]}`}>
+            {task.priority}
+          </span>
         </div>
-        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${priorityStyles[task.priority]}`}>
-          {task.priority}
-        </span>
-      </div>
 
-      {/* Title */}
-      <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 text-sm leading-relaxed">
-        {task.title}
-      </h4>
-      
-      {/* Progress Bar */}
-      {totalSubtasks > 0 && (
-        <div className="mb-3 group/progress">
-          <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
-            <div className="flex items-center gap-1">
-               <CheckSquare size={10} />
-               <span>{Math.round(progress)}%</span>
+        {/* Title */}
+        <h4 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 text-sm leading-relaxed text-left line-clamp-3 mt-0">
+          {task.title}
+        </h4>
+        
+        {/* Progress Bar */}
+        {totalSubtasks > 0 && (
+          <div className="mb-3 group/progress">
+            <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
+              <div className="flex items-center gap-1">
+                 <CheckSquare size={10} />
+                 <span>{Math.round(progress)}%</span>
+              </div>
+              <span>{completedSubtasks}/{totalSubtasks}</span>
             </div>
-            <span>{completedSubtasks}/{totalSubtasks}</span>
+            <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full transition-all duration-500 ${completedSubtasks === totalSubtasks ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                style={{ width: `${progress}%` }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-            <div 
-              className={`h-full rounded-full transition-all duration-500 ${completedSubtasks === totalSubtasks ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Footer: Meta Data */}
       <div className="flex items-center justify-between pt-3 border-t border-slate-50 dark:border-slate-700/50 mt-auto">

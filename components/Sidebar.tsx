@@ -247,7 +247,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
 
             <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={() => setActiveTab('settings')}>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-400 to-purple-400 border-2 border-slate-700 shrink-0 flex items-center justify-center text-white font-bold text-sm shadow-sm">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-400 to-purple-400 border border-white/10 shadow-lg shadow-black/20 shrink-0 flex items-center justify-center text-white font-bold text-sm ring-1 ring-black/20">
                 {initials}
                 </div>
                 <div className="min-w-0">
