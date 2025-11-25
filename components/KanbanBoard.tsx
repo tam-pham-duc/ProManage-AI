@@ -13,6 +13,7 @@ interface KanbanBoardProps {
   onAddColumn?: (title: string, color: string) => void;
   isReadOnly?: boolean;
   allTasks?: Task[];
+  onDeleteTask?: (taskId: string) => void;
 }
 
 interface TaskCardProps {
@@ -23,9 +24,10 @@ interface TaskCardProps {
   isDragging: boolean;
   isReadOnly?: boolean;
   allTasks?: Task[];
+  onDelete?: (taskId: string) => void;
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [] }) => {
+const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [], onDelete }) => {
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
   
   const isActive = activeTimer?.taskId === task.id;
@@ -154,6 +156,21 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       `}
       title={isBlocked ? `Blocked by: ${blockingTaskTitles}` : ''}
     >
+      {/* Quick Delete Button */}
+      {!isReadOnly && onDelete && (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(task.id);
+            }}
+            className="absolute top-2 right-2 z-30 opacity-0 group-hover:opacity-100 transition-all duration-200 p-1.5 rounded-full text-slate-400 hover:bg-red-500 hover:text-white shadow-sm bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm transform scale-90 hover:scale-100"
+            title="Quick Delete"
+          >
+            <X size={14} strokeWidth={2.5} />
+          </button>
+      )}
+
       {/* Blocked Overlay / Icon with Tooltip */}
       {isBlocked && (
           <div className="absolute -top-2 -right-2 z-30 group/blocked">
@@ -339,6 +356,7 @@ interface KanbanColumnProps {
   onDropTask: (taskId: string, newStatus: TaskStatus) => void;
   isReadOnly?: boolean;
   allTasks?: Task[];
+  onDeleteTask?: (taskId: string) => void;
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({ 
@@ -351,7 +369,8 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onDragEnd,
   onDropTask,
   isReadOnly,
-  allTasks = []
+  allTasks = [],
+  onDeleteTask
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -505,6 +524,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             isDragging={draggedTaskId === task.id}
             isReadOnly={isReadOnly}
             allTasks={allTasks}
+            onDelete={onDeleteTask}
           />
         ))}
         {tasks.length === 0 && (
@@ -527,7 +547,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
 const HIDDEN_COLUMNS_KEY = 'promanage_hidden_columns_v1';
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, onDropTask, onTaskClick, onAddColumn, isReadOnly = false, allTasks = [] }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, onDropTask, onTaskClick, onAddColumn, isReadOnly = false, allTasks = [], onDeleteTask }) => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
@@ -680,6 +700,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
                 onDropTask={onDropTask}
                 isReadOnly={isReadOnly}
                 allTasks={allTasks}
+                onDeleteTask={onDeleteTask}
                 />
             );
           })}
