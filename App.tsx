@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Menu, Search, Loader2, Settings, Trash2, Edit3, ChevronDown, Copy, PanelLeft, AlertTriangle, Send } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import KanbanBoard from './components/KanbanBoard';
@@ -18,8 +19,11 @@ import ReminderModal from './components/ReminderModal';
 import NotificationCenter from './components/NotificationCenter';
 import TrashView from './components/TrashView';
 import CommandPalette from './components/CommandPalette';
-import ImageGenerator from './components/ImageGenerator'; // Added missing import for Image Generator Tab
+import ImageGenerator from './components/ImageGenerator';
+import ActiveTimerBar from './components/ActiveTimerBar';
+import PageTransition from './components/PageTransition';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
+import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole } from './types';
 
 // Firebase Imports
@@ -570,10 +574,7 @@ const App: React.FC = () => {
     setFilterStatus('All');
   };
 
-  // ... (Task CRUD handlers omitted for brevity - same as original) ...
-  // Re-adding minimal versions required for renderContent:
-  const handleSaveTask = async (taskData: Partial<Task>) => { /* same logic */
-      // Quick re-implementation for context
+  const handleSaveTask = async (taskData: Partial<Task>) => { 
       if (!currentUser) return;
       if (editingTask) {
           // update logic
@@ -593,25 +594,25 @@ const App: React.FC = () => {
       setIsTaskModalOpen(false);
       setEditingTask(undefined);
   };
-  const handleDeleteTask = async (taskId: string) => { /* same logic */
+  const handleDeleteTask = async (taskId: string) => { 
       try {
           await updateDoc(doc(db, 'tasks', taskId), { isDeleted: true, deletedAt: serverTimestamp() });
           setIsTaskModalOpen(false);
           notify('success', 'Moved to trash');
       } catch (e) { notify('error', 'Delete failed'); }
   };
-  const handleDropTask = async (taskId: string, newStatus: TaskStatus) => { /* same logic */
+  const handleDropTask = async (taskId: string, newStatus: TaskStatus) => { 
       try {
           await updateDoc(doc(db, 'tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
       } catch (e) { console.error(e); }
   };
-  const handleAddColumn = async (title: string, color: string) => { /* same logic */
+  const handleAddColumn = async (title: string, color: string) => { 
       if(!currentUser) return;
       const newCols = [...columns, {id: Date.now().toString(), title, color}];
       setColumns(newCols);
       await updateDoc(doc(db, 'users', currentUser.id), { kanbanColumns: newCols });
   };
-  const handleDeleteColumn = async (id: string) => { /* same logic */
+  const handleDeleteColumn = async (id: string) => { 
       if(!currentUser) return;
       const newCols = columns.filter(c => c.id !== id);
       setColumns(newCols);
@@ -638,7 +639,7 @@ const App: React.FC = () => {
 
   const renderContent = () => {
     if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings' && activeTab !== 'trash') {
-         return <ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} />;
+         return <PageTransition key="hub-root"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
     }
     const NoResultsState = () => (
       <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl animate-fade-in bg-white dark:bg-slate-800/50">
@@ -649,16 +650,26 @@ const App: React.FC = () => {
     );
 
     switch (activeTab) {
-      case 'dashboard': return <Dashboard tasks={tasks} projects={projects} columns={columns} onAddTask={() => openNewTaskModal()} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} />;
-      case 'projects': return <ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} />;
-      case 'kanban': return <div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} />}</div>;
-      case 'timeline': return <div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />}</div>;
-      case 'map': return <div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} />}</div>;
-      case 'calendar': return <div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />}</div>;
-      case 'settings': return <SettingsView tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onDeleteColumn={handleDeleteColumn} onClose={() => { if (selectedProjectId) setActiveTab('dashboard'); else setActiveTab('projects'); }} />;
-      case 'trash': return <TrashView />;
-      case 'image-gen': return <ImageGenerator />;
-      default: return <Dashboard tasks={filteredTasks} projects={projects} columns={columns} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} />;
+      case 'dashboard': 
+        return <PageTransition key="dashboard"><Dashboard tasks={tasks} projects={projects} columns={columns} currentProject={currentProject} onAddTask={() => openNewTaskModal()} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} /></PageTransition>;
+      case 'projects': 
+        return <PageTransition key="projects"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
+      case 'kanban': 
+        return <PageTransition key="kanban"><div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} />}</div></PageTransition>;
+      case 'timeline': 
+        return <PageTransition key="timeline"><div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />}</div></PageTransition>;
+      case 'map': 
+        return <PageTransition key="map"><div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} />}</div></PageTransition>;
+      case 'calendar': 
+        return <PageTransition key="calendar"><div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />}</div></PageTransition>;
+      case 'settings': 
+        return <PageTransition key="settings"><SettingsView tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onDeleteColumn={handleDeleteColumn} onClose={() => { if (selectedProjectId) setActiveTab('dashboard'); else setActiveTab('projects'); }} /></PageTransition>;
+      case 'trash': 
+        return <PageTransition key="trash"><TrashView /></PageTransition>;
+      case 'image-gen': 
+        return <PageTransition key="image-gen"><ImageGenerator /></PageTransition>;
+      default: 
+        return <PageTransition key="default-dash"><Dashboard tasks={filteredTasks} projects={projects} columns={columns} currentProject={currentProject} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} /></PageTransition>;
     }
   };
 
@@ -681,16 +692,18 @@ const App: React.FC = () => {
           currentUserRole={userRole}
         />
         <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
-          <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
+          <div className="absolute inset-0 z-0 print:hidden">
+             <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
+          </div>
 
           {auth.currentUser && !auth.currentUser.emailVerified && (
-             <div className="bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 px-4 py-2 text-xs md:text-sm font-bold flex items-center justify-between shadow-sm relative z-50">
+             <div className="bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 px-4 py-2 text-xs md:text-sm font-bold flex items-center justify-between shadow-sm relative z-50 print:hidden">
                 <div className="flex items-center gap-2"><AlertTriangle size={16} /><span>Your email is not verified. Please check your inbox.</span></div>
                 <button onClick={handleResendVerification} className="bg-amber-200 hover:bg-amber-300 dark:bg-amber-800 dark:hover:bg-amber-700 text-amber-900 dark:text-amber-100 px-3 py-1 rounded-md transition-colors flex items-center gap-1"><Send size={12} /> Resend Link</button>
              </div>
           )}
 
-          <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between sticky top-0 z-40 h-16 relative">
+          <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between sticky top-0 z-40 h-16 relative print:hidden">
              <div className="flex items-center gap-3">
                 <button onClick={() => setIsMobileOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><Menu size={24} /></button>
                 <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="hidden md:flex p-2 -ml-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}><PanelLeft size={20} /></button>
@@ -737,9 +750,14 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar relative z-10">
-             {renderContent()}
+          <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar relative z-10 print:p-0 print:overflow-visible overflow-x-hidden">
+             <AnimatePresence mode="wait">
+               {renderContent()}
+             </AnimatePresence>
           </div>
+          
+          {/* Floating Active Timer */}
+          <ActiveTimerBar />
         </main>
       </div>
 
@@ -756,7 +774,7 @@ const App: React.FC = () => {
       <TaskModal 
         isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} onSubmit={handleSaveTask}
         onDelete={editingTask ? handleDeleteTask : undefined} task={editingTask}
-        currentUser={currentUser.username} availableTags={availableTags} onCreateTag={handleCreateTag}
+        currentUser={currentUser.username} currentUserId={currentUser.id} availableTags={availableTags} onCreateTag={handleCreateTag}
         columns={columns} projectMembers={currentProject?.members || []} initialDate={initialTaskDate}
         isReadOnly={modalPermissions.isReadOnly} canEdit={modalPermissions.canEdit} canDelete={modalPermissions.canDelete}
         allTasks={tasks} onTaskSelect={openEditTaskModal}
@@ -780,7 +798,9 @@ const App: React.FC = () => {
 const MainApp = () => {
   return (
     <NotificationProvider>
-      <App />
+      <TimeTrackingProvider>
+        <App />
+      </TimeTrackingProvider>
     </NotificationProvider>
   )
 }

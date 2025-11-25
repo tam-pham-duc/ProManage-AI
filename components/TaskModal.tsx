@@ -1,8 +1,12 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2 } from 'lucide-react';
-import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember } from '../types';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon } from 'lucide-react';
+import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
+import { useTimeTracking } from '../context/TimeTrackingContext';
+import { db } from '../firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { useNotification } from '../context/NotificationContext';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -11,6 +15,7 @@ interface TaskModalProps {
   onDelete?: (taskId: string) => void;
   task?: Task;
   currentUser: string;
+  currentUserId?: string;
   availableTags: Tag[];
   onCreateTag: (name: string) => Tag;
   columns: KanbanColumn[];
@@ -29,6 +34,12 @@ interface TaskModalProps {
   onTaskSelect?: (task: Task) => void;
 }
 
+const toDateTimeLocal = (timestamp: number) => {
+  const d = new Date(timestamp);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 const TaskModal: React.FC<TaskModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -36,6 +47,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   onDelete,
   task, 
   currentUser,
+  currentUserId,
   availableTags,
   onCreateTag,
   columns,
@@ -47,7 +59,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
   allTasks = [],
   onTaskSelect
 }) => {
-  const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'flow'>('details');
+  const { notify } = useNotification();
+  const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
+  const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'flow' | 'timeLogs'>('details');
   
   // Form State
   const [title, setTitle] = useState('');
@@ -97,6 +111,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [dependencies, setDependencies] = useState<string[]>([]);
   const [showDependencyDropdown, setShowDependencyDropdown] = useState(false);
 
+  // Time Log Edit State
+  const [editingLog, setEditingLog] = useState<TimeLog | null>(null);
+  const [editStartTime, setEditStartTime] = useState('');
+  const [editEndTime, setEditEndTime] = useState('');
+
   const activeMembers = useMemo(() => {
       return projectMembers.filter(m => (m.status === 'active' || !m.status) && m.uid !== null);
   }, [projectMembers]);
@@ -120,6 +139,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const isFlowBlocked = useMemo(() => {
       return upstreamTasks.some(t => t.status !== 'Done');
   }, [upstreamTasks]);
+
+  const isTracking = task && activeTimer?.taskId === task.id;
 
   useEffect(() => {
     if (isOpen) {
@@ -188,6 +209,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setMentionHighlightIndex(0);
       setActiveTab('details');
       setShowDependencyDropdown(false);
+      setEditingLog(null);
     }
   }, [isOpen, task, columns, projectMembers, initialDate]);
 
@@ -215,6 +237,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
       .replace(/\n/g, '<br />');
     return html;
   };
+
+  const formatDate = (ts: number) => new Date(ts).toLocaleDateString();
+  const formatTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // Handlers modified to respect isReadOnly...
   const handleAddSubtask = (e?: React.FormEvent) => {
@@ -281,6 +306,67 @@ const TaskModal: React.FC<TaskModalProps> = ({
     setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toLocaleString() }]);
     setNewComment('');
     setShowMentionList(false);
+  };
+
+  // --- TIME LOG MANAGEMENT ---
+  const handleDeleteLog = async (logId: string) => {
+    if (!task) return;
+    if (!window.confirm("Remove this time entry?")) return;
+
+    const updatedLogs = (task.timeLogs || []).filter(l => l.id !== logId);
+    const newTotal = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
+
+    try {
+        await updateDoc(doc(db, 'tasks', task.id), {
+            timeLogs: updatedLogs,
+            totalTimeSeconds: newTotal
+        });
+        notify('success', 'Time log deleted');
+    } catch (e) {
+        console.error(e);
+        notify('error', 'Failed to delete log');
+    }
+  };
+
+  const handleEditLogClick = (log: TimeLog) => {
+    setEditingLog(log);
+    setEditStartTime(toDateTimeLocal(log.startTime));
+    setEditEndTime(toDateTimeLocal(log.endTime));
+  };
+
+  const handleUpdateLog = async () => {
+    if (!task || !editingLog) return;
+    
+    const start = new Date(editStartTime).getTime();
+    const end = new Date(editEndTime).getTime();
+
+    if (isNaN(start) || isNaN(end)) {
+        notify('warning', 'Invalid date/time');
+        return;
+    }
+
+    if (end <= start) {
+        notify('warning', 'End time must be after start time');
+        return;
+    }
+
+    const durationSeconds = Math.floor((end - start) / 1000);
+    
+    const updatedLog = { ...editingLog, startTime: start, endTime: end, durationSeconds };
+    const updatedLogs = (task.timeLogs || []).map(l => l.id === editingLog.id ? updatedLog : l);
+    const newTotal = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
+
+    try {
+        await updateDoc(doc(db, 'tasks', task.id), {
+            timeLogs: updatedLogs,
+            totalTimeSeconds: newTotal
+        });
+        notify('success', 'Time log updated');
+        setEditingLog(null);
+    } catch (e) {
+        console.error(e);
+        notify('error', 'Failed to update log');
+    }
   };
 
   // Mention Logic
@@ -378,16 +464,86 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 border border-slate-200 dark:border-slate-700">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 border border-slate-200 dark:border-slate-700 relative">
+        
+        {/* Edit Log Mini Modal */}
+        {editingLog && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl p-6 w-80 border border-slate-200 dark:border-slate-700 animate-fade-in">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Edit Time Entry</h3>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Start Time</label>
+                            <input 
+                                type="datetime-local" 
+                                value={editStartTime}
+                                onChange={(e) => setEditStartTime(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">End Time</label>
+                            <input 
+                                type="datetime-local" 
+                                value={editEndTime}
+                                onChange={(e) => setEditEndTime(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-2 mt-6">
+                        <button 
+                            onClick={() => setEditingLog(null)}
+                            className="flex-1 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={handleUpdateLog}
+                            className="flex-1 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                            <SaveIcon size={14} />
+                            Save
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/80 shrink-0 backdrop-blur-sm">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <div className="w-2 h-6 bg-indigo-500 rounded-full shadow-sm"></div>
-                {task ? 'Edit Task' : 'New Task'}
-                {isReadOnly && <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md flex items-center gap-1"><Lock size={10} /> Read Only</span>}
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">ID: {task?.id || 'Draft'}</p>
+            <div className="flex items-center gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <div className="w-2 h-6 bg-indigo-500 rounded-full shadow-sm"></div>
+                  {task ? 'Edit Task' : 'New Task'}
+                  {isReadOnly && <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md flex items-center gap-1"><Lock size={10} /> Read Only</span>}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">ID: {task?.id || 'Draft'}</p>
+              </div>
+              
+              {/* Timer Control in Header */}
+              {task && !isReadOnly && (
+                  <button
+                    onClick={() => isTracking ? stopTimer() : startTimer(task)}
+                    className={`ml-4 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold transition-all border
+                        ${isTracking 
+                            ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' 
+                            : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200'
+                        }
+                    `}
+                  >
+                      {isTracking ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
+                      {isTracking ? 'STOP' : 'START TIMER'}
+                      {(isTracking || (task.totalTimeSeconds || 0) > 0) && (
+                          <span className="ml-1 opacity-80 font-mono">
+                              {formatDuration((task.totalTimeSeconds || 0) + (isTracking ? 0 : 0))}
+                          </span>
+                      )}
+                  </button>
+              )}
             </div>
             <button onClick={onClose} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors">
                 <X size={22} />
@@ -401,6 +557,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
           {task && (
               <button onClick={() => setActiveTab('flow')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'flow' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
                   Task Flow <GitBranch size={14} className={activeTab === 'flow' ? 'text-indigo-500' : ''} />
+              </button>
+          )}
+          {task && (
+              <button onClick={() => setActiveTab('timeLogs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'timeLogs' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
+                  Time Logs <History size={14} className={activeTab === 'timeLogs' ? 'text-indigo-500' : ''} />
               </button>
           )}
         </div>
@@ -794,6 +955,101 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                 )}
               </div>
+            )}
+
+            {activeTab === 'timeLogs' && (
+                <div className="flex flex-col h-full min-h-[400px] overflow-y-auto custom-scrollbar bg-white dark:bg-slate-800 p-1">
+                    <div className="flex justify-between items-center mb-6 px-2">
+                        <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <History size={20} className="text-indigo-500" />
+                            Work Log History
+                        </h3>
+                        <div className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-600">
+                            Total: {formatDuration(task?.totalTimeSeconds || 0)}
+                        </div>
+                    </div>
+
+                    <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <table className="w-full text-sm text-left">
+                            <thead className="bg-slate-50 dark:bg-slate-900/50 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                <tr>
+                                    <th className="px-4 py-3">User</th>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Start</th>
+                                    <th className="px-4 py-3">End</th>
+                                    <th className="px-4 py-3 text-right">Duration</th>
+                                    {!isReadOnly && <th className="px-4 py-3 text-center w-16">Actions</th>}
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
+                                {(task?.timeLogs || []).sort((a, b) => b.endTime - a.endTime).map(log => {
+                                    const user = projectMembers.find(m => m.uid === log.userId);
+                                    const isOwner = currentUserId === log.userId || currentUserId === task?.ownerId;
+
+                                    return (
+                                        <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors group">
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-[10px] font-bold overflow-hidden shrink-0">
+                                                        {user?.avatar && user.avatar.startsWith('http') ? (
+                                                            <img src={user.avatar} className="w-full h-full object-cover" alt="" />
+                                                        ) : (
+                                                            (user?.displayName || 'U').charAt(0)
+                                                        )}
+                                                    </div>
+                                                    <span className="font-medium text-slate-700 dark:text-slate-200 truncate max-w-[100px]">{user?.displayName || 'Unknown'}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap text-xs">
+                                                {formatDate(log.startTime)}
+                                            </td>
+                                            <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-mono text-xs whitespace-nowrap">
+                                                {formatTime(log.startTime)}
+                                            </td>
+                                            <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-mono text-xs whitespace-nowrap">
+                                                {formatTime(log.endTime)}
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <span className="inline-block px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded font-bold text-xs font-mono">
+                                                    {formatDuration(log.durationSeconds)}
+                                                </span>
+                                            </td>
+                                            {!isReadOnly && (
+                                                <td className="px-4 py-3 text-center">
+                                                    {isOwner && (
+                                                        <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button 
+                                                                onClick={() => handleEditLogClick(log)}
+                                                                className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
+                                                                title="Edit"
+                                                            >
+                                                                <Pencil size={14} />
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleDeleteLog(log.id)}
+                                                                className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                                                                title="Delete"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            )}
+                                        </tr>
+                                    );
+                                })}
+                                {(!task?.timeLogs || task.timeLogs.length === 0) && (
+                                    <tr>
+                                        <td colSpan={isReadOnly ? 5 : 6} className="px-4 py-12 text-center text-slate-400 dark:text-slate-500 italic">
+                                            No time logs recorded yet.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             )}
 
             {activeTab === 'flow' && (

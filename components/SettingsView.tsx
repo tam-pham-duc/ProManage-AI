@@ -1,12 +1,13 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw } from 'lucide-react';
+import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw, Activity } from 'lucide-react';
 import { Task, UserSettings, Tab, TaskPriority, KanbanColumn } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { clearDevData, generateDemoData } from '../services/demoDataService';
+import HealthCheckModal from './HealthCheckModal';
 
 interface SettingsViewProps {
   tasks: Task[];
@@ -111,6 +112,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   
   // --- Kanban Column Local State ---
   const [newColumnTitle, setNewColumnTitle] = useState('');
@@ -717,16 +719,25 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                                    <span className="text-[10px] bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-300 px-1.5 py-0.5 rounded uppercase">Admin Only</span>
                                </h3>
                                <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-1 mb-4">
-                                 Reset the entire database to factory demo state. <strong>Warning: This wipes all data.</strong>
+                                 Advanced system tools for database maintenance and diagnostics.
                                </p>
-                               <button
-                                 onClick={handleFactoryReset}
-                                 disabled={isResetting}
-                                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white border border-transparent rounded-lg text-sm font-medium hover:bg-red-700 transition-colors shadow-sm active:scale-95 disabled:opacity-70"
-                               >
-                                 {isResetting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                                 Reset Demo Data (Factory Reset)
-                               </button>
+                               <div className="flex flex-wrap gap-3">
+                                   <button
+                                     onClick={handleFactoryReset}
+                                     disabled={isResetting}
+                                     className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-red-700 transition-colors shadow-sm active:scale-95 disabled:opacity-70"
+                                   >
+                                     {isResetting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                     Factory Reset
+                                   </button>
+                                   <button
+                                     onClick={() => setIsHealthCheckOpen(true)}
+                                     className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-slate-900 transition-colors shadow-sm active:scale-95"
+                                   >
+                                     <Activity size={14} />
+                                     Run System Health Check
+                                   </button>
+                               </div>
                              </div>
                           </div>
                        </div>
@@ -792,6 +803,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({
 
         </div>
       </div>
+
+      <HealthCheckModal 
+        isOpen={isHealthCheckOpen} 
+        onClose={() => setIsHealthCheckOpen(false)} 
+      />
     </div>
   );
 };

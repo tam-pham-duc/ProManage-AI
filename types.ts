@@ -69,6 +69,14 @@ export interface Tag {
   colorClass: string;
 }
 
+export interface TimeLog {
+  id: string;
+  userId: string;
+  startTime: number;
+  endTime: number;
+  durationSeconds: number;
+}
+
 export interface Task {
   id: string;
   ownerId: string;
@@ -93,6 +101,8 @@ export interface Task {
   actualCost?: number;
   estimatedHours?: number;
   estimatedDays?: number;
+  totalTimeSeconds?: number; // Time Tracking
+  timeLogs?: TimeLog[]; // Time Tracking History
   createdAt?: any;
   updatedAt?: any;
   importedAt?: string;

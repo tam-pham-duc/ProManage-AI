@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban } from 'lucide-react';
+import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban, Play, Square, Timer } from 'lucide-react';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
+import { useTimeTracking } from '../context/TimeTrackingContext';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -25,6 +26,10 @@ interface TaskCardProps {
 }
 
 const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [] }) => {
+  const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
+  
+  const isActive = activeTimer?.taskId === task.id;
+
   // Date Logic
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -122,6 +127,15 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
   } else if (isDueToday) {
       statusIndicatorClass = "ring-2 ring-amber-500 ring-offset-1 dark:ring-offset-slate-900";
   }
+
+  const handleTimerClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (isActive) {
+          stopTimer();
+      } else {
+          startTimer(task);
+      }
+  };
 
   return (
     <div 
@@ -271,13 +285,27 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
           )}
         </div>
         
-        {/* Date or Cost */}
         <div className="flex items-center gap-2">
-           {task.estimatedCost && task.estimatedCost > 0 && (
-             <div className="text-[10px] font-bold bg-white/60 dark:bg-black/20 px-1.5 py-0.5 rounded shadow-sm">
-               ${task.estimatedCost.toLocaleString()}
-             </div>
+           {/* Timer Control */}
+           {!isReadOnly && (
+               <button
+                  onClick={handleTimerClick}
+                  className={`p-1 rounded-md transition-colors flex items-center gap-1 text-[10px] font-bold border
+                    ${isActive 
+                        ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' 
+                        : 'bg-white/50 hover:bg-white text-slate-500 border-transparent hover:border-slate-200 hover:text-indigo-600'
+                    }
+                  `}
+                  title={isActive ? "Stop Timer" : "Start Timer"}
+               >
+                   {isActive ? <Square size={10} fill="currentColor" /> : <Play size={10} fill="currentColor" />}
+                   {(isActive || (task.totalTimeSeconds || 0) > 0) && (
+                       <span>{isActive ? 'REC' : formatDuration(task.totalTimeSeconds || 0)}</span>
+                   )}
+               </button>
            )}
+
+           {/* Date */}
            <div className={`flex items-center gap-1 text-[10px] font-bold ${isOverdue ? 'text-red-600 dark:text-red-400 animate-pulse' : isDueToday ? 'text-amber-600 dark:text-amber-400' : 'opacity-80'}`}>
              {isOverdue ? <AlertCircle size={12} /> : <Clock size={12} />}
              <span>
