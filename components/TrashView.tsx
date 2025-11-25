@@ -1,16 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, AlertTriangle, Search, Folder, CheckSquare, Clock, Calendar, Archive, AlertOctagon } from 'lucide-react';
+import { Trash2, RefreshCw, AlertTriangle, Search, Folder, CheckSquare, Clock, Calendar, Archive, AlertOctagon, LayoutTemplate } from 'lucide-react';
 import { auth, db } from '../firebase';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { Project, Task } from '../types';
+import { Project, Task, Template } from '../types';
 import { useNotification } from '../context/NotificationContext';
 
 const TrashView: React.FC = () => {
   const { notify } = useNotification();
-  const [activeTab, setActiveTab] = useState<'projects' | 'tasks'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'tasks' | 'templates'>('projects');
   const [deletedProjects, setDeletedProjects] = useState<Project[]>([]);
   const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
+  const [deletedTemplates, setDeletedTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Helper to safely parse timestamps
@@ -32,16 +33,22 @@ const TrashView: React.FC = () => {
     );
 
     // Query Deleted Tasks (Owner Only)
-    // Note: In a real app, you might want 'assigneeId' too, but for trash management, owner is safer
     const qTasks = query(
       collection(db, 'tasks'),
       where('ownerId', '==', user.uid),
       where('isDeleted', '==', true)
     );
 
+    // Query Deleted Templates
+    // Assuming templates have createdBy field which is the user UID
+    const qTemplates = query(
+      collection(db, 'templates'),
+      where('createdBy', '==', user.uid),
+      where('isDeleted', '==', true)
+    );
+
     const unsubProjects = onSnapshot(qProjects, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
-      // Client-side sort to avoid needing complex composite indexes immediately
       data.sort((a, b) => {
         const dateA = parseDate(a.deletedAt)?.getTime() || 0;
         const dateB = parseDate(b.deletedAt)?.getTime() || 0;
@@ -58,20 +65,31 @@ const TrashView: React.FC = () => {
         return dateB - dateA;
       });
       setDeletedTasks(data);
+    });
+
+    const unsubTemplates = onSnapshot(qTemplates, (snap) => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Template));
+      data.sort((a, b) => {
+        const dateA = parseDate(a.deletedAt)?.getTime() || 0;
+        const dateB = parseDate(b.deletedAt)?.getTime() || 0;
+        return dateB - dateA;
+      });
+      setDeletedTemplates(data);
       setLoading(false);
     });
 
     return () => {
       unsubProjects();
       unsubTasks();
+      unsubTemplates();
     };
   }, []);
 
-  const getRetentionInfo = (deletedAt: any, type: 'project' | 'task') => {
+  const getRetentionInfo = (deletedAt: any, type: 'project' | 'task' | 'template') => {
     const date = parseDate(deletedAt);
     if (!date) return { days: 0, isUrgent: false };
 
-    const limit = type === 'project' ? 30 : 14;
+    const limit = type === 'project' || type === 'template' ? 30 : 14;
     const diffTime = new Date().getTime() - date.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
     const remaining = limit - diffDays;
@@ -82,9 +100,9 @@ const TrashView: React.FC = () => {
     };
   };
 
-  const handleRestore = async (id: string, type: 'project' | 'task') => {
+  const handleRestore = async (id: string, type: 'project' | 'task' | 'template') => {
     try {
-      const collectionName = type === 'project' ? 'projects' : 'tasks';
+      const collectionName = type === 'project' ? 'projects' : type === 'task' ? 'tasks' : 'templates';
       await updateDoc(doc(db, collectionName, id), {
         isDeleted: false,
         deletedAt: null
@@ -96,11 +114,11 @@ const TrashView: React.FC = () => {
     }
   };
 
-  const handlePermanentDelete = async (id: string, type: 'project' | 'task') => {
+  const handlePermanentDelete = async (id: string, type: 'project' | 'task' | 'template') => {
     if (!window.confirm("This action cannot be undone. Delete permanently?")) return;
     
     try {
-      const collectionName = type === 'project' ? 'projects' : 'tasks';
+      const collectionName = type === 'project' ? 'projects' : type === 'task' ? 'tasks' : 'templates';
       await deleteDoc(doc(db, collectionName, id));
       notify('success', 'Item permanently deleted.');
     } catch (error) {
@@ -135,15 +153,15 @@ const TrashView: React.FC = () => {
         {/* Info Badge */}
         <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-medium border border-blue-100 dark:border-blue-800">
           <Clock size={14} />
-          <span>Items are kept for 30 days (Projects) or 14 days (Tasks).</span>
+          <span>Retention: Projects/Templates (30 days), Tasks (14 days).</span>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-slate-700">
+      <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
         <button
           onClick={() => setActiveTab('projects')}
-          className={`pb-3 px-4 text-sm font-bold transition-all border-b-2 ${
+          className={`pb-3 px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
             activeTab === 'projects' 
               ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' 
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
@@ -153,13 +171,23 @@ const TrashView: React.FC = () => {
         </button>
         <button
           onClick={() => setActiveTab('tasks')}
-          className={`pb-3 px-4 text-sm font-bold transition-all border-b-2 ${
+          className={`pb-3 px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
             activeTab === 'tasks' 
               ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' 
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
           }`}
         >
           Deleted Tasks ({deletedTasks.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('templates')}
+          className={`pb-3 px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
+            activeTab === 'templates' 
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+          }`}
+        >
+          Deleted Templates ({deletedTemplates.length})
         </button>
       </div>
 
@@ -249,6 +277,54 @@ const TrashView: React.FC = () => {
                       </button>
                       <button 
                         onClick={() => handlePermanentDelete(task.id, 'task')}
+                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        title="Delete Forever"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* TEMPLATES LIST */}
+        {activeTab === 'templates' && (
+          <div className="space-y-3">
+            {deletedTemplates.length === 0 ? renderEmptyState('templates') : (
+              deletedTemplates.map(template => {
+                const retention = getRetentionInfo(template.deletedAt, 'template');
+                return (
+                  <div key={template.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-red-200 dark:hover:border-red-900/50 transition-colors">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-500 dark:text-slate-400">
+                        <LayoutTemplate size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{template.name}</h3>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          <span className="uppercase font-bold">{template.type}</span>
+                          <span>•</span>
+                          <span>{new Date(template.createdAt?.toDate ? template.createdAt.toDate() : template.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        <div className={`mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold border ${retention.isUrgent ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'}`}>
+                          {retention.isUrgent && <AlertTriangle size={10} />}
+                          {retention.days} days remaining
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <button 
+                        onClick={() => handleRestore(template.id, 'template')}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-xs font-bold"
+                      >
+                        <RefreshCw size={14} /> Restore
+                      </button>
+                      <button 
+                        onClick={() => handlePermanentDelete(template.id, 'template')}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                         title="Delete Forever"
                       >

@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2 } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
-import { saveTaskAsTemplate } from '../services/templateService';
+import { saveTaskAsTemplate, getTemplates } from '../services/templateService';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -415,6 +415,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [editEndTime, setEditEndTime] = useState('');
 
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+  
+  // Template Loading State
+  const [taskTemplates, setTaskTemplates] = useState<any[]>([]);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
 
   const prevTaskIdRef = useRef<string | undefined>(undefined);
 
@@ -445,6 +449,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
     if (!isOpen) {
       setEditingLog(null);
       setIsSavingTemplate(false);
+      setShowTemplateMenu(false);
     }
   }, [isOpen]);
 
@@ -540,6 +545,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setActualCost('');
             setEstimatedHours('');
             setEstimatedDays('');
+            
+            // Fetch Task Templates if new task
+            getTemplates('task').then(setTaskTemplates);
           }
           
           setNewSubtaskTitle('');
@@ -669,6 +677,25 @@ const TaskModal: React.FC<TaskModalProps> = ({
       }
   };
 
+  const handleApplyTemplate = (template: any) => {
+      if (!template || !template.content) return;
+      
+      const content = template.content;
+      
+      if (window.confirm("This will overwrite current fields (Title, Desc, Subtasks, etc). Continue?")) {
+          setTitle(content.title || '');
+          setDescription(content.description || '');
+          setPriority(content.priority || 'Medium');
+          setTags(content.tags || []);
+          setSubtasks(content.subtasks || []);
+          if (content.estimatedCost) setEstimatedCost(content.estimatedCost.toString());
+          if (content.estimatedHours) setEstimatedHours(content.estimatedHours.toString());
+          
+          notify('success', `Template "${template.name}" loaded.`);
+          setShowTemplateMenu(false);
+      }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly || !canEdit) return;
@@ -736,6 +763,37 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">ID: {task?.id || 'Draft'}</p>
               </div>
               
+              {/* Template Loader (Create Mode Only) */}
+              {!task && !isReadOnly && taskTemplates.length > 0 && (
+                  <div className="relative ml-4">
+                      <button 
+                        onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+                        className="flex items-center gap-1 text-xs font-bold bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
+                        title="Load Template"
+                      >
+                          <LayoutTemplate size={14} /> Load Template <ChevronDown size={12} />
+                      </button>
+                      
+                      {showTemplateMenu && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setShowTemplateMenu(false)}></div>
+                            <div className="absolute top-full left-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-40 overflow-hidden max-h-60 overflow-y-auto">
+                                <div className="px-3 py-2 bg-slate-50 dark:bg-slate-900/50 text-xs font-bold text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-700">Available Templates</div>
+                                {taskTemplates.map(t => (
+                                    <button 
+                                        key={t.id}
+                                        onClick={() => handleApplyTemplate(t)}
+                                        className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors truncate"
+                                    >
+                                        {t.name}
+                                    </button>
+                                ))}
+                            </div>
+                          </>
+                      )}
+                  </div>
+              )}
+
               {task && !isReadOnly && (
                   <>
                     <button onClick={() => isTracking ? stopTimer() : startTimer(task)} className={`ml-4 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold transition-all border ${isTracking ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200'}`}>

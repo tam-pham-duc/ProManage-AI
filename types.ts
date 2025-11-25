@@ -141,6 +141,18 @@ export interface Project {
   deletedAt?: string;
 }
 
+export interface Template {
+  id: string;
+  name: string;
+  type: 'project' | 'task';
+  description?: string;
+  content: any;
+  createdBy: string;
+  createdAt: any;
+  isDeleted?: boolean;
+  deletedAt?: any;
+}
+
 export interface User {
   id: string;
   username: string;

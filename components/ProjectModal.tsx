@@ -5,12 +5,12 @@ import { Project, ProjectMember, ProjectRole } from '../types';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
-import { saveProjectAsTemplate } from '../services/templateService';
+import { saveProjectAsTemplate, getTemplates } from '../services/templateService';
 
 interface ProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (projectData: Partial<Project>) => void;
+  onSubmit: (projectData: Partial<Project>, templateId?: string) => void;
   project?: Project | null;
   currentUser?: { uid: string; email: string; displayName: string };
   currentUserRole?: ProjectRole;
@@ -39,6 +39,10 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
   const [localMembers, setLocalMembers] = useState<ProjectMember[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
   
+  // Template State
+  const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  
   // Save State
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -56,6 +60,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
       setIsSaving(false);
       setIsDeleting(false);
       setIsSavingTemplate(false);
+      setSelectedTemplateId('');
 
       if (project) {
         // EDIT MODE: Load Data
@@ -68,6 +73,11 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         setName('');
         setClientName('');
         setAddress('');
+        // Fetch templates
+        getTemplates('project').then(templates => {
+            if (isMounted.current) setAvailableTemplates(templates);
+        });
+
         // Add current user as Admin by default
         if (currentUser) {
           setLocalMembers([{
@@ -218,7 +228,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             }, 500);
         } else {
             // Create New
-            await onSubmit(projectPayload);
+            await onSubmit(projectPayload, selectedTemplateId);
             if (isMounted.current) setIsSaving(false);
         }
 
@@ -281,6 +291,33 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             }}
           />
         </div>
+        
+        {!isEditMode && availableTemplates.length > 0 && (
+            <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1">
+                    <LayoutTemplate size={14} className="text-indigo-500" /> Use Template (Optional)
+                </label>
+                <div className="relative">
+                    <select 
+                        value={selectedTemplateId} 
+                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white cursor-pointer appearance-none"
+                    >
+                        <option value="">None - Start from Scratch</option>
+                        {availableTemplates.map(t => (
+                            <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                </div>
+                {selectedTemplateId && (
+                    <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-1.5 font-medium">
+                        This will create a new project structure with tasks from the selected template.
+                    </p>
+                )}
+            </div>
+        )}
+
         <div>
           <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 flex items-center gap-1"><User size={14} /> Client Name</label>
           <input 

@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare } from 'lucide-react';
-import { Task, UserSettings, Tab, TaskPriority, KanbanColumn } from '../types';
+import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare, Check } from 'lucide-react';
+import { Task, UserSettings, Tab, TaskPriority, KanbanColumn, Template } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc, getDocs, query, where } from 'firebase/firestore';
@@ -24,17 +24,6 @@ interface SettingsViewProps {
 }
 
 type SettingsTab = 'general' | 'preferences' | 'data' | 'templates';
-
-// Define Template Interface locally
-interface Template {
-  id: string;
-  name: string;
-  type: 'project' | 'task';
-  description?: string;
-  createdAt: any;
-  content: any;
-  isDeleted?: boolean;
-}
 
 const HOUSE_TEMPLATE_DATA = [
   { 
@@ -95,6 +84,133 @@ const HOUSE_TEMPLATE_DATA = [
   }
 ];
 
+const TemplatePreview: React.FC<{ template: Template }> = ({ template }) => {
+  const { type, content } = template;
+
+  if (type === 'task') {
+    return (
+      <div className="space-y-6 p-2">
+        <div className="bg-amber-50 dark:bg-amber-900/20 text-amber-800 dark:text-amber-200 px-4 py-2 rounded-lg text-xs font-bold text-center border border-amber-200 dark:border-amber-800 flex items-center justify-center gap-2">
+           <Eye size={14} /> Read-Only Task Template Preview
+        </div>
+        
+        <div>
+            <div className="flex justify-between items-start mb-3">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">{content.title}</h3>
+                <div className="flex gap-2">
+                    <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600">
+                        {content.status || 'To Do'}
+                    </span>
+                    <span className={`px-2.5 py-1 rounded-md text-xs font-bold border ${content.priority === 'High' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : content.priority === 'Medium' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800' : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'}`}>
+                        {content.priority}
+                    </span>
+                </div>
+            </div>
+            
+            {content.tags && content.tags.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                    {content.tags.map((tag: any) => (
+                        <span key={tag.id} className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${tag.colorClass || 'bg-slate-100 text-slate-600'}`}>
+                            {tag.name}
+                        </span>
+                    ))}
+                </div>
+            )}
+
+            <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-sm text-slate-700 dark:text-slate-300 prose prose-sm dark:prose-invert max-w-none">
+                <div dangerouslySetInnerHTML={{ __html: content.description || '<p class="italic text-slate-400">No description provided.</p>' }} />
+            </div>
+        </div>
+
+        {content.subtasks && content.subtasks.length > 0 && (
+            <div>
+                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <CheckSquare size={14} /> Checklist ({content.subtasks.length})
+                </h4>
+                <div className="space-y-2">
+                    {content.subtasks.map((st: any, idx: number) => (
+                        <div key={idx} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg opacity-80">
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${st.completed ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-slate-600'}`}>
+                                {st.completed && <Check size={10} className="text-white" />}
+                            </div>
+                            <span className={`text-sm ${st.completed ? 'text-slate-400 line-through' : 'text-slate-700 dark:text-slate-300'}`}>{st.title}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4 pt-2">
+            <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <span className="text-xs text-slate-500 font-medium">Est. Cost</span>
+                <span className="font-mono font-bold text-slate-700 dark:text-slate-200">${content.estimatedCost || 0}</span>
+            </div>
+            <div className="p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                <span className="text-xs text-slate-500 font-medium">Est. Hours</span>
+                <span className="font-mono font-bold text-slate-700 dark:text-slate-200">{content.estimatedHours || 0}h</span>
+            </div>
+        </div>
+      </div>
+    );
+  } else if (type === 'project') {
+    const projectData = content.project || {};
+    const tasksData = content.tasks || [];
+    const totalCost = tasksData.reduce((sum: number, t: any) => sum + (Number(t.estimatedCost) || 0), 0);
+
+    return (
+        <div className="flex flex-col h-full p-2">
+             <div className="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-200 px-4 py-2 rounded-lg text-xs font-bold text-center border border-indigo-200 dark:border-indigo-800 shrink-0 mb-6 flex items-center justify-center gap-2">
+                <Eye size={14} /> Read-Only Project Template Preview
+            </div>
+
+            <div className="shrink-0 mb-6">
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{template.name}</h3>
+                {projectData.clientName && (
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300">
+                        <User size={12} /> {projectData.clientName}
+                    </div>
+                )}
+                {template.description && <p className="text-sm text-slate-600 dark:text-slate-300 mt-4 leading-relaxed">{template.description}</p>}
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                <div className="p-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                        <Briefcase size={14} /> Included Tasks ({tasksData.length})
+                    </h4>
+                </div>
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                    {tasksData.map((t: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-sm">
+                            <div className="min-w-0 flex-1 mr-4">
+                                <p className="font-bold text-sm text-slate-900 dark:text-white truncate">{t.title}</p>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${t.priority === 'High' ? 'bg-red-50 text-red-700 border-red-100 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-400 dark:border-slate-600'}`}>
+                                        {t.priority}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">{t.status}</span>
+                                </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                                <span className="block text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                                    ${Number(t.estimatedCost || 0).toLocaleString()}
+                                </span>
+                                <span className="text-[10px] text-slate-400">Est. Cost</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+                <div className="p-4 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex justify-between items-center rounded-b-xl">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Budget</span>
+                    <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">${totalCost.toLocaleString()}</span>
+                </div>
+            </div>
+        </div>
+    )
+  }
+  return <div className="p-4 text-center text-slate-500">Preview not available</div>;
+};
+
 const SettingsView: React.FC<SettingsViewProps> = ({ 
   tasks, 
   userSettings,
@@ -121,6 +237,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
 
   // --- Data Tab State ---
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const templateFileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
@@ -439,6 +556,96 @@ const SettingsView: React.FC<SettingsViewProps> = ({
       }
   };
 
+  const handleExportTemplate = (template: Template) => {
+      try {
+          const payload = {
+              version: 1,
+              type: template.type,
+              data: template.content,
+              meta: { 
+                  name: template.name, 
+                  description: template.description || '' 
+              }
+          };
+          const dataStr = JSON.stringify(payload, null, 2);
+          const blob = new Blob([dataStr], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `${template.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_template.json`;
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          notify('success', "Template exported successfully.");
+      } catch (e) {
+          console.error(e);
+          notify('error', "Failed to export template.");
+      }
+  };
+
+  const handleImportTemplateClick = () => {
+      templateFileInputRef.current?.click();
+  };
+
+  const handleImportTemplate = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          const content = e.target?.result as string;
+          try {
+              const parsed = JSON.parse(content);
+              
+              // Basic Validation
+              if (!parsed.version || !parsed.type || !parsed.data) {
+                  throw new Error("Invalid template format.");
+              }
+
+              const currentUser = auth.currentUser;
+              if (!currentUser) throw new Error("User not authenticated");
+
+              await addDoc(collection(db, 'templates'), {
+                  name: parsed.meta?.name || "Imported Template",
+                  description: parsed.meta?.description || "",
+                  type: parsed.type,
+                  content: parsed.data,
+                  createdBy: currentUser.uid,
+                  createdAt: serverTimestamp(),
+                  isDeleted: false
+              });
+
+              notify('success', "Template imported successfully.");
+              
+              // Refresh list if on templates tab (will happen automatically via useEffect if we reset activeTab or similar, 
+              // but for now we just let the user reload or switch tabs as the useEffect runs on activeTab change)
+              if (activeTab === 'templates') {
+                  // Re-trigger fetch
+                  const snap = await getDocs(collection(db, 'templates'));
+                  const data = snap.docs
+                      .map(d => ({ id: d.id, ...d.data() } as Template))
+                      .filter(t => !t.isDeleted)
+                      .sort((a, b) => {
+                           const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                           const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                           return dateB.getTime() - dateA.getTime();
+                      });
+                  setTemplates(data);
+              }
+
+          } catch (err: any) {
+              console.error("Import error:", err);
+              notify('error', err.message || "Failed to import template.");
+          } finally {
+              if (templateFileInputRef.current) {
+                  templateFileInputRef.current.value = '';
+              }
+          }
+      };
+      reader.readAsText(file);
+  };
+
   const filteredTemplates = templates.filter(t => t.type === activeTemplateType);
 
   const tabs = [
@@ -750,19 +957,35 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                         <h2 className="text-xl font-bold text-slate-900 dark:text-white">Template Manager</h2>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Manage your saved project and task templates.</p>
                     </div>
-                    <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                    <div className="flex items-center gap-3">
+                        <input 
+                            type="file" 
+                            ref={templateFileInputRef} 
+                            className="hidden" 
+                            accept=".json" 
+                            onChange={handleImportTemplate}
+                        />
                         <button 
-                            onClick={() => setActiveTemplateType('project')}
-                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'project' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                            onClick={handleImportTemplateClick}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm"
                         >
-                            Project Templates
+                            <Upload size={14} /> Import
                         </button>
-                        <button 
-                            onClick={() => setActiveTemplateType('task')}
-                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'task' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-                        >
-                            Task Templates
-                        </button>
+                        
+                        <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                            <button 
+                                onClick={() => setActiveTemplateType('project')}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'project' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                            >
+                                Project Templates
+                            </button>
+                            <button 
+                                onClick={() => setActiveTemplateType('task')}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'task' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                            >
+                                Task Templates
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -787,6 +1010,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                                             {template.type === 'project' ? <Briefcase size={20} /> : <CheckSquare size={20} />}
                                         </div>
                                         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button 
+                                                onClick={() => handleExportTemplate(template)}
+                                                className="p-1.5 text-slate-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                                                title="Export JSON"
+                                            >
+                                                <Download size={16} />
+                                            </button>
                                             <button 
                                                 onClick={() => setPreviewTemplate(template)}
                                                 className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
@@ -820,23 +1050,21 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                 {/* Preview Modal Overlay */}
                 {previewTemplate && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4" onClick={() => setPreviewTemplate(null)}>
-                        <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
-                            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                        <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
                                 <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
                                     <FileJson size={20} className="text-indigo-500" />
-                                    Template Preview: {previewTemplate.name}
+                                    Template Preview
                                 </h3>
-                                <button onClick={() => setPreviewTemplate(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                <button onClick={() => setPreviewTemplate(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                                     <X size={20} />
                                 </button>
                             </div>
-                            <div className="flex-1 overflow-auto p-4 bg-slate-50 dark:bg-black/20">
-                                <pre className="text-xs font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all">
-                                    {JSON.stringify(previewTemplate.content, null, 2)}
-                                </pre>
+                            <div className="flex-1 overflow-auto custom-scrollbar bg-white dark:bg-slate-900">
+                                <TemplatePreview template={previewTemplate} />
                             </div>
-                            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
-                                <button onClick={() => setPreviewTemplate(null)} className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-bold transition-colors">
+                            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-800/50">
+                                <button onClick={() => setPreviewTemplate(null)} className="px-4 py-2 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 rounded-lg text-sm font-bold transition-colors shadow-sm">
                                     Close
                                 </button>
                             </div>

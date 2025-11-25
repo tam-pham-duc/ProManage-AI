@@ -27,6 +27,7 @@ import { NotificationProvider, useNotification } from './context/NotificationCon
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType } from './types';
 import { logProjectActivity } from './services/activityService';
+import { createTasksFromTemplate, getTemplateById } from './services/templateService';
 
 // Firebase Imports
 import { auth, db } from './firebase';
@@ -437,7 +438,7 @@ const App: React.FC = () => {
       }
   };
 
-  const handleCreateProject = async (projectData: Partial<Project>) => {
+  const handleCreateProject = async (projectData: Partial<Project>, templateId?: string) => {
       if (!currentUser) return;
       try {
           let members: ProjectMember[] = projectData.members || [];
@@ -474,6 +475,15 @@ const App: React.FC = () => {
               'Initialized new project workspace', 
               'create'
           );
+
+          // Handle Template Instantiation if ID is provided
+          if (templateId) {
+              const template = await getTemplateById(templateId);
+              if (template && template.content && template.content.tasks) {
+                  await createTasksFromTemplate(docRef.id, template.content, currentUser.id);
+                  notify('success', 'Applied template tasks to project');
+              }
+          }
 
           setIsProjectModalOpen(false);
           handleSelectProject(docRef.id);
