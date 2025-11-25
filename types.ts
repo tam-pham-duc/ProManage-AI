@@ -75,6 +75,7 @@ export interface TimeLog {
   startTime: number;
   endTime: number;
   durationSeconds: number;
+  notes?: string;
 }
 
 export interface Task {

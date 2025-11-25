@@ -5,7 +5,7 @@ import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachme
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 import { db } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { saveTaskAsTemplate, getTemplates } from '../services/templateService';
 
@@ -414,6 +414,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
 
+  // Manual Time Log State
+  const [manualStartTime, setManualStartTime] = useState('');
+  const [manualEndTime, setManualEndTime] = useState('');
+  const [manualNotes, setManualNotes] = useState('');
+
   const [isSavingTemplate, setIsSavingTemplate] = useState(false);
   
   // Template Loading State
@@ -450,6 +455,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setEditingLog(null);
       setIsSavingTemplate(false);
       setShowTemplateMenu(false);
+      setManualStartTime('');
+      setManualEndTime('');
+      setManualNotes('');
     }
   }, [isOpen]);
 
@@ -562,6 +570,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
           setActiveTab('details');
           setShowDependencyDropdown(false);
           setEditingLog(null);
+          setManualStartTime('');
+          setManualEndTime('');
+          setManualNotes('');
 
           prevTaskIdRef.current = task?.id;
       }
@@ -587,7 +598,37 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const handleCreateTag = () => { if (isReadOnly) return; if (!tagInput.trim()) return; handleAddTag(onCreateTag(tagInput.trim())); };
   const handleRemoveTag = (tagId: string) => { if (isReadOnly) return; setTags(tags.filter(t => t.id !== tagId)); };
   const handleToggleDependency = (depTaskId: string) => { if (isReadOnly) return; if (dependencies.includes(depTaskId)) { setDependencies(prev => prev.filter(id => id !== depTaskId)); } else { setDependencies(prev => [...prev, depTaskId]); } };
-  const handleSendComment = () => { if (!newComment.trim()) return; if (isReadOnly) return; setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toISOString() }]); if (onTaskComment && task) onTaskComment(task.id, newComment); setNewComment(''); setShowMentionList(false); };
+  
+  const handleSendComment = async () => { 
+    if (!newComment.trim()) return; 
+    if (isReadOnly) return; 
+    
+    const comment: Comment = { 
+        id: Date.now().toString(), 
+        user: currentUser, // this is username string
+        text: newComment, 
+        timestamp: new Date().toISOString() 
+    };
+    
+    const updatedComments = [...comments, comment];
+    setComments(updatedComments); 
+    
+    if (task) {
+        try {
+            await updateDoc(doc(db, 'tasks', task.id), {
+                comments: arrayUnion(comment)
+            });
+            
+            // Trigger notification/activity log
+            if (onTaskComment) onTaskComment(task.id, newComment);
+        } catch(e) {
+            console.error("Failed to save comment", e);
+        }
+    }
+    
+    setNewComment(''); 
+    setShowMentionList(false); 
+  };
   
   const handleDeleteLog = async (logId: string) => {
     if (!task) return;
@@ -618,6 +659,44 @@ const TaskModal: React.FC<TaskModalProps> = ({
         notify('success', 'Time log updated');
         setEditingLog(null); 
     } catch (e) { console.error(e); notify('error', 'Failed to update log'); }
+  };
+
+  const handleAddManualLog = async () => {
+    if (!task || !currentUser || isReadOnly) return;
+    if (!manualStartTime || !manualEndTime) { notify('warning', 'Please select start and end times'); return; }
+    
+    const start = new Date(manualStartTime).getTime();
+    const end = new Date(manualEndTime).getTime();
+    
+    if (isNaN(start) || isNaN(end)) { notify('warning', 'Invalid dates'); return; }
+    if (end <= start) { notify('warning', 'End time must be after start time'); return; }
+    
+    const durationSeconds = Math.floor((end - start) / 1000);
+    
+    const newLog: TimeLog = {
+        id: Date.now().toString(),
+        userId: currentUserId || 'unknown',
+        startTime: start,
+        endTime: end,
+        durationSeconds: durationSeconds,
+        notes: manualNotes.trim()
+    };
+
+    try {
+        await updateDoc(doc(db, 'tasks', task.id), {
+            totalTimeSeconds: (task.totalTimeSeconds || 0) + durationSeconds,
+            timeLogs: arrayUnion(newLog)
+        });
+        
+        // Reset form
+        setManualStartTime('');
+        setManualEndTime('');
+        setManualNotes('');
+        notify('success', 'Time log added manually');
+    } catch (e) {
+        console.error(e);
+        notify('error', 'Failed to add time log');
+    }
   };
 
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -935,8 +1014,35 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         {streamItems.map((item: any) => {
                             const isLog = item.source === 'log' || item.user === 'System';
                             if (isLog) { return (<div key={item.id} className="flex justify-center my-2"><span className="text-xs text-gray-400 dark:text-slate-500 italic text-center bg-gray-100 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent dark:border-slate-700">{formatMessageTime(item.timestamp)} - {item.userName || 'System'} {item.action}</span></div>); }
-                            const isMe = item.user === currentUser; 
-                            return (<div key={item.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}><div className={`flex max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>{!isMe && (<div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-sm mb-1">{item.user ? item.user.charAt(0).toUpperCase() : 'U'}</div>)}<div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>{!isMe && (<span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1">{item.user}</span>)}<div className={`px-4 py-2 text-sm shadow-sm relative group ${isMe ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-sm border border-gray-200 dark:border-gray-700'}`}><div dangerouslySetInnerHTML={{ __html: item.text /*parseMarkdown(item.text) -- simplified for brevity, re-enable real parser if needed*/ }} />{isMe && (<div className="text-[9px] text-blue-200 text-right mt-1 font-medium opacity-80">{formatMessageTime(item.timestamp)}</div>)}</div>{!isMe && (<span className="text-[9px] text-slate-400 mt-1 ml-1 font-medium">{formatMessageTime(item.timestamp)}</span>)}</div></div></div>);
+                            const isMe = item.user === currentUser;
+                            
+                            // Look up member for avatar
+                            const member = projectMembers?.find(m => m.displayName === (item.userName || item.user));
+                            const avatarUrl = member?.avatar;
+
+                            return (
+                                <div key={item.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`flex max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
+                                        {!isMe && (
+                                            <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-sm mb-1 overflow-hidden">
+                                                {avatarUrl ? (
+                                                    <img src={avatarUrl} alt={item.user} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    (item.user || item.userName || 'U').charAt(0).toUpperCase()
+                                                )}
+                                            </div>
+                                        )}
+                                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                            {!isMe && (<span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1">{item.user}</span>)}
+                                            <div className={`px-4 py-2 text-sm shadow-sm relative group ${isMe ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-sm border border-gray-200 dark:border-gray-700'}`}>
+                                                <div dangerouslySetInnerHTML={{ __html: item.text }} />
+                                                {isMe && (<div className="text-[9px] text-blue-200 text-right mt-1 font-medium opacity-80">{formatMessageTime(item.timestamp)}</div>)}
+                                            </div>
+                                            {!isMe && (<span className="text-[9px] text-slate-400 mt-1 ml-1 font-medium">{formatMessageTime(item.timestamp)}</span>)}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
                         })}
                         <div ref={messagesEndRef} />
                     </div>
@@ -948,8 +1054,36 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
             {activeTab === 'timeLogs' && task && (
                 <div className="flex flex-col h-full">
+                    {/* Manual Entry Form */}
+                    {!isReadOnly && (
+                        <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mb-6">
+                            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
+                                <Clock size={16} /> Add Manual Entry
+                            </h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Start Time</label>
+                                    <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className={inputBaseClass} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">End Time</label>
+                                    <input type="datetime-local" value={manualEndTime} onChange={e => setManualEndTime(e.target.value)} className={inputBaseClass} />
+                                </div>
+                            </div>
+                            <div className="mb-4">
+                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Notes (Optional)</label>
+                                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className={inputBaseClass} placeholder="What were you working on?" />
+                            </div>
+                            <div className="flex justify-end">
+                                <button type="button" onClick={handleAddManualLog} className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-colors">
+                                    Add Log
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex items-center justify-between mb-4"><div><h3 className="font-bold text-slate-900 dark:text-white">Time Tracking History</h3><p className="text-xs text-slate-500">Total Recorded: <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{formatDuration(task.totalTimeSeconds || 0)}</span></p></div></div>
-                    <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900"><table className="w-full text-left text-sm"><thead className="bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase sticky top-0"><tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Start - End</th><th className="px-4 py-3 text-right">Duration</th>{!isReadOnly && <th className="px-4 py-3 text-right">Actions</th>}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{task.timeLogs?.map(log => { const member = projectMembers.find(m => m.uid === log.userId); const userName = member ? member.displayName : 'Unknown'; return (<tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"><td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{userName}</td><td className="px-4 py-3 text-slate-500 dark:text-slate-400">{new Date(log.startTime).toLocaleDateString()}</td><td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs font-mono">{new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td><td className="px-4 py-3 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatDuration(log.durationSeconds)}</td>{!isReadOnly && (<td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-2"><button type="button" onClick={() => handleEditLogClick(log)} className="p-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 rounded"><Pencil size={14} /></button><button type="button" onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-600 rounded"><Trash2 size={14} /></button></div></td>)}</tr>); })}{(!task.timeLogs || task.timeLogs.length === 0) && (<tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">No time logs recorded.</td></tr>)}</tbody></table></div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900"><table className="w-full text-left text-sm"><thead className="bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase sticky top-0"><tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Start - End</th><th className="px-4 py-3">Notes</th><th className="px-4 py-3 text-right">Duration</th>{!isReadOnly && <th className="px-4 py-3 text-right">Actions</th>}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{task.timeLogs?.map(log => { const member = projectMembers.find(m => m.uid === log.userId); const userName = member ? member.displayName : 'Unknown'; return (<tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"><td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{userName}</td><td className="px-4 py-3 text-slate-500 dark:text-slate-400">{new Date(log.startTime).toLocaleDateString()}</td><td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs font-mono">{new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td><td className="px-4 py-3 text-slate-600 dark:text-slate-300 italic truncate max-w-[150px]">{log.notes || '-'}</td><td className="px-4 py-3 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatDuration(log.durationSeconds)}</td>{!isReadOnly && (<td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-2"><button type="button" onClick={() => handleEditLogClick(log)} className="p-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 rounded"><Pencil size={14} /></button><button type="button" onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-600 rounded"><Trash2 size={14} /></button></div></td>)}</tr>); })}{(!task.timeLogs || task.timeLogs.length === 0) && (<tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">No time logs recorded.</td></tr>)}</tbody></table></div>
                 </div>
             )}
 
