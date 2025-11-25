@@ -139,32 +139,24 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       }
   };
 
-  const handleDragStartWrapper = (e: React.DragEvent) => {
-      if (isReadOnly || isBlocked) return;
-      
-      // Ensure the element being dragged doesn't have transforms applied at the moment of capture
-      const target = e.currentTarget as HTMLElement;
-      target.style.transform = "none";
-      
-      onDragStart(e, task.id);
-  };
-
   return (
     <div 
       draggable={!isReadOnly && !isBlocked}
-      onDragStart={handleDragStartWrapper}
+      onDragStart={(e) => !isReadOnly && !isBlocked && onDragStart(e, task.id)}
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        p-4 rounded-xl border-y border-r border-l-[4px] transition-shadow duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
+        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-all duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
         ${isBlocked 
             ? 'bg-stripes-gray border-slate-300 dark:border-slate-600 opacity-90 border-l-slate-500' 
             : theme.container}
         ${statusIndicatorClass}
-        ${isDragging ? 'opacity-50' : 'shadow-sm hover:shadow-md cursor-pointer hover:z-10'}
+        ${isDragging 
+            ? 'opacity-50 cursor-grabbing' 
+            : 'hover:shadow-md cursor-pointer hover:z-10'
+        }
         ${isReadOnly ? 'cursor-default' : ''}
       `}
-      style={{ transform: 'none' }} // Explicitly prevent tilt/scale
       title={isBlocked ? `Blocked by: ${blockingTaskTitles}` : ''}
     >
       {/* Quick Delete Button */}
@@ -591,9 +583,15 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
 
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
     if (isReadOnly) return;
-    setDraggedTaskId(taskId);
+    
+    // Native HTML5 Drag setup
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
+    
+    // Delay setting state so the browser snapshot (drag image) is of the fully opaque card
+    setTimeout(() => {
+        setDraggedTaskId(taskId);
+    }, 0);
   };
 
   const handleDragEnd = () => setDraggedTaskId(null);

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, Tag as TagIcon, FileText, Bell, Lock, Check, Clock, GitBranch, Play, Square, History, Pencil, Save as SaveIcon, AlertOctagon, ArrowRight, Ban, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
@@ -21,10 +21,16 @@ interface TaskModalProps {
   columns: KanbanColumn[];
   projectMembers?: ProjectMember[];
   initialDate?: string;
+  
+  // Permissions
   isReadOnly?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  
+  // Dependency Data
   allTasks?: Task[];
+  
+  // Navigation
   onTaskSelect?: (task: Task) => void;
 }
 
@@ -52,8 +58,8 @@ const formatMessageTime = (timestampStr: string) => {
     }
 };
 
-// --- Mini Task Card for Dependency Tree ---
-const MiniTaskCard: React.FC<{ task: Task; type: 'prerequisite' | 'blocking'; onClick?: () => void }> = ({ task, type, onClick }) => {
+// --- Mini Task Card Component for Flow View ---
+const MiniTaskCard: React.FC<{ task: Task; type: 'upstream' | 'downstream'; onClick?: () => void }> = ({ task, type, onClick }) => {
     const isCompleted = task.status === 'Done';
     
     let borderClass = 'border-slate-200 dark:border-slate-700';
@@ -61,28 +67,24 @@ const MiniTaskCard: React.FC<{ task: Task; type: 'prerequisite' | 'blocking'; on
     let icon = <Clock size={14} className="text-slate-400" />;
     let statusColor = 'text-slate-500';
 
-    if (type === 'prerequisite') {
+    if (type === 'upstream') {
         if (!isCompleted) {
-            borderClass = 'border-red-300 dark:border-red-800 border-l-4 border-l-red-500';
+            borderClass = 'border-red-300 dark:border-red-800';
             bgClass = 'bg-red-50 dark:bg-red-900/20';
-            icon = <AlertTriangle size={14} className="text-red-500" />;
+            icon = <AlertCircle size={14} className="text-red-500" />;
             statusColor = 'text-red-600 dark:text-red-400';
         } else {
-            borderClass = 'border-emerald-300 dark:border-emerald-800 border-l-4 border-l-emerald-500';
+            borderClass = 'border-emerald-300 dark:border-emerald-800';
             bgClass = 'bg-emerald-50 dark:bg-emerald-900/20';
             icon = <CheckCircle2 size={14} className="text-emerald-500" />;
             statusColor = 'text-emerald-600 dark:text-emerald-400';
         }
     } else {
-        // Blocking (Downstream)
+        // Downstream
         if (isCompleted) {
-             borderClass = 'border-emerald-300 dark:border-emerald-800 border-l-4 border-l-emerald-500';
              icon = <CheckCircle2 size={14} className="text-emerald-500" />;
-             statusColor = 'text-emerald-600';
         } else {
-             borderClass = 'border-slate-200 dark:border-slate-700 border-l-4 border-l-amber-400';
-             icon = <Ban size={14} className="text-amber-500" />;
-             statusColor = 'text-amber-600';
+             icon = <Lock size={14} className="text-slate-400" />;
         }
     }
 
@@ -90,25 +92,27 @@ const MiniTaskCard: React.FC<{ task: Task; type: 'prerequisite' | 'blocking'; on
         <div 
             onClick={onClick}
             className={`
-                p-3 rounded-lg border shadow-sm w-full max-w-[240px] cursor-pointer hover:shadow-md transition-all group relative overflow-hidden
+                p-3 rounded-xl border shadow-sm w-full cursor-pointer hover:shadow-md transition-all group relative overflow-hidden
                 ${borderClass} ${bgClass}
             `}
         >
-            <div className="flex justify-between items-start mb-1.5 gap-2">
-                <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug flex-1">{task.title}</h5>
+            <div className="flex justify-between items-start mb-1">
+                <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug pr-4">{task.title}</h5>
                 {icon}
             </div>
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-5 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-600">
-                        {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full rounded-full object-cover" alt="" /> : task.assignee.charAt(0)}
-                    </div>
-                    <span className="text-[10px] text-slate-500 truncate max-w-[80px]">{task.assignee}</span>
+            <div className="flex items-center gap-2 mt-2">
+                <div className="w-5 h-5 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-600">
+                    {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full rounded-full object-cover" /> : task.assignee.charAt(0)}
                 </div>
-                <span className={`text-[10px] font-extrabold uppercase ${statusColor}`}>
+                <span className={`text-[10px] font-semibold ${statusColor}`}>
                     {task.status}
                 </span>
             </div>
+            {type === 'upstream' && !isCompleted && (
+                <div className="absolute right-0 bottom-0 p-1">
+                    <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+                </div>
+            )}
         </div>
     );
 };
@@ -196,63 +200,25 @@ const TaskModal: React.FC<TaskModalProps> = ({
       return projectMembers.filter(m => (m.status === 'active' || !m.status) && m.uid !== null);
   }, [projectMembers]);
 
-  const filteredAvailableTags = useMemo(() => {
-    return availableTags.filter(tag => 
-      tag.name.toLowerCase().includes(tagInput.toLowerCase()) && 
-      !tags.find(t => t.id === tag.id)
-    );
-  }, [availableTags, tagInput, tags]);
-
+  // Potential Dependencies: All tasks except current one (to avoid self-loop)
   const potentialDependencies = useMemo(() => {
      return allTasks.filter(t => t.id !== task?.id);
   }, [allTasks, task]);
 
-  // --- REACTIVE STATE SYNC (Fix 1) ---
-  useEffect(() => {
-    if (task) {
-        // Sync local state with props whenever `task` changes (e.g. drag and drop status update)
-        setStatus(prev => prev !== task.status ? task.status : prev);
-        setPriority(prev => prev !== task.priority ? task.priority : prev);
-        setStartDate(prev => prev !== task.startDate ? task.startDate : prev);
-        setDueDate(prev => prev !== task.dueDate ? task.dueDate : prev);
-        // Note: We don't sync everything to avoid overwriting user typing, but crucial status/meta fields are synced.
-    }
-  }, [task]);
+  // --- Derived Flow Data ---
+  const upstreamTasks = useMemo(() => {
+     if (!task || !task.dependencies) return [];
+     return task.dependencies.map(id => allTasks.find(t => t.id === id)).filter(Boolean) as Task[];
+  }, [task, allTasks]);
 
-  // --- Tree Data Builder (Fix 2) ---
-  const treeData = useMemo(() => {
-     if (!task) return { prerequisites: [], current: null, blocking: [] };
-     
-     // Prerequisites: Tasks that this task depends on
-     const prerequisites = (task.dependencies || [])
-        .map(id => allTasks.find(t => t.id === id))
-        .filter(Boolean) as Task[];
-        
-     // Blocking: Tasks that depend on this task
-     const blocking = allTasks.filter(t => t.dependencies?.includes(task.id));
-     
-     return { prerequisites, current: task, blocking };
+  const downstreamTasks = useMemo(() => {
+      if (!task) return [];
+      return allTasks.filter(t => t.dependencies?.includes(task.id));
   }, [task, allTasks]);
 
   const isFlowBlocked = useMemo(() => {
-      return treeData.prerequisites.some(t => t.status !== 'Done');
-  }, [treeData.prerequisites]);
-
-  const streamItems = useMemo(() => {
-    const all = [
-        ...comments.map(c => ({ ...c, type: 'comment', source: 'user' })),
-        ...activityLog.map(l => ({ 
-            id: l.id, 
-            user: l.userName, 
-            text: l.action + (l.details ? `: ${l.details}` : ''), 
-            timestamp: l.timestamp, 
-            type: 'log', 
-            source: 'log',
-            userAvatar: l.userAvatar
-        }))
-    ];
-    return all.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-  }, [comments, activityLog]);
+      return upstreamTasks.some(t => t.status !== 'Done');
+  }, [upstreamTasks]);
 
   const isTracking = task && activeTimer?.taskId === task.id;
 
@@ -271,6 +237,34 @@ const TaskModal: React.FC<TaskModalProps> = ({
         }, 100);
     }
   }, [activeTab, comments, activityLog]);
+
+  // --- FIX 1: Reactive State Synchronization ---
+  // Watch for changes in the `task` prop (even if ID is same) and update local state
+  useEffect(() => {
+    if (isOpen && task) {
+        // Critical Fields Synchronization
+        setStatus(prevStatus => task.status !== prevStatus ? task.status : prevStatus);
+        setPriority(prev => task.priority !== prev ? task.priority : prev);
+        setStartDate(prev => task.startDate !== prev ? task.startDate : prev);
+        setDueDate(prev => task.dueDate !== prev ? task.dueDate : prev);
+        
+        // Sync Assignee if changed externally
+        if (task.assigneeId !== assigneeId) {
+            setAssignee(task.assignee);
+            setAssigneeId(task.assigneeId || '');
+            setAssigneeAvatar(task.assigneeAvatar || '');
+        }
+
+        setSubtasks(task.subtasks || []);
+        setDependencies(task.dependencies || []);
+        setTags(task.tags || []);
+        
+        setEstimatedCost(task.estimatedCost?.toString() || '');
+        setActualCost(task.actualCost?.toString() || '');
+        setEstimatedHours(task.estimatedHours?.toString() || '');
+        setEstimatedDays(task.estimatedDays?.toString() || '');
+    }
+  }, [task, isOpen]);
 
   // --- Initialization Logic (Switching Tasks) ---
   useEffect(() => {
@@ -293,6 +287,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAssigneeId(task.assigneeId || '');
             setAssigneeAvatar(task.assigneeAvatar || '');
             
+            // Logic to auto-fix missing assigneeID from old data
             if (!task.assigneeId && task.assignee && task.assignee !== 'UN' && projectMembers.length > 0) {
               const found = projectMembers.find(m => m.displayName === task.assignee);
               if (found && found.uid) {
@@ -307,10 +302,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAttachments(task.attachments || []);
             setTags(task.tags || []);
             setDependencies(task.dependencies || []);
-            setEstimatedCost(task.estimatedCost?.toString() || '');
-            setActualCost(task.actualCost?.toString() || '');
-            setEstimatedHours(task.estimatedHours?.toString() || '');
-            setEstimatedDays(task.estimatedDays?.toString() || '');
           } else {
             // Default values for New Task
             setTitle('');
@@ -378,7 +369,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
     return html;
   };
 
-  // ... Handlers omitted for brevity (handleAddSubtask, etc. same as before) ...
+  // Handlers
   const handleAddSubtask = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (isReadOnly || !newSubtaskTitle.trim()) return;
@@ -474,19 +465,37 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   const handleUpdateLog = async () => {
     if (!task || !editingLog) return;
+    
     const start = new Date(editStartTime).getTime();
     const end = new Date(editEndTime).getTime();
-    if (isNaN(start) || isNaN(end)) { notify('warning', 'Invalid date/time'); return; }
-    if (end <= start) { notify('warning', 'End time must be after start time'); return; }
+
+    if (isNaN(start) || isNaN(end)) {
+        notify('warning', 'Invalid date/time');
+        return;
+    }
+
+    if (end <= start) {
+        notify('warning', 'End time must be after start time');
+        return;
+    }
+
     const durationSeconds = Math.floor((end - start) / 1000);
+    
     const updatedLog = { ...editingLog, startTime: start, endTime: end, durationSeconds };
     const updatedLogs = (task.timeLogs || []).map(l => l.id === editingLog.id ? updatedLog : l);
     const newTotal = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
+
     try {
-        await updateDoc(doc(db, 'tasks', task.id), { timeLogs: updatedLogs, totalTimeSeconds: newTotal });
+        await updateDoc(doc(db, 'tasks', task.id), {
+            timeLogs: updatedLogs,
+            totalTimeSeconds: newTotal
+        });
         notify('success', 'Time log updated');
         setEditingLog(null); 
-    } catch (e) { console.error(e); notify('error', 'Failed to update log'); }
+    } catch (e) {
+        console.error(e);
+        notify('error', 'Failed to update log');
+    }
   };
 
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -495,9 +504,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
     setNewComment(val);
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+
     const cursorPos = e.target.selectionStart;
     const textBefore = val.slice(0, cursorPos);
     const match = textBefore.match(/(?:^|\s)@(\w*)$/);
+
     if (match) {
       const query = match[1];
       setMentionQuery(query);
@@ -541,10 +552,19 @@ const TaskModal: React.FC<TaskModalProps> = ({
         return;
     }
     if (showMentionList && filteredMembers.length > 0) {
-        if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHighlightIndex(prev => (prev + 1) % filteredMembers.length); } 
-        else if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHighlightIndex(prev => (prev - 1 + filteredMembers.length) % filteredMembers.length); } 
-        else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); handleInsertMention(filteredMembers[mentionHighlightIndex].displayName); } 
-        else if (e.key === 'Escape') { e.preventDefault(); setShowMentionList(false); }
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setMentionHighlightIndex(prev => (prev + 1) % filteredMembers.length);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setMentionHighlightIndex(prev => (prev - 1 + filteredMembers.length) % filteredMembers.length);
+        } else if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            handleInsertMention(filteredMembers[mentionHighlightIndex].displayName);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setShowMentionList(false);
+        }
     }
   };
 
@@ -566,6 +586,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
     });
   };
 
+  const completedCount = subtasks.filter(st => st.completed).length;
+  const progressPercentage = subtasks.length > 0 ? Math.round((completedCount / subtasks.length) * 100) : 0;
+  const filteredAvailableTags = availableTags.filter(at => at.name.toLowerCase().includes(tagInput.toLowerCase()) && !tags.find(t => t.id === at.id));
+  
+  const streamItems = [
+    ...comments.map(c => ({ ...c, source: 'comment', type: 'comment', timestamp: c.timestamp })),
+    ...activityLog.map(l => ({ ...l, source: 'log', timestamp: l.timestamp }))
+  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
   const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
 
   return (
@@ -574,22 +603,50 @@ const TaskModal: React.FC<TaskModalProps> = ({
         
         {/* Edit Log Mini Modal Overlay */}
         {editingLog && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm" onClick={(e) => e.stopPropagation()}>
-                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl p-6 w-80 border border-slate-200 dark:border-slate-700 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+            <div 
+              className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm"
+              onClick={(e) => e.stopPropagation()} 
+            >
+                <div 
+                  className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl p-6 w-80 border border-slate-200 dark:border-slate-700 animate-fade-in"
+                  onClick={(e) => e.stopPropagation()}
+                >
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Edit Time Entry</h3>
                     <div className="space-y-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Start Time</label>
-                            <input type="datetime-local" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"/>
+                            <input 
+                                type="datetime-local" 
+                                value={editStartTime}
+                                onChange={(e) => setEditStartTime(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">End Time</label>
-                            <input type="datetime-local" value={editEndTime} onChange={(e) => setEditEndTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"/>
+                            <input 
+                                type="datetime-local" 
+                                value={editEndTime}
+                                onChange={(e) => setEditEndTime(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
                         </div>
                     </div>
                     <div className="flex gap-2 mt-6">
-                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingLog(null); }} className="flex-1 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancel</button>
-                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleUpdateLog(); }} className="flex-1 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"><SaveIcon size={14} /> Save</button>
+                        <button 
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingLog(null); }}
+                            className="flex-1 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleUpdateLog(); }}
+                            className="flex-1 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
+                        >
+                            <SaveIcon size={14} /> Save
+                        </button>
                     </div>
                 </div>
             </div>
@@ -615,7 +672,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
                       {isTracking ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
                       {isTracking ? 'STOP' : 'START TIMER'}
                       {(isTracking || (task.totalTimeSeconds || 0) > 0) && (
-                          <span className="ml-1 opacity-80 font-mono">{formatDuration((task.totalTimeSeconds || 0) + (isTracking ? 0 : 0))}</span>
+                          <span className="ml-1 opacity-80 font-mono">
+                              {formatDuration((task.totalTimeSeconds || 0) + (isTracking ? 0 : 0))}
+                          </span>
                       )}
                   </button>
               )}
@@ -655,7 +714,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         <FileText size={12} /> Description
                     </label>
                     {isReadOnly ? (
-                        <div className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl min-h-[100px] prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: parseMarkdown(description) }} />
+                        <div 
+                            className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl min-h-[100px] prose prose-sm dark:prose-invert max-w-none"
+                            dangerouslySetInnerHTML={{ __html: parseMarkdown(description) }}
+                        />
                     ) : (
                         <RichTextEditor value={description} onChange={setDescription} placeholder="Add detailed description here..." />
                     )}
@@ -689,9 +751,31 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><User size={12} /> Assignee</label>
-                        <select disabled={isReadOnly} value={assigneeId} onChange={(e) => { const uid = e.target.value; setAssigneeId(uid); if (uid === 'UN') { setAssignee('Unassigned'); setAssigneeAvatar(''); } else { const member = projectMembers.find(m => m.uid === uid); if (member) { setAssignee(member.displayName); setAssigneeAvatar(member.avatar || ''); } } }} className={`${inputBaseClass} cursor-pointer`}>
+                        <select 
+                          disabled={isReadOnly}
+                          value={assigneeId} 
+                          onChange={(e) => {
+                              const uid = e.target.value;
+                              setAssigneeId(uid);
+                              if (uid === 'UN') {
+                                  setAssignee('Unassigned');
+                                  setAssigneeAvatar('');
+                              } else {
+                                  const member = projectMembers.find(m => m.uid === uid);
+                                  if (member) {
+                                      setAssignee(member.displayName);
+                                      setAssigneeAvatar(member.avatar || '');
+                                  }
+                              }
+                          }} 
+                          className={`${inputBaseClass} cursor-pointer`}
+                        >
                           <option value="UN">Unassigned</option>
-                          {activeMembers.map(member => ( <option key={member.uid!} value={member.uid!}>{member.displayName}</option> ))}
+                          {activeMembers.map(member => (
+                                <option key={member.uid!} value={member.uid!}>
+                                  {member.displayName}
+                                </option>
+                            ))}
                         </select>
                     </div>
                 </div>
@@ -706,7 +790,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
                            const parentTask = allTasks.find(t => t.id === depId);
                            const isCompleted = parentTask?.status === 'Done';
                            return (
-                               <span key={depId} className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 border ${isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}>
+                               <span 
+                                  key={depId} 
+                                  className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 border ${isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}
+                                >
                                    {parentTask ? parentTask.title : 'Unknown Task'}
                                    {!isReadOnly && <button type="button" onClick={() => handleToggleDependency(depId)} className="hover:bg-black/10 rounded-full p-0.5"><X size={12} /></button>}
                                </span>
@@ -715,7 +802,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                     {!isReadOnly && (
                        <div className="relative">
-                          <button type="button" onClick={() => setShowDependencyDropdown(!showDependencyDropdown)} className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">
+                          <button 
+                              type="button" 
+                              onClick={() => setShowDependencyDropdown(!showDependencyDropdown)}
+                              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                          >
                              <Plus size={12} /> Add Dependency
                           </button>
                           {showDependencyDropdown && (
@@ -726,7 +817,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                    {potentialDependencies.map(pt => {
                                        const isSelected = dependencies.includes(pt.id);
                                        return (
-                                          <button key={pt.id} type="button" onClick={() => handleToggleDependency(pt.id)} className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-between ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+                                          <button 
+                                             key={pt.id}
+                                             type="button"
+                                             onClick={() => handleToggleDependency(pt.id)}
+                                             className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-between ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+                                          >
                                              <div className="flex flex-col min-w-0">
                                                 <span className={`font-medium truncate ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-300'}`}>{pt.title}</span>
                                                 <span className="text-[10px] text-slate-500">{pt.status}</span>
@@ -735,7 +831,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                           </button>
                                        );
                                    })}
-                                   {potentialDependencies.length === 0 && ( <div className="p-4 text-center text-sm text-slate-400">No other tasks available.</div> )}
+                                   {potentialDependencies.length === 0 && (
+                                       <div className="p-4 text-center text-sm text-slate-400">No other tasks available.</div>
+                                   )}
                                 </div>
                              </>
                           )}
@@ -748,7 +846,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                        <Bell size={12} /> Remind me
                     </label>
-                    <select disabled={isReadOnly} value={reminderDays} onChange={(e) => setReminderDays(Number(e.target.value))} className={`${inputBaseClass} cursor-pointer`}>
+                    <select 
+                        disabled={isReadOnly}
+                        value={reminderDays} 
+                        onChange={(e) => setReminderDays(Number(e.target.value))} 
+                        className={`${inputBaseClass} cursor-pointer`}
+                    >
                         <option value={-1}>Don't remind</option>
                         <option value={0}>On Due Date</option>
                         <option value={1}>1 Day Before</option>
@@ -855,6 +958,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         )}
                         {streamItems.map((item: any) => {
                             const isLog = item.source === 'log' || item.user === 'System';
+                            
+                            // Case A: System Log
                             if (isLog) {
                                 return (
                                     <div key={item.id} className="flex justify-center my-2">
@@ -864,29 +969,48 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                     </div>
                                 );
                             }
+
+                            // Case B: User Comment
                             const isMe = item.user === currentUser; 
+
                             return (
                                 <div key={item.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                     <div className={`flex max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
+                                        
+                                        {/* Avatar (Only for others) */}
                                         {!isMe && (
                                             <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-sm mb-1">
                                                 {item.user ? item.user.charAt(0).toUpperCase() : 'U'}
                                             </div>
                                         )}
+
                                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                            {/* Name (Only for others) */}
                                             {!isMe && (
                                                 <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1">
                                                     {item.user}
                                                 </span>
                                             )}
-                                            <div className={`px-4 py-2 text-sm shadow-sm relative group ${isMe ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-sm border border-gray-200 dark:border-gray-700'}`}>
+
+                                            {/* Bubble */}
+                                            <div className={`
+                                                px-4 py-2 text-sm shadow-sm relative group
+                                                ${isMe 
+                                                    ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' 
+                                                    : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-sm border border-gray-200 dark:border-gray-700'
+                                                }
+                                            `}>
+                                                {/* Content */}
                                                 <div dangerouslySetInnerHTML={{ __html: parseMarkdown(item.text) }} />
+                                                
                                                 {isMe && (
                                                     <div className="text-[9px] text-blue-200 text-right mt-1 font-medium opacity-80">
                                                         {formatMessageTime(item.timestamp)}
                                                     </div>
                                                 )}
                                             </div>
+                                            
+                                            {/* Timestamp for others (outside) */}
                                             {!isMe && (
                                                 <span className="text-[9px] text-slate-400 mt-1 ml-1 font-medium">
                                                     {formatMessageTime(item.timestamp)}
@@ -905,19 +1029,47 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 sticky bottom-0 z-20">
                             <div className="relative flex items-end gap-2">
                                 <div className="relative flex-1 bg-gray-50 dark:bg-slate-800 rounded-3xl flex items-center px-2 border border-slate-200 dark:border-slate-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
-                                    <button type="button" onClick={() => setNewComment(prev => prev + '@')} className="p-2 text-slate-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/20" title="Mention someone">
-                                        <User size={18} />
+                                    <button 
+                                       type="button"
+                                       onClick={() => setNewComment(prev => prev + '@')}
+                                       className="p-2 text-slate-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                       title="Mention someone"
+                                    >
+                                        <AtSign size={18} />
                                     </button>
-                                    <textarea ref={commentInputRef} value={newComment} onChange={handleCommentChange} onKeyDown={handleCommentKeyDown} placeholder="Type a message..." className="flex-1 max-h-32 min-h-[44px] py-3 px-2 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none custom-scrollbar placeholder-slate-400" style={{ height: '44px' }} rows={1} />
-                                    <button type="button" onClick={handleSendComment} disabled={!newComment.trim()} className="p-2 m-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-sm transition-all disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-slate-700 flex items-center justify-center">
+                                    
+                                    <textarea 
+                                        ref={commentInputRef}
+                                        value={newComment}
+                                        onChange={handleCommentChange}
+                                        onKeyDown={handleCommentKeyDown}
+                                        placeholder="Type a message..."
+                                        className="flex-1 max-h-32 min-h-[44px] py-3 px-2 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none custom-scrollbar placeholder-slate-400"
+                                        style={{ height: '44px' }}
+                                        rows={1}
+                                    />
+                                    
+                                    <button 
+                                        type="button"
+                                        onClick={handleSendComment}
+                                        disabled={!newComment.trim()}
+                                        className="p-2 m-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-sm transition-all disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-slate-700 flex items-center justify-center"
+                                    >
                                         <Send size={16} className={newComment.trim() ? "ml-0.5" : ""} />
                                     </button>
                                 </div>
                             </div>
+                            
+                            {/* Mention Popover */}
                             {showMentionList && filteredMembers.length > 0 && (
                                 <div className="absolute bottom-16 left-4 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto z-50 animate-fade-in">
                                     {filteredMembers.map((member, idx) => (
-                                        <button key={member.uid || idx} type="button" onClick={() => handleInsertMention(member.displayName)} className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 ${idx === mentionHighlightIndex ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+                                        <button
+                                            key={member.uid || idx}
+                                            type="button"
+                                            onClick={() => handleInsertMention(member.displayName)}
+                                            className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 ${idx === mentionHighlightIndex ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+                                        >
                                             <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300">
                                                 {member.avatar ? <img src={member.avatar} alt="" className="w-full h-full rounded-full object-cover" /> : member.displayName.charAt(0)}
                                             </div>
@@ -949,22 +1101,22 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
 
                     {/* Tree Visualizer */}
-                    <div className="flex-1 flex items-center justify-center gap-8 overflow-x-auto custom-scrollbar p-6 z-10">
+                    <div className="flex-1 flex items-center justify-center gap-4 overflow-x-auto custom-scrollbar p-4 z-10">
                         
                         {/* Column 1: Prerequisites */}
-                        <div className="flex flex-col gap-4 items-center min-w-[240px]">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prerequisites (Must Finish First)</span>
-                            {treeData.prerequisites.length === 0 ? (
-                                <div className="p-6 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-32 h-32 flex items-center justify-center text-center">
+                        <div className="flex flex-col gap-4 items-center min-w-[200px]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prerequisites</span>
+                            {upstreamTasks.length === 0 ? (
+                                <div className="p-4 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-24 h-24 flex items-center justify-center text-center">
                                     Start Point
                                 </div>
                             ) : (
-                                <div className="flex flex-col gap-4 w-full items-center">
-                                    {treeData.prerequisites.map(t => (
+                                <div className="flex flex-col gap-3 w-full">
+                                    {upstreamTasks.map(t => (
                                         <MiniTaskCard 
                                             key={t.id} 
                                             task={t} 
-                                            type="prerequisite" 
+                                            type="upstream" 
                                             onClick={() => onTaskSelect && onTaskSelect(t)} 
                                         />
                                     ))}
@@ -974,31 +1126,26 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
                         {/* Connector Arrow */}
                         <div className="text-slate-300 dark:text-slate-600">
-                            <ArrowRight size={32} strokeWidth={3} />
+                            <ArrowRight size={24} strokeWidth={3} />
                         </div>
 
                         {/* Column 2: Current Task */}
-                        <div className="flex flex-col gap-4 items-center min-w-[280px]">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">This Task (Current)</span>
-                            <div className="w-full p-6 rounded-2xl border-2 border-indigo-500 bg-white dark:bg-slate-800 shadow-2xl relative group transform hover:scale-105 transition-transform duration-300">
-                                <div className="absolute -top-3 -right-3 bg-indigo-600 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-md">
+                        <div className="flex flex-col gap-4 items-center min-w-[240px]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Current Focus</span>
+                            <div className="w-full p-5 rounded-xl border-2 border-indigo-500 bg-white dark:bg-slate-800 shadow-xl relative group">
+                                <div className="absolute -top-3 -right-3 bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
                                     {task.status}
                                 </div>
-                                <div className="mb-4">
-                                    <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded border ${task.priority === 'High' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-                                        {task.priority} Priority
-                                    </span>
-                                </div>
-                                <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-3 line-clamp-3 text-center">{task.title}</h4>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 line-clamp-2 text-center">{task.title}</h4>
                                 
-                                <div className="flex justify-center items-center gap-2 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-700 pt-3">
-                                    <User size={14} /> <span>{task.assignee}</span>
+                                <div className="flex justify-center items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                    <User size={12} /> <span>{task.assignee}</span>
                                 </div>
                                 
                                 {isFlowBlocked && (
-                                    <div className="absolute inset-0 bg-white/50 dark:bg-black/50 flex items-center justify-center rounded-xl backdrop-blur-[1px]">
-                                        <span className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 text-white font-bold shadow-lg animate-pulse">
-                                            <AlertOctagon size={16} /> BLOCKED
+                                    <div className="mt-3 text-center">
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[10px] font-bold">
+                                            <AlertOctagon size={10} /> BLOCKED
                                         </span>
                                     </div>
                                 )}
@@ -1007,23 +1154,23 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
                         {/* Connector Arrow */}
                         <div className="text-slate-300 dark:text-slate-600">
-                            <ArrowRight size={32} strokeWidth={3} />
+                            <ArrowRight size={24} strokeWidth={3} />
                         </div>
 
                         {/* Column 3: Blocking */}
-                        <div className="flex flex-col gap-4 items-center min-w-[240px]">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Blocking (Waiting for This)</span>
-                            {treeData.blocking.length === 0 ? (
-                                <div className="p-6 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-32 h-32 flex items-center justify-center text-center">
+                        <div className="flex flex-col gap-4 items-center min-w-[200px]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Blocking</span>
+                            {downstreamTasks.length === 0 ? (
+                                <div className="p-4 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-24 h-24 flex items-center justify-center text-center">
                                     End Point
                                 </div>
                             ) : (
-                                <div className="flex flex-col gap-4 w-full items-center">
-                                    {treeData.blocking.map(t => (
+                                <div className="flex flex-col gap-3 w-full">
+                                    {downstreamTasks.map(t => (
                                         <MiniTaskCard 
                                             key={t.id} 
                                             task={t} 
-                                            type="blocking" 
+                                            type="downstream" 
                                             onClick={() => onTaskSelect && onTaskSelect(t)} 
                                         />
                                     ))}
@@ -1043,10 +1190,17 @@ const TaskModal: React.FC<TaskModalProps> = ({
                             <p className="text-xs text-slate-500">Total Recorded: <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{formatDuration(task.totalTimeSeconds || 0)}</span></p>
                         </div>
                     </div>
+                    
                     <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900">
                         <table className="w-full text-left text-sm">
                             <thead className="bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase sticky top-0">
-                                <tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Start - End</th><th className="px-4 py-3 text-right">Duration</th>{!isReadOnly && <th className="px-4 py-3 text-right">Actions</th>}</tr>
+                                <tr>
+                                    <th className="px-4 py-3">User</th>
+                                    <th className="px-4 py-3">Date</th>
+                                    <th className="px-4 py-3">Start - End</th>
+                                    <th className="px-4 py-3 text-right">Duration</th>
+                                    {!isReadOnly && <th className="px-4 py-3 text-right">Actions</th>}
+                                </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                 {task.timeLogs?.map(log => {
@@ -1056,20 +1210,38 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                         <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                                             <td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{userName}</td>
                                             <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{new Date(log.startTime).toLocaleDateString()}</td>
-                                            <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs font-mono">{new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td>
+                                            <td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs font-mono">
+                                                {new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                                            </td>
                                             <td className="px-4 py-3 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatDuration(log.durationSeconds)}</td>
                                             {!isReadOnly && (
                                                 <td className="px-4 py-3 text-right">
                                                     <div className="flex items-center justify-end gap-2">
-                                                        <button type="button" onClick={() => handleEditLogClick(log)} className="p-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 rounded"><Pencil size={14} /></button>
-                                                        <button type="button" onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-600 rounded"><Trash2 size={14} /></button>
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => handleEditLogClick(log)}
+                                                            className="p-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 rounded"
+                                                        >
+                                                            <Pencil size={14} />
+                                                        </button>
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => handleDeleteLog(log.id)}
+                                                            className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-600 rounded"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
                                                     </div>
                                                 </td>
                                             )}
                                         </tr>
                                     );
                                 })}
-                                {(!task.timeLogs || task.timeLogs.length === 0) && ( <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">No time logs recorded.</td></tr> )}
+                                {(!task.timeLogs || task.timeLogs.length === 0) && (
+                                    <tr>
+                                        <td colSpan={5} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">No time logs recorded.</td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -1082,12 +1254,32 @@ const TaskModal: React.FC<TaskModalProps> = ({
         {/* Footer */}
         <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 flex justify-between items-center shrink-0 backdrop-blur-sm">
             {onDelete && canDelete && task && (
-                <button onClick={() => onDelete(task.id)} type="button" className="flex items-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-4 py-2 rounded-xl font-bold transition-colors text-sm"><Trash2 size={18} /> Delete</button>
+                <button 
+                    onClick={() => onDelete(task.id)} 
+                    type="button"
+                    className="flex items-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-4 py-2 rounded-xl font-bold transition-colors text-sm"
+                >
+                    <Trash2 size={18} />
+                    Delete
+                </button>
             )}
             <div className="flex gap-3 ml-auto">
-                <button onClick={onClose} type="button" className="px-6 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shadow-sm">Cancel</button>
+                <button 
+                    onClick={onClose} 
+                    type="button"
+                    className="px-6 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shadow-sm"
+                >
+                    Cancel
+                </button>
                 {!isReadOnly && canEdit && (
-                    <button onClick={handleSubmit} type="button" className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 flex items-center gap-2"><Check size={18} strokeWidth={3} /> {task ? 'Save Changes' : 'Create Task'}</button>
+                    <button 
+                        onClick={handleSubmit}
+                        type="button"
+                        className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 flex items-center gap-2"
+                    >
+                        <Check size={18} strokeWidth={3} />
+                        {task ? 'Save Changes' : 'Create Task'}
+                    </button>
                 )}
             </div>
         </div>
