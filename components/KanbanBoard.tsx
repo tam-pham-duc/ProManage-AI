@@ -637,7 +637,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
   };
 
   return (
-    <div className="h-full flex flex-col animate-fade-in relative">
+    <div className="h-full flex flex-col animate-fade-in relative z-0">
       <div className="mb-6 flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Kanban Board</h1>
