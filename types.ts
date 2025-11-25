@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type Tab = 'dashboard' | 'kanban' | 'timeline' | 'calendar' | 'map' | 'settings' | 'image-gen' | 'projects';
+export type Tab = 'dashboard' | 'kanban' | 'timeline' | 'calendar' | 'map' | 'settings' | 'image-gen' | 'projects' | 'trash';
 
 export interface MetricCardProps {
   title: string;
@@ -97,6 +97,8 @@ export interface Task {
   updatedAt?: any;
   importedAt?: string;
   reminderDays?: number; // -1 (None), 0 (Same day), 1 (1 day before), etc.
+  isDeleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface KanbanColumn {
@@ -124,6 +126,8 @@ export interface Project {
   createdAt: string;
   members?: ProjectMember[];
   memberUIDs?: string[];
+  isDeleted?: boolean;
+  deletedAt?: string;
 }
 
 export interface User {

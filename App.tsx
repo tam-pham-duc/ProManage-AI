@@ -7,7 +7,6 @@ import KanbanBoard from './components/KanbanBoard';
 import Timeline from './components/Timeline';
 import CalendarView from './components/CalendarView';
 import ProjectMapView from './components/ProjectMapView';
-import ImageGenerator from './components/ImageGenerator';
 import TaskModal from './components/TaskModal';
 import ProjectModal from './components/ProjectModal';
 import FilterBar from './components/FilterBar';
@@ -17,6 +16,7 @@ import ProjectHub from './components/ProjectHub';
 import BackgroundLayer from './components/BackgroundLayer';
 import ReminderModal from './components/ReminderModal';
 import NotificationCenter from './components/NotificationCenter';
+import TrashView from './components/TrashView';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole } from './types';
 
@@ -255,13 +255,16 @@ const App: React.FC = () => {
             return { id: doc.id, ...sanitizeFirestoreData(data) };
         }) as Project[];
         
-        fetchedProjects.sort((a, b) => {
+        // Filter out soft-deleted projects
+        const activeProjects = fetchedProjects.filter(p => !p.isDeleted);
+        
+        activeProjects.sort((a, b) => {
            const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
            const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
            return dateB - dateA;
         });
-        setProjects(fetchedProjects);
-        if (selectedProjectId && !fetchedProjects.find(p => p.id === selectedProjectId)) {
+        setProjects(activeProjects);
+        if (selectedProjectId && !activeProjects.find(p => p.id === selectedProjectId)) {
             setSelectedProjectId(null);
         }
     });
@@ -280,7 +283,11 @@ const App: React.FC = () => {
             const data = doc.data();
             return { id: doc.id, ...sanitizeFirestoreData(data) };
         }) as Task[];
-        setTasks(fetchedTasks);
+        
+        // Filter out soft-deleted tasks
+        const activeTasks = fetchedTasks.filter(t => !t.isDeleted);
+        
+        setTasks(activeTasks);
     }, (error) => {
         console.error("Error fetching tasks:", error);
     });
@@ -786,7 +793,7 @@ const App: React.FC = () => {
   }, [editingTask, userRole, currentUser]);
 
   const renderContent = () => {
-    if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings') {
+    if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings' && activeTab !== 'trash') {
          return <ProjectHub 
                   projects={projects} 
                   onSelectProject={handleSelectProject} 
@@ -813,7 +820,6 @@ const App: React.FC = () => {
             onStatusChange={handleDropTask}
         />
       );
-      case 'image-gen': return <ImageGenerator />;
       case 'projects': return (
         <ProjectHub 
             projects={projects} 
@@ -885,6 +891,9 @@ const App: React.FC = () => {
             columns={columns} onAddColumn={handleAddColumn} onDeleteColumn={handleDeleteColumn}
             onClose={() => { if (selectedProjectId) setActiveTab('dashboard'); else setActiveTab('projects'); }}
         />
+      );
+      case 'trash': return (
+        <TrashView />
       );
       default: return <Dashboard tasks={filteredTasks} projects={projects} columns={columns} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} />;
     }

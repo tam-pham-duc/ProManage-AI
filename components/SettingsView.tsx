@@ -4,7 +4,7 @@ import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, Lay
 import { Task, UserSettings, Tab, TaskPriority, KanbanColumn } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { clearDevData, generateDemoData } from '../services/demoDataService';
 
@@ -158,14 +158,16 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (newPassword && newPassword !== confirmPassword) {
-        notify('error', "Passwords do not match.");
-        return;
-    }
-    
-    if (newPassword && newPassword.length < 6) {
-        notify('warning', "Password should be at least 6 characters.");
-        return;
+    // Part 1: Validation (Check password first)
+    if (newPassword) {
+        if (newPassword !== confirmPassword) {
+            notify('error', "Passwords do not match.");
+            return;
+        }
+        if (newPassword.length < 6) {
+            notify('error', "Password must be at least 6 characters.");
+            return;
+        }
     }
 
     setIsSavingProfile(true);
@@ -174,27 +176,33 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         const user = auth.currentUser;
         if (!user) throw new Error("No user logged in");
 
+        // Part 2: Update Basic Info (Always Run)
+        
+        // A. Update Auth Profile
         await updateProfile(user, {
             displayName: profileName,
             photoURL: avatarPreview
         });
 
-        if (newPassword) {
-            await updatePassword(user, newPassword);
-        }
-
+        // B. Update Firestore User Document (Use setDoc with merge to prevent errors)
         const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
+        await setDoc(userRef, {
             username: profileName,
             jobTitle: profileTitle,
-            avatar: avatarPreview || undefined,
-        });
+            avatar: avatarPreview || null,
+        }, { merge: true });
 
+        // C. Update Local State
         setUserSettings(prev => ({
             ...prev,
             userName: profileName,
             userTitle: profileTitle
         }));
+
+        // Part 3: Update Password (Conditional)
+        if (newPassword) {
+            await updatePassword(user, newPassword);
+        }
 
         notify('success', "Profile updated successfully!");
         setNewPassword('');
@@ -203,9 +211,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     } catch (error: any) {
         console.error("Error updating profile:", error);
         if (error.code === 'auth/requires-recent-login') {
-            notify('warning', "Please log out and in to change password.", 5000);
+            notify('warning', "For security, please log out and log back in to change your password.", 5000);
         } else {
-            notify('error', "Failed to update profile.");
+            notify('error', error.message || "Failed to update profile.");
         }
     } finally {
         setIsSavingProfile(false);

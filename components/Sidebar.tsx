@@ -5,7 +5,6 @@ import {
   KanbanSquare, 
   CalendarClock, 
   Settings, 
-  Palette,
   X,
   Plus,
   Moon,
@@ -15,7 +14,8 @@ import {
   Briefcase,
   Check,
   Layers,
-  GitGraph
+  GitGraph,
+  Trash2
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 
@@ -75,7 +75,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'timeline', label: 'Timeline', icon: CalendarClock },
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
-    { id: 'image-gen', label: 'Creative Assets', icon: Palette },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -241,6 +240,28 @@ const Sidebar: React.FC<SidebarProps> = ({
             })}
             </nav>
 
+            {/* Trash Can Divider and Item */}
+            <div className="px-4 pb-2">
+                <div className="h-px bg-slate-800 my-2"></div>
+                <button
+                    onClick={() => handleNavClick('trash')}
+                    className={`
+                        w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group font-medium
+                        ${activeTab === 'trash' 
+                            ? 'bg-red-900/20 text-red-400' 
+                            : 'text-slate-500 hover:bg-slate-800/50 hover:text-red-400'
+                        }
+                    `}
+                >
+                    <Trash2 
+                        size={20} 
+                        strokeWidth={activeTab === 'trash' ? 2.5 : 2}
+                        className={`transition-colors ${activeTab === 'trash' ? 'text-red-400' : 'text-slate-500 group-hover:text-red-400'}`}
+                    />
+                    <span>Trash Can</span>
+                </button>
+            </div>
+
             <div className="p-5 border-t border-slate-800 bg-slate-900/50 space-y-4">
             <button 
                 onClick={toggleDarkMode}
@@ -270,7 +291,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 <div className="flex items-center gap-1.5">
                     <p className="text-xs text-slate-400 truncate font-medium">{userTitle}</p>
                     {selectedProjectId && currentUserRole && (
-                        <span className={`text-[9px] px-1.5 py-0 rounded-sm uppercase font-bold tracking-wider ${currentUserRole === 'admin' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}`}>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-sm uppercase font-bold tracking-wider ${currentUserRole === 'admin' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}`}>
                             {currentUserRole}
                         </span>
                     )}
