@@ -328,6 +328,86 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [tasks]); 
 
+  // --- Automated Trash Cleanup Logic (Step 100) ---
+  useEffect(() => {
+    const cleanupExpiredTrash = async () => {
+        if (!currentUser) return;
+        // Run once per session to save reads
+        if (sessionStorage.getItem('promanage_cleanup_done')) return;
+
+        console.log("Running Trash Cleanup Check...");
+        const batch = writeBatch(db);
+        let deleteCount = 0;
+        const now = Date.now();
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const PROJECT_LIMIT = 30 * DAY_MS;
+        const TASK_LIMIT = 14 * DAY_MS;
+
+        try {
+            // 1. Cleanup Projects (30 Days)
+            const projectsQ = query(
+                collection(db, 'projects'),
+                where('ownerId', '==', currentUser.id),
+                where('isDeleted', '==', true)
+            );
+            const projectSnap = await getDocs(projectsQ);
+            
+            projectSnap.forEach(docSnap => {
+                const data = docSnap.data();
+                let deletedTime = 0;
+                if (data.deletedAt?.toDate) {
+                    deletedTime = data.deletedAt.toDate().getTime();
+                } else if (typeof data.deletedAt === 'string') {
+                    deletedTime = new Date(data.deletedAt).getTime();
+                }
+
+                if (deletedTime > 0 && (now - deletedTime > PROJECT_LIMIT)) {
+                    batch.delete(docSnap.ref);
+                    deleteCount++;
+                }
+            });
+
+            // 2. Cleanup Tasks (14 Days)
+            const tasksQ = query(
+                collection(db, 'tasks'),
+                where('ownerId', '==', currentUser.id),
+                where('isDeleted', '==', true)
+            );
+            const taskSnap = await getDocs(tasksQ);
+
+            taskSnap.forEach(docSnap => {
+                const data = docSnap.data();
+                let deletedTime = 0;
+                if (data.deletedAt?.toDate) {
+                    deletedTime = data.deletedAt.toDate().getTime();
+                } else if (typeof data.deletedAt === 'string') {
+                    deletedTime = new Date(data.deletedAt).getTime();
+                }
+
+                if (deletedTime > 0 && (now - deletedTime > TASK_LIMIT)) {
+                    batch.delete(docSnap.ref);
+                    deleteCount++;
+                }
+            });
+
+            if (deleteCount > 0) {
+                await batch.commit();
+                console.log(`Cleanup: Permanently removed ${deleteCount} expired items.`);
+                notify('info', `Cleanup: Auto-deleted ${deleteCount} expired items from Trash.`);
+            } else {
+                console.log("Cleanup: No expired items found.");
+            }
+
+            sessionStorage.setItem('promanage_cleanup_done', 'true');
+
+        } catch (error) {
+            console.error("Trash cleanup failed:", error);
+        }
+    };
+
+    cleanupExpiredTrash();
+  }, [currentUser]);
+
   // --- Persistence Effects ---
   useEffect(() => { localStorage.setItem(THEME_KEY, JSON.stringify(isDarkMode)); }, [isDarkMode]);
   useEffect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(userSettings)); }, [userSettings]);
@@ -346,6 +426,7 @@ const App: React.FC = () => {
         setActiveTab('dashboard'); 
         setSelectedProjectId(null);
         sessionStorage.removeItem('promanage_reminder_shown'); 
+        sessionStorage.removeItem('promanage_cleanup_done');
         localStorage.removeItem(SNOOZE_KEY);
         notify('info', 'Logged out successfully');
     } catch (error) {
