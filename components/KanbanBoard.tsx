@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban, Play, Square, Timer } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 
@@ -140,9 +141,20 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
   };
 
   return (
-    <div 
+    <motion.div 
+      layout
+      layoutId={task.id}
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: isDragging ? 0.5 : 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{
+        type: "spring",
+        stiffness: 500,
+        damping: 30,
+        mass: 1
+      }}
       draggable={!isReadOnly && !isBlocked}
-      onDragStart={(e) => !isReadOnly && !isBlocked && onDragStart(e, task.id)}
+      onDragStart={(e) => !isReadOnly && !isBlocked && onDragStart(e as unknown as React.DragEvent, task.id)}
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
@@ -344,7 +356,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
             background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, #334155 10px, #334155 20px);
         }
       `}</style>
-    </div>
+    </motion.div>
   );
 };
 
