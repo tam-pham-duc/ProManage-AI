@@ -1,10 +1,10 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw, Activity } from 'lucide-react';
+import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare } from 'lucide-react';
 import { Task, UserSettings, Tab, TaskPriority, KanbanColumn } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc, getDocs, query, where } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { clearDevData, generateDemoData } from '../services/demoDataService';
 import HealthCheckModal from './HealthCheckModal';
@@ -23,7 +23,18 @@ interface SettingsViewProps {
   onClose: () => void; 
 }
 
-type SettingsTab = 'general' | 'preferences' | 'data';
+type SettingsTab = 'general' | 'preferences' | 'data' | 'templates';
+
+// Define Template Interface locally
+interface Template {
+  id: string;
+  name: string;
+  type: 'project' | 'task';
+  description?: string;
+  createdAt: any;
+  content: any;
+  isDeleted?: boolean;
+}
 
 const HOUSE_TEMPLATE_DATA = [
   { 
@@ -114,6 +125,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   const [isResetting, setIsResetting] = useState(false);
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   
+  // --- Templates Tab State ---
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [activeTemplateType, setActiveTemplateType] = useState<'project' | 'task'>('project');
+  const [isLoadingTemplates, setIsLoadingTemplates] = useState(false);
+  const [previewTemplate, setPreviewTemplate] = useState<Template | null>(null);
+
   // --- Kanban Column Local State ---
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [newColumnColor, setNewColumnColor] = useState('blue');
@@ -126,6 +143,35 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         setAvatarPreview(auth.currentUser.photoURL);
     }
   }, [userSettings]);
+
+  // Fetch Templates Effect
+  useEffect(() => {
+    if (activeTab === 'templates') {
+        const fetchTemplates = async () => {
+            setIsLoadingTemplates(true);
+            try {
+                // Fetching all and filtering client side to allow for index-free simplicity initially
+                // In production, use compound query: where('isDeleted', '==', false)
+                const snap = await getDocs(collection(db, 'templates'));
+                const data = snap.docs
+                    .map(d => ({ id: d.id, ...d.data() } as Template))
+                    .filter(t => !t.isDeleted)
+                    .sort((a, b) => {
+                         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+                         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+                         return dateB.getTime() - dateA.getTime();
+                    });
+                setTemplates(data);
+            } catch (e) {
+                console.error(e);
+                notify('error', 'Failed to load templates');
+            } finally {
+                setIsLoadingTemplates(false);
+            }
+        };
+        fetchTemplates();
+    }
+  }, [activeTab]);
 
   const handleLogout = async () => {
     try {
@@ -377,9 +423,28 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  // --- Template Handlers ---
+  const handleDeleteTemplate = async (id: string) => {
+      if(!window.confirm("Are you sure you want to move this template to trash?")) return;
+      try {
+          await updateDoc(doc(db, 'templates', id), {
+              isDeleted: true,
+              deletedAt: serverTimestamp()
+          });
+          setTemplates(prev => prev.filter(t => t.id !== id));
+          notify('success', 'Template moved to Trash');
+      } catch (e) {
+          console.error(e);
+          notify('error', 'Failed to delete template');
+      }
+  };
+
+  const filteredTemplates = templates.filter(t => t.type === activeTemplateType);
+
   const tabs = [
     { id: 'general', label: 'General', icon: User },
     { id: 'preferences', label: 'Preferences', icon: Sliders },
+    { id: 'templates', label: 'Templates', icon: LayoutTemplate },
     { id: 'data', label: 'Data Management', icon: Database },
   ];
 
@@ -677,6 +742,110 @@ const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           )}
 
+          {/* Tab: Templates */}
+          {activeTab === 'templates' && (
+            <div className="max-w-4xl mx-auto animate-fade-in h-full flex flex-col">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Template Manager</h2>
+                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Manage your saved project and task templates.</p>
+                    </div>
+                    <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                        <button 
+                            onClick={() => setActiveTemplateType('project')}
+                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'project' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                        >
+                            Project Templates
+                        </button>
+                        <button 
+                            onClick={() => setActiveTemplateType('task')}
+                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'task' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+                        >
+                            Task Templates
+                        </button>
+                    </div>
+                </div>
+
+                {isLoadingTemplates ? (
+                    <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+                        <Loader2 className="animate-spin mb-2" size={32} />
+                        <p className="text-sm">Loading templates...</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto custom-scrollbar pb-4">
+                        {filteredTemplates.length === 0 ? (
+                            <div className="col-span-full flex flex-col items-center justify-center h-64 text-slate-400 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                                <LayoutTemplate size={48} className="mb-4 opacity-20" />
+                                <p className="text-sm font-medium">No {activeTemplateType} templates found.</p>
+                                <p className="text-xs mt-1">Save a {activeTemplateType} as a template to see it here.</p>
+                            </div>
+                        ) : (
+                            filteredTemplates.map(template => (
+                                <div key={template.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow group flex flex-col">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div className={`p-2 rounded-lg ${template.type === 'project' ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'}`}>
+                                            {template.type === 'project' ? <Briefcase size={20} /> : <CheckSquare size={20} />}
+                                        </div>
+                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button 
+                                                onClick={() => setPreviewTemplate(template)}
+                                                className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                                title="Preview"
+                                            >
+                                                <Eye size={16} />
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDeleteTemplate(template.id)}
+                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                title="Delete"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-sm mb-1 line-clamp-1">{template.name}</h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 line-clamp-2 h-8">{template.description || 'No description provided.'}</p>
+                                    
+                                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-[10px] text-slate-400">
+                                        <span>{new Date(template.createdAt?.toDate ? template.createdAt.toDate() : template.createdAt).toLocaleDateString()}</span>
+                                        <span className="uppercase font-bold tracking-wider">{template.type}</span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
+
+                {/* Preview Modal Overlay */}
+                {previewTemplate && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4" onClick={() => setPreviewTemplate(null)}>
+                        <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+                            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                                <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                                    <FileJson size={20} className="text-indigo-500" />
+                                    Template Preview: {previewTemplate.name}
+                                </h3>
+                                <button onClick={() => setPreviewTemplate(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="flex-1 overflow-auto p-4 bg-slate-50 dark:bg-black/20">
+                                <pre className="text-xs font-mono text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-all">
+                                    {JSON.stringify(previewTemplate.content, null, 2)}
+                                </pre>
+                            </div>
+                            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                                <button onClick={() => setPreviewTemplate(null)} className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-bold transition-colors">
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+          )}
+
           {/* Tab: Data Management */}
           {activeTab === 'data' && (
             <div className="max-w-xl space-y-8 animate-fade-in">
@@ -691,7 +860,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                            <LayoutTemplate size={24} />
                          </div>
                          <div className="flex-1">
-                           <h3 className="font-bold text-slate-900 dark:text-white text-sm">Project Templates</h3>
+                           <h3 className="font-bold text-slate-900 dark:text-white text-sm">Standard House Template</h3>
                            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 mb-4">
                              Quickly populate your board with standard tasks for a Wood-frame House.
                            </p>

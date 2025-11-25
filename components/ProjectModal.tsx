@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Briefcase, User, MapPin, Plus, Trash2, Shield, Mail, Loader2, Clock, Ban, Save, ChevronDown, ArrowRight, ArrowLeft, Check } from 'lucide-react';
+import { X, Briefcase, User, MapPin, Plus, Trash2, Shield, Mail, Loader2, Clock, Ban, Save, ChevronDown, ArrowRight, ArrowLeft, Check, LayoutTemplate } from 'lucide-react';
 import { Project, ProjectMember, ProjectRole } from '../types';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
+import { saveProjectAsTemplate } from '../services/templateService';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -41,6 +42,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
   // Save State
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSavingTemplate, setIsSavingTemplate] = useState(false);
 
   const canManageRoles = !project || currentUserRole === 'admin';
 
@@ -53,6 +55,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
       setInviteEmail('');
       setIsSaving(false);
       setIsDeleting(false);
+      setIsSavingTemplate(false);
 
       if (project) {
         // EDIT MODE: Load Data
@@ -234,6 +237,24 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
           if (isMounted.current) {
               setIsDeleting(false);
           }
+      }
+  };
+
+  const handleSaveAsTemplate = async () => {
+      if (!project || !currentUser) return;
+      
+      const templateName = prompt("Enter a name for this template:", project.name + " Template");
+      if (!templateName || !templateName.trim()) return;
+
+      setIsSavingTemplate(true);
+      try {
+          await saveProjectAsTemplate(project, templateName.trim(), currentUser.uid);
+          notify('success', "Project template saved successfully!");
+      } catch (e) {
+          console.error(e);
+          notify('error', "Failed to save template.");
+      } finally {
+          setIsSavingTemplate(false);
       }
   };
 
@@ -444,7 +465,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         </div>
 
         {/* Footer Actions */}
-        <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 shrink-0 flex gap-3">
+        <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 shrink-0 flex gap-3 flex-wrap">
             
             {/* Wizard Buttons */}
             {!isEditMode && (
@@ -488,15 +509,31 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
                             {isDeleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                         </button>
                     )}
-                    <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    
+                    {canManageRoles && (
+                        <button
+                            type="button"
+                            onClick={handleSaveAsTemplate}
+                            disabled={isSavingTemplate}
+                            className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors flex items-center justify-center"
+                            title="Save as Template"
+                        >
+                            {isSavingTemplate ? <Loader2 size={18} className="animate-spin" /> : <LayoutTemplate size={18} />}
+                        </button>
+                    )}
+
+                    <div className="flex-1"></div>
+
+                    <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                         Cancel
                     </button>
+                    
                     {canManageRoles && (
                         <button 
                             type="submit" 
                             form="projectForm"
                             disabled={isSaving || isDeleting} 
-                            className="flex-1 py-2.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                            className="px-6 py-2.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
                             {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                             Save Changes
