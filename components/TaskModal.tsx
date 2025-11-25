@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
@@ -58,29 +58,41 @@ const formatMessageTime = (timestampStr: string) => {
     }
 };
 
-// --- Mini Task Card Component for Flow View ---
-const MiniTaskCard: React.FC<{ task: Task; type: 'upstream' | 'downstream'; onClick?: () => void }> = ({ task, type, onClick }) => {
+// --- Mini Task Card Component ---
+const MiniTaskCard: React.FC<{ 
+    task: Task; 
+    type: 'upstream' | 'downstream' | 'current'; 
+    onClick?: () => void;
+    id?: string;
+}> = ({ task, type, onClick, id }) => {
     const isCompleted = task.status === 'Done';
+    const isCurrent = type === 'current';
     
-    let borderClass = 'border-slate-200 dark:border-slate-700';
-    let bgClass = 'bg-white dark:bg-slate-800';
-    let icon = <Clock size={14} className="text-slate-400" />;
+    let containerClass = 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800';
     let statusColor = 'text-slate-500';
+    let icon = <Clock size={14} className="text-slate-400" />;
 
-    if (type === 'upstream') {
+    if (isCurrent) {
+        containerClass = 'border-indigo-500 ring-2 ring-indigo-100 dark:ring-indigo-900/30 bg-white dark:bg-slate-800 shadow-xl scale-105 z-20';
+        statusColor = 'text-indigo-600 dark:text-indigo-400';
+        if (isCompleted) {
+             containerClass = 'border-emerald-500 ring-2 ring-emerald-100 dark:ring-emerald-900/30 bg-white dark:bg-slate-800 shadow-xl scale-105 z-20';
+             statusColor = 'text-emerald-600 dark:text-emerald-400';
+             icon = <CheckCircle2 size={16} className="text-emerald-500" />;
+        }
+    } else if (type === 'upstream') {
         if (!isCompleted) {
-            borderClass = 'border-red-300 dark:border-red-800';
-            bgClass = 'bg-red-50 dark:bg-red-900/20';
-            icon = <AlertCircle size={14} className="text-red-500" />;
-            statusColor = 'text-red-600 dark:text-red-400';
+            containerClass = 'border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10';
+            statusColor = 'text-rose-600 dark:text-rose-400';
+            icon = <AlertCircle size={14} className="text-rose-500" />;
         } else {
-            borderClass = 'border-emerald-300 dark:border-emerald-800';
-            bgClass = 'bg-emerald-50 dark:bg-emerald-900/20';
-            icon = <CheckCircle2 size={14} className="text-emerald-500" />;
+            containerClass = 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10';
             statusColor = 'text-emerald-600 dark:text-emerald-400';
+            icon = <CheckCircle2 size={14} className="text-emerald-500" />;
         }
     } else {
-        // Downstream
+        // Downstream (Blocking)
+        containerClass = 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 opacity-90';
         if (isCompleted) {
              icon = <CheckCircle2 size={14} className="text-emerald-500" />;
         } else {
@@ -90,29 +102,251 @@ const MiniTaskCard: React.FC<{ task: Task; type: 'upstream' | 'downstream'; onCl
 
     return (
         <div 
+            id={id}
             onClick={onClick}
             className={`
-                p-3 rounded-xl border shadow-sm w-full cursor-pointer hover:shadow-md transition-all group relative overflow-hidden
-                ${borderClass} ${bgClass}
+                relative p-3 rounded-xl border shadow-sm w-48 transition-all duration-300 group cursor-pointer
+                ${containerClass}
+                ${!isCurrent ? 'hover:scale-105 hover:shadow-md hover:z-10' : ''}
             `}
         >
-            <div className="flex justify-between items-start mb-1">
-                <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug pr-4">{task.title}</h5>
-                {icon}
-            </div>
-            <div className="flex items-center gap-2 mt-2">
-                <div className="w-5 h-5 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-600">
-                    {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full rounded-full object-cover" /> : task.assignee.charAt(0)}
-                </div>
-                <span className={`text-[10px] font-semibold ${statusColor}`}>
+            {/* Connector Handles (Invisible, for positioning logic if needed, but using card center usually) */}
+            
+            <div className="flex justify-between items-start mb-2">
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/50 dark:bg-black/20 ${statusColor}`}>
                     {task.status}
                 </span>
+                {icon}
             </div>
-            {type === 'upstream' && !isCompleted && (
-                <div className="absolute right-0 bottom-0 p-1">
-                    <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+            
+            <h5 className={`font-bold text-xs leading-snug mb-2 line-clamp-2 ${isCurrent ? 'text-sm text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                {task.title}
+            </h5>
+
+            <div className="flex items-center justify-between mt-auto">
+                <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden border border-white dark:border-slate-600">
+                        {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full object-cover" /> : task.assignee.charAt(0)}
+                    </div>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[80px]">{task.assignee}</span>
                 </div>
-            )}
+                {task.priority === 'High' && !isCompleted && (
+                    <AlertTriangle size={12} className="text-rose-500 animate-pulse" />
+                )}
+            </div>
+        </div>
+    );
+};
+
+// --- Dependency Visualizer Component ---
+const TaskDependencyVisualizer: React.FC<{
+    task: Task;
+    upstreamTasks: Task[];
+    downstreamTasks: Task[];
+    onTaskSelect?: (task: Task) => void;
+}> = ({ task, upstreamTasks, downstreamTasks, onTaskSelect }) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [paths, setPaths] = useState<React.ReactElement[]>([]);
+
+    // Re-calculate paths whenever content changes or window resizes
+    useEffect(() => {
+        const calculatePaths = () => {
+            if (!containerRef.current) return;
+            
+            const containerRect = containerRef.current.getBoundingClientRect();
+            const newPaths: React.ReactElement[] = [];
+
+            const currentEl = document.getElementById(`node-current-${task.id}`);
+            if (!currentEl) return;
+            
+            const currentRect = currentEl.getBoundingClientRect();
+            const currentX = currentRect.left + currentRect.width / 2 - containerRect.left;
+            const currentTopY = currentRect.top - containerRect.top;
+            const currentBottomY = currentRect.bottom - containerRect.top;
+
+            // 1. Draw Lines from Upstream (Prereqs) -> Current
+            upstreamTasks.forEach(t => {
+                const el = document.getElementById(`node-up-${t.id}`);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const startX = rect.left + rect.width / 2 - containerRect.left;
+                    const startY = rect.bottom - containerRect.top;
+                    
+                    const endX = currentX;
+                    const endY = currentTopY;
+
+                    // Control points for Bezier
+                    const cp1x = startX;
+                    const cp1y = startY + (endY - startY) / 2;
+                    const cp2x = endX;
+                    const cp2y = endY - (endY - startY) / 2;
+
+                    const isDone = t.status === 'Done';
+                    const color = isDone ? '#10b981' : '#f43f5e'; // Green or Red
+                    
+                    const pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+                    
+                    // Icon Position (Midpoint approximation)
+                    const midX = (startX + endX) / 2;
+                    const midY = (startY + endY) / 2;
+
+                    newPaths.push(
+                        <g key={`link-up-${t.id}`}>
+                            <path 
+                                d={pathD} 
+                                fill="none" 
+                                stroke={color} 
+                                strokeWidth="2" 
+                                strokeDasharray={isDone ? "none" : "5,5"}
+                                className="transition-all duration-500 ease-in-out"
+                            />
+                            <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
+                                <div className={`w-5 h-5 rounded-full flex items-center justify-center shadow-sm border ${isDone ? 'bg-emerald-100 border-emerald-200 text-emerald-600' : 'bg-rose-100 border-rose-200 text-rose-600'}`}>
+                                    {isDone ? <Check size={12} strokeWidth={3} /> : <Lock size={10} />}
+                                </div>
+                            </foreignObject>
+                        </g>
+                    );
+                }
+            });
+
+            // 2. Draw Lines from Current -> Downstream (Blocking)
+            downstreamTasks.forEach(t => {
+                const el = document.getElementById(`node-down-${t.id}`);
+                if (el) {
+                    const rect = el.getBoundingClientRect();
+                    const endX = rect.left + rect.width / 2 - containerRect.left;
+                    const endY = rect.top - containerRect.top;
+                    
+                    const startX = currentX;
+                    const startY = currentBottomY;
+
+                    // Control points
+                    const cp1x = startX;
+                    const cp1y = startY + (endY - startY) / 2;
+                    const cp2x = endX;
+                    const cp2y = endY - (endY - startY) / 2;
+
+                    const isCurrentDone = task.status === 'Done';
+                    const color = isCurrentDone ? '#94a3b8' : '#f43f5e'; // Slate (open) or Red (locked)
+                    
+                    const pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+                    
+                    const midX = (startX + endX) / 2;
+                    const midY = (startY + endY) / 2;
+
+                    newPaths.push(
+                        <g key={`link-down-${t.id}`}>
+                            <path 
+                                d={pathD} 
+                                fill="none" 
+                                stroke={color} 
+                                strokeWidth="2" 
+                                strokeDasharray={isCurrentDone ? "none" : "5,5"}
+                                className="transition-all duration-500 ease-in-out"
+                            />
+                            {!isCurrentDone && (
+                                <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
+                                    <div className="w-5 h-5 rounded-full flex items-center justify-center shadow-sm border bg-rose-100 border-rose-200 text-rose-600">
+                                        <Lock size={10} />
+                                    </div>
+                                </foreignObject>
+                            )}
+                        </g>
+                    );
+                }
+            });
+
+            setPaths(newPaths);
+        };
+
+        // Initial Draw
+        setTimeout(calculatePaths, 100); // Small delay to ensure DOM layout
+
+        // Resize Listener
+        window.addEventListener('resize', calculatePaths);
+        return () => window.removeEventListener('resize', calculatePaths);
+    }, [task, upstreamTasks, downstreamTasks]);
+
+    return (
+        <div ref={containerRef} className="relative w-full min-h-[600px] py-8 bg-slate-50 dark:bg-slate-900/50 rounded-xl overflow-hidden">
+            
+            {/* SVG Layer */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
+                {paths}
+            </svg>
+
+            {/* Content Layer */}
+            <div className="relative z-10 flex flex-col items-center justify-between h-full gap-16">
+                
+                {/* Top: Prerequisites */}
+                <div className="flex flex-col items-center w-full px-4">
+                    <div className="mb-4 text-center">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider bg-white dark:bg-slate-800 px-3 py-1 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
+                            Prerequisites
+                        </span>
+                    </div>
+                    {upstreamTasks.length > 0 ? (
+                        <div className="flex flex-wrap justify-center gap-6">
+                            {upstreamTasks.map(t => (
+                                <MiniTaskCard 
+                                    key={t.id} 
+                                    id={`node-up-${t.id}`}
+                                    task={t} 
+                                    type="upstream" 
+                                    onClick={() => onTaskSelect && onTaskSelect(t)} 
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-sm text-slate-400 italic py-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl px-8 bg-slate-50/50 dark:bg-slate-800/50">
+                            No prerequisites
+                        </div>
+                    )}
+                </div>
+
+                {/* Middle: Current Task */}
+                <div className="flex flex-col items-center">
+                    <div className="mb-4 text-center">
+                        <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800">
+                            Current Focus
+                        </span>
+                    </div>
+                    <div id={`node-current-${task.id}`}>
+                        <MiniTaskCard 
+                            task={task} 
+                            type="current" 
+                        />
+                    </div>
+                </div>
+
+                {/* Bottom: Blocking */}
+                <div className="flex flex-col items-center w-full px-4">
+                    <div className="mb-4 text-center">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider bg-white dark:bg-slate-800 px-3 py-1 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
+                            Blocking
+                        </span>
+                    </div>
+                    {downstreamTasks.length > 0 ? (
+                        <div className="flex flex-wrap justify-center gap-6">
+                            {downstreamTasks.map(t => (
+                                <MiniTaskCard 
+                                    key={t.id} 
+                                    id={`node-down-${t.id}`}
+                                    task={t} 
+                                    type="downstream" 
+                                    onClick={() => onTaskSelect && onTaskSelect(t)} 
+                                />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-sm text-slate-400 italic py-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl px-8 bg-slate-50/50 dark:bg-slate-800/50">
+                            End of chain
+                        </div>
+                    )}
+                </div>
+
+            </div>
         </div>
     );
 };
@@ -1084,102 +1318,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
             )}
 
             {activeTab === 'flow' && task && (
-                <div className="h-full flex flex-col relative overflow-hidden">
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5">
-                        <GitBranch size={200} />
-                    </div>
-                    
-                    {/* Header Status */}
-                    <div className="flex justify-between items-center mb-6 z-10">
-                         <h3 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                            <GitBranch size={18} className="text-indigo-500" />
-                            Dependency Tree
-                         </h3>
-                         <div className={`px-3 py-1 rounded-full text-xs font-bold border ${isFlowBlocked ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400' : 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
-                            {isFlowBlocked ? 'Blocked by Prerequisites' : 'Ready to Start'}
-                        </div>
-                    </div>
-
-                    {/* Tree Visualizer */}
-                    <div className="flex-1 flex items-center justify-center gap-4 overflow-x-auto custom-scrollbar p-4 z-10">
-                        
-                        {/* Column 1: Prerequisites */}
-                        <div className="flex flex-col gap-4 items-center min-w-[200px]">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prerequisites</span>
-                            {upstreamTasks.length === 0 ? (
-                                <div className="p-4 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-24 h-24 flex items-center justify-center text-center">
-                                    Start Point
-                                </div>
-                            ) : (
-                                <div className="flex flex-col gap-3 w-full">
-                                    {upstreamTasks.map(t => (
-                                        <MiniTaskCard 
-                                            key={t.id} 
-                                            task={t} 
-                                            type="upstream" 
-                                            onClick={() => onTaskSelect && onTaskSelect(t)} 
-                                        />
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Connector Arrow */}
-                        <div className="text-slate-300 dark:text-slate-600">
-                            <ArrowRight size={24} strokeWidth={3} />
-                        </div>
-
-                        {/* Column 2: Current Task */}
-                        <div className="flex flex-col gap-4 items-center min-w-[240px]">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Current Focus</span>
-                            <div className="w-full p-5 rounded-xl border-2 border-indigo-500 bg-white dark:bg-slate-800 shadow-xl relative group">
-                                <div className="absolute -top-3 -right-3 bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
-                                    {task.status}
-                                </div>
-                                <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 line-clamp-2 text-center">{task.title}</h4>
-                                
-                                <div className="flex justify-center items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                                    <User size={12} /> <span>{task.assignee}</span>
-                                </div>
-                                
-                                {isFlowBlocked && (
-                                    <div className="mt-3 text-center">
-                                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[10px] font-bold">
-                                            <AlertOctagon size={10} /> BLOCKED
-                                        </span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Connector Arrow */}
-                        <div className="text-slate-300 dark:text-slate-600">
-                            <ArrowRight size={24} strokeWidth={3} />
-                        </div>
-
-                        {/* Column 3: Blocking */}
-                        <div className="flex flex-col gap-4 items-center min-w-[200px]">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Blocking</span>
-                            {downstreamTasks.length === 0 ? (
-                                <div className="p-4 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-24 h-24 flex items-center justify-center text-center">
-                                    End Point
-                                </div>
-                            ) : (
-                                <div className="flex flex-col gap-3 w-full">
-                                    {downstreamTasks.map(t => (
-                                        <MiniTaskCard 
-                                            key={t.id} 
-                                            task={t} 
-                                            type="downstream" 
-                                            onClick={() => onTaskSelect && onTaskSelect(t)} 
-                                        />
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                    </div>
-                </div>
+                <TaskDependencyVisualizer 
+                    task={task} 
+                    upstreamTasks={upstreamTasks} 
+                    downstreamTasks={downstreamTasks}
+                    onTaskSelect={onTaskSelect} 
+                />
             )}
 
             {activeTab === 'timeLogs' && task && (
