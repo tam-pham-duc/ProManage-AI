@@ -61,6 +61,7 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: 'col-3', title: 'Done', color: 'emerald' },
 ];
 
+// Helper to ensure consistent data format throughout the app
 const sanitizeFirestoreData = (data: any): any => {
   if (data === null || data === undefined) return data;
   if (data && typeof data.toDate === 'function') {
@@ -79,6 +80,29 @@ const sanitizeFirestoreData = (data: any): any => {
     return sanitized;
   }
   return data;
+};
+
+// Helper to normalize task data for state updates
+const normalizeTaskData = (task: Partial<Task>): Partial<Task> => {
+  const normalized = { ...task };
+  const dateFields = ['startDate', 'dueDate', 'createdAt', 'updatedAt', 'deletedAt'] as const;
+
+  dateFields.forEach(field => {
+    const val = normalized[field];
+    if (val) {
+      // If it's a Firestore Timestamp (has toDate)
+      if (typeof val === 'object' && 'toDate' in val && typeof val.toDate === 'function') {
+         normalized[field] = val.toDate().toISOString();
+      } 
+      // If it's a JS Date object
+      else if (val instanceof Date) {
+         normalized[field] = val.toISOString();
+      }
+      // If it's already a string, leave it (assuming ISO)
+    }
+  });
+  
+  return normalized;
 };
 
 const App: React.FC = () => {
@@ -615,28 +639,34 @@ const App: React.FC = () => {
   const handleSaveTask = async (taskData: Partial<Task>) => { 
       if (!currentUser || !selectedProjectId) return;
       
+      // NORMALIZE DATA (Fix data type mismatch issues)
+      const safeTaskData = normalizeTaskData(taskData);
+
       if (editingTask) {
-          // Optimistic Update
-          setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...taskData } : t));
+          // Snapshot for Rollback
+          const previousTasks = [...tasks];
+
+          // Optimistic Update (Immutable)
+          setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...safeTaskData } : t));
           
           try {
              const taskRef = doc(db, 'tasks', editingTask.id);
-             await updateDoc(taskRef, { ...taskData, updatedAt: serverTimestamp() });
+             await updateDoc(taskRef, { ...safeTaskData, updatedAt: serverTimestamp() });
              
              // Activity Logging for specific changes
              const changes: string[] = [];
              let type: ActivityType = 'update';
              
-             if (taskData.status && taskData.status !== editingTask.status) {
-                 changes.push(`Moved to ${taskData.status}`);
+             if (safeTaskData.status && safeTaskData.status !== editingTask.status) {
+                 changes.push(`Moved to ${safeTaskData.status}`);
                  type = 'status_change';
              }
-             if (taskData.priority && taskData.priority !== editingTask.priority) {
-                 changes.push(`Priority to ${taskData.priority}`);
+             if (safeTaskData.priority && safeTaskData.priority !== editingTask.priority) {
+                 changes.push(`Priority to ${safeTaskData.priority}`);
                  type = 'priority_change';
              }
-             if (taskData.assignee && taskData.assignee !== editingTask.assignee) {
-                 changes.push(`Assigned to ${taskData.assignee}`);
+             if (safeTaskData.assignee && safeTaskData.assignee !== editingTask.assignee) {
+                 changes.push(`Assigned to ${safeTaskData.assignee}`);
                  type = 'assign';
              }
 
@@ -644,7 +674,7 @@ const App: React.FC = () => {
                  await logProjectActivity(
                      selectedProjectId,
                      editingTask.id,
-                     taskData.title || editingTask.title,
+                     safeTaskData.title || editingTask.title,
                      'updated task',
                      currentUser,
                      changes.join(', '),
@@ -653,16 +683,31 @@ const App: React.FC = () => {
              }
 
              notify('success', "Task updated");
-          } catch (e) { notify('error', 'Update failed'); }
+          } catch (e) { 
+              console.error("Save failed:", e);
+              // Rollback on error
+              setTasks(previousTasks);
+              notify('error', 'Update failed'); 
+          }
       } else {
           try {
-             const newDocRef = await addDoc(collection(db, 'tasks'), { ...taskData, projectId: selectedProjectId, ownerId: currentUser.id, createdAt: serverTimestamp() });
+             // Local optimistic add (requires temporary ID)
+             // Ideally we wait for server ID, but for pure optimistic UI we could fake it.
+             // For creation, usually safer to wait unless we generate ID locally.
+             // Here we'll just wait for standard addDoc which is fast enough or let onSnapshot handle it.
+             
+             const newDocRef = await addDoc(collection(db, 'tasks'), { 
+                 ...safeTaskData, 
+                 projectId: selectedProjectId, 
+                 ownerId: currentUser.id, 
+                 createdAt: serverTimestamp() 
+             });
              
              // Log Creation
              await logProjectActivity(
                  selectedProjectId,
                  newDocRef.id,
-                 taskData.title || 'New Task',
+                 safeTaskData.title || 'New Task',
                  'created task',
                  currentUser,
                  'Added to board',
@@ -761,10 +806,11 @@ const App: React.FC = () => {
       // 3. Optimistic Update (Strict Immutable Pattern)
       try {
           // Create a brand new object for the updated task to avoid reference mutation
+          // Normalize data while we are at it to ensure consistency
           const updatedTask: Task = { 
               ...task, 
               status: newStatus,
-              updatedAt: new Date().toISOString() 
+              updatedAt: new Date().toISOString() // ISO string for local consistency
           };
           
           // Create a new array for the state

@@ -144,6 +144,31 @@ const getVNHoliday = (d: number, m: number, y: number, lDay: number, lMonth: num
     return null;
 };
 
+// Helper to ensure YYYY-MM-DD string regardless of input format
+const getNormalizedDateString = (dateInput: any): string => {
+    if (!dateInput) return '';
+    try {
+        let date: Date;
+        if (dateInput instanceof Date) {
+            date = dateInput;
+        } else if (typeof dateInput === 'object' && 'seconds' in dateInput) {
+            date = new Date(dateInput.seconds * 1000);
+        } else if (typeof dateInput === 'object' && typeof dateInput.toDate === 'function') {
+            date = dateInput.toDate();
+        } else {
+            date = new Date(dateInput);
+        }
+        
+        if (isNaN(date.getTime())) return '';
+        // Use ISO split to get YYYY-MM-DD part. 
+        // Note: This is UTC-based. If local dates are needed without time shifts, 
+        // Ensure inputs are stored as ISO strings (YYYY-MM-DD) or normalized.
+        return date.toISOString().split('T')[0];
+    } catch (e) {
+        return '';
+    }
+};
+
 const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onTaskClick, onAddTask }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -161,8 +186,15 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onTaskClick, onAddTa
   const handleToday = () => setCurrentDate(new Date());
 
   const getTasksForDay = (day: number) => {
+    // Construct target date string matching storage format YYYY-MM-DD
     const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    return (tasks || []).filter(t => t && (t.dueDate === dateStr || t.startDate === dateStr));
+    
+    return (tasks || []).filter(t => {
+        if (!t) return false;
+        const start = getNormalizedDateString(t.startDate);
+        const due = getNormalizedDateString(t.dueDate);
+        return due === dateStr || start === dateStr;
+    });
   };
 
   const getTaskColorClass = (status: string) => {

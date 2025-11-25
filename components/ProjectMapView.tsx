@@ -55,7 +55,7 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
 
   // --- Layout Engine (Part 1) ---
   const graphNodes = useMemo<GraphNode[]>(() => {
-    // CRITICAL FIX: Filter out invalid tasks immediately
+    // CRITICAL FIX: Filter out invalid tasks immediately to prevent crashes
     const validTasks = (tasks || []).filter(t => t && t.id);
     
     const nodes: GraphNode[] = [];
@@ -73,13 +73,18 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
         if (deps.length > 0) {
           let maxParentLevel = -1;
           deps.forEach(depId => {
+            // Safety: Only consider parents that exist in our valid set
             if (levels.has(depId)) {
-              maxParentLevel = Math.max(maxParentLevel, levels.get(depId)!);
+              const parentLevel = levels.get(depId);
+              if (typeof parentLevel === 'number') {
+                maxParentLevel = Math.max(maxParentLevel, parentLevel);
+              }
             }
           });
           
           const newLevel = maxParentLevel + 1;
-          if (newLevel > levels.get(task.id)!) {
+          const currentLevel = levels.get(task.id) || 0;
+          if (newLevel > currentLevel) {
             levels.set(task.id, newLevel);
             changed = true;
           }
@@ -132,6 +137,7 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
     graphNodes.forEach(node => {
         const deps = node.dependencies || [];
         deps.forEach(depId => {
+            // Safety: Verify parent existence in the layout graph
             const parent = graphNodes.find(n => n.id === depId);
             if (parent) {
                 // Coordinates
@@ -296,8 +302,12 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
             {graphNodes.map(node => {
                 // Calculate Blocked Status relative to parents
                 const deps = node.dependencies || [];
+                
+                // Safe check for blocked status
                 const isBlocked = deps.some(depId => {
-                    const parent = tasks.find(t => t.id === depId);
+                    // Explicitly check if parent task exists in the full task list before accessing status
+                    // This prevents crashes if a dependency ID refers to a deleted or filtered-out task
+                    const parent = tasks.find(t => t && t.id === depId);
                     return parent && parent.status !== 'Done';
                 });
                 

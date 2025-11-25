@@ -84,6 +84,23 @@ const HOUSE_TEMPLATE_DATA = [
   }
 ];
 
+// Helper for safe date parsing
+const safeParseDate = (dateInput: any): Date | null => {
+    if (!dateInput) return null;
+    try {
+        if (typeof dateInput === 'object' && 'seconds' in dateInput) {
+            return new Date(dateInput.seconds * 1000);
+        }
+        if (typeof dateInput === 'object' && typeof dateInput.toDate === 'function') {
+            return dateInput.toDate();
+        }
+        const d = new Date(dateInput);
+        return isNaN(d.getTime()) ? null : d;
+    } catch (e) {
+        return null;
+    }
+};
+
 const TemplatePreview: React.FC<{ template: Template }> = ({ template }) => {
   const { type, content } = template;
 
@@ -274,9 +291,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                     .map(d => ({ id: d.id, ...d.data() } as Template))
                     .filter(t => !t.isDeleted)
                     .sort((a, b) => {
-                         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                         return dateB.getTime() - dateA.getTime();
+                         // Safe sort
+                         const dateA = safeParseDate(a.createdAt)?.getTime() || 0;
+                         const dateB = safeParseDate(b.createdAt)?.getTime() || 0;
+                         return dateB - dateA;
                     });
                 setTemplates(data);
             } catch (e) {
@@ -627,9 +645,10 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                       .map(d => ({ id: d.id, ...d.data() } as Template))
                       .filter(t => !t.isDeleted)
                       .sort((a, b) => {
-                           const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
-                           const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
-                           return dateB.getTime() - dateA.getTime();
+                           // Safe sort
+                           const dateA = safeParseDate(a.createdAt)?.getTime() || 0;
+                           const dateB = safeParseDate(b.createdAt)?.getTime() || 0;
+                           return dateB - dateA;
                       });
                   setTemplates(data);
               }
@@ -1003,7 +1022,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                                 <p className="text-xs mt-1">Save a {activeTemplateType} as a template to see it here.</p>
                             </div>
                         ) : (
-                            filteredTemplates.map(template => (
+                            filteredTemplates.map(template => {
+                                // SAFETY GUARD: Check if template content is valid
+                                if (!template || !template.content) return null;
+
+                                return (
                                 <div key={template.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow group flex flex-col">
                                     <div className="flex justify-between items-start mb-3">
                                         <div className={`p-2 rounded-lg ${template.type === 'project' ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'}`}>
@@ -1038,11 +1061,15 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 line-clamp-2 h-8">{template.description || 'No description provided.'}</p>
                                     
                                     <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-[10px] text-slate-400">
-                                        <span>{new Date(template.createdAt?.toDate ? template.createdAt.toDate() : template.createdAt).toLocaleDateString()}</span>
+                                        <span>
+                                            {safeParseDate(template.createdAt) 
+                                                ? safeParseDate(template.createdAt)!.toLocaleDateString() 
+                                                : 'Unknown Date'}
+                                        </span>
                                         <span className="uppercase font-bold tracking-wider">{template.type}</span>
                                     </div>
                                 </div>
-                            ))
+                            )})
                         )}
                     </div>
                 )}

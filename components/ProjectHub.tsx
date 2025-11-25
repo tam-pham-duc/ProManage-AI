@@ -30,6 +30,23 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
   const [filterStatus, setFilterStatus] = useState('All');
   const [sortBy, setSortBy] = useState('createdAt'); // 'createdAt' | 'name' | 'client'
 
+  // --- Safe Date Helper for Sorting ---
+  const getTimestamp = (dateInput: any): number => {
+      if (!dateInput) return 0;
+      try {
+          if (typeof dateInput === 'object' && 'seconds' in dateInput) {
+              return dateInput.seconds * 1000;
+          }
+          if (typeof dateInput.toDate === 'function') {
+              return dateInput.toDate().getTime();
+          }
+          const d = new Date(dateInput);
+          return isNaN(d.getTime()) ? 0 : d.getTime();
+      } catch (e) {
+          return 0;
+      }
+  };
+
   // --- Filter & Sort Logic ---
   const filteredProjects = useMemo(() => {
     return projects
@@ -54,8 +71,8 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
           return (a.clientName || '').localeCompare(b.clientName || '');
         }
         // Default: Date Descending (Newest first)
-        const dateA = new Date(a.createdAt || 0).getTime();
-        const dateB = new Date(b.createdAt || 0).getTime();
+        const dateA = getTimestamp(a.createdAt);
+        const dateB = getTimestamp(b.createdAt);
         return dateB - dateA;
       });
   }, [projects, filterStatus, sortBy, searchQuery]);
@@ -212,6 +229,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
           {/* Existing Projects */}
           {filteredProjects.map(project => {
             const isOwner = currentUserId === project.ownerId;
+            const createdTs = getTimestamp(project.createdAt);
             
             return (
             <div 
@@ -249,7 +267,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-400 dark:text-slate-500 flex items-center gap-1">
                     <Clock size={12} />
-                    Created {new Date(project.createdAt || Date.now()).toLocaleDateString()}
+                    Created {createdTs ? new Date(createdTs).toLocaleDateString() : 'Unknown'}
                   </span>
                   <div className="flex items-center gap-2">
                     {onDeleteProject && isOwner && (

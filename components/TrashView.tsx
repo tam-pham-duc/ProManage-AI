@@ -14,16 +14,22 @@ const TrashView: React.FC = () => {
   const [deletedTemplates, setDeletedTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Helper to safely parse timestamps
+  // Helper to safely parse timestamps (Universal Date Parser)
   const parseDate = (timestamp: any): Date | null => {
     if (!timestamp) return null;
-    let date: Date;
     try {
-        if (typeof timestamp.toDate === 'function') date = timestamp.toDate();
-        else date = new Date(timestamp);
-        
-        if (isNaN(date.getTime())) return null;
-        return date;
+        // 1. Firestore Timestamp (object with seconds)
+        if (typeof timestamp === 'object' && 'seconds' in timestamp) {
+            return new Date(timestamp.seconds * 1000);
+        }
+        // 2. Firestore Timestamp (object with toDate function)
+        if (typeof timestamp === 'object' && typeof timestamp.toDate === 'function') {
+            return timestamp.toDate();
+        }
+        // 3. Date object or String
+        const d = new Date(timestamp);
+        if (isNaN(d.getTime())) return null;
+        return d;
     } catch (e) {
         return null;
     }
@@ -318,7 +324,11 @@ const TrashView: React.FC = () => {
                         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
                           <span className="uppercase font-bold">{template.type || 'Unknown'}</span>
                           <span>•</span>
-                          <span>{template.createdAt ? new Date(template.createdAt.toDate ? template.createdAt.toDate() : template.createdAt).toLocaleDateString() : 'No Date'}</span>
+                          <span>
+                            {parseDate(template.createdAt) 
+                                ? parseDate(template.createdAt)!.toLocaleDateString() 
+                                : 'Unknown Date'}
+                          </span>
                         </div>
                         <div className={`mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold border ${retention.isUrgent ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'}`}>
                           {retention.isUrgent && <AlertTriangle size={10} />}

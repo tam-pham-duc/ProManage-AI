@@ -31,6 +31,31 @@ const VIEW_WINDOW = {
   Month: 12  // Render 12 months
 };
 
+// --- Robust Date Parsing Helper ---
+const parseDate = (dateInput: any): Date | null => {
+    if (!dateInput) return null;
+    try {
+        // 1. Already a Date object
+        if (dateInput instanceof Date) {
+            return isNaN(dateInput.getTime()) ? null : dateInput;
+        }
+        // 2. Firestore Timestamp (object with seconds)
+        if (typeof dateInput === 'object' && 'seconds' in dateInput) {
+            return new Date(dateInput.seconds * 1000);
+        }
+        // 3. Firestore Timestamp (object with toDate function)
+        if (typeof dateInput === 'object' && typeof dateInput.toDate === 'function') {
+            return dateInput.toDate();
+        }
+        // 4. String or Number
+        const d = new Date(dateInput);
+        if (isNaN(d.getTime())) return null;
+        return d;
+    } catch (e) {
+        return null;
+    }
+};
+
 interface TimelineTaskCardProps {
   task: ProcessedTask;
   left: number;
@@ -195,12 +220,8 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
             {group.lanes.map((lane, laneIdx) => (
                 lane.map(task => {
                     // SAFETY GUARD: Prevent crashes from corrupted task data
-                    if (!task || !task.id || !task.startDate || !task.dueDate) return null;
-                    
-                    // Extra check for NaN dates from processing
-                    if (!task.startTs || isNaN(task.startTs) || !task.dueTs || isNaN(task.dueTs)) {
-                        return null;
-                    }
+                    if (!task || !task.id) return null;
+                    if (!task.startTs || !task.dueTs) return null;
 
                     // CULLING OPTIMIZATION:
                     // Only render task if it overlaps with the current view window.
@@ -254,36 +275,18 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
       return tasks.map(t => {
           if (!t) return null;
 
-          let startTs = NaN;
-          let dueTs = NaN;
+          // Strict Parse Using Helper
+          const startDateObj = parseDate(t.startDate);
+          const dueDateObj = parseDate(t.dueDate);
 
-          try {
-              // Safe Date Conversion helper
-              const parseDate = (val: any): number => {
-                  if (!val) return NaN;
-                  // Handle Firestore Timestamp object (has seconds)
-                  if (typeof val === 'object' && 'seconds' in val) {
-                      return val.seconds * 1000;
-                  }
-                  // Handle standard Date string/object
-                  const d = new Date(val);
-                  return d.getTime();
-              };
-
-              startTs = parseDate(t.startDate);
-              dueTs = parseDate(t.dueDate);
-          } catch (e) {
-              // If parsing fails, task is invalid for timeline
-              return null;
-          }
-          
-          if (isNaN(startTs) || isNaN(dueTs)) return null;
+          // Guard Clause: Skip invalid dates immediately
+          if (!startDateObj || !dueDateObj) return null;
 
           return {
               ...t,
-              startTs,
-              dueTs
-          };
+              startTs: startDateObj.getTime(),
+              dueTs: dueDateObj.getTime()
+          } as ProcessedTask;
       }).filter((t): t is ProcessedTask => t !== null);
   }, [tasks]);
 

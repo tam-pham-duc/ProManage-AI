@@ -12,6 +12,26 @@ interface ListViewProps {
 
 type SortKey = 'title' | 'status' | 'priority' | 'dueDate' | 'estimatedCost';
 
+// Helper to safely parse timestamps from various formats
+const safeParseDate = (dateInput: any): number => {
+    if (!dateInput) return 0;
+    try {
+        // Firestore Timestamp (object with seconds)
+        if (typeof dateInput === 'object' && 'seconds' in dateInput) {
+            return dateInput.seconds * 1000;
+        }
+        // Firestore Timestamp (object with toDate function)
+        if (typeof dateInput === 'object' && typeof dateInput.toDate === 'function') {
+            return dateInput.toDate().getTime();
+        }
+        // String or Date object
+        const d = new Date(dateInput);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+    } catch (e) {
+        return 0;
+    }
+};
+
 export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDeleteTask }) => {
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({
     key: 'dueDate',
@@ -27,36 +47,40 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
 
   const sortedTasks = useMemo(() => {
     // 1. Safety Filter: Remove undefined/null tasks immediately
-    const validTasks = tasks.filter(t => t !== null && t !== undefined);
+    const validTasks = (tasks || []).filter(t => t && t.id);
 
     return validTasks.sort((a, b) => {
-      const aValue = a[sortConfig.key];
-      const bValue = b[sortConfig.key];
+      const key = sortConfig.key;
+      const direction = sortConfig.direction;
 
-      // Handle specific types gracefully
-      if (sortConfig.key === 'estimatedCost') {
-         const numA = Number(aValue) || 0;
-         const numB = Number(bValue) || 0;
-         return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+      // Handle numeric cost explicitly
+      if (key === 'estimatedCost') {
+         const numA = Number(a.estimatedCost) || 0;
+         const numB = Number(b.estimatedCost) || 0;
+         return direction === 'asc' ? numA - numB : numB - numA;
       } 
       
-      if (sortConfig.key === 'dueDate') {
-         // Treat missing dates as far future (or past depending on preference, here effectively 0)
-         const dateA = aValue ? new Date(aValue as string).getTime() : 0;
-         const dateB = bValue ? new Date(bValue as string).getTime() : 0;
-         // Handle Invalid Date results from getTime() -> NaN
-         const safeDateA = isNaN(dateA) ? 0 : dateA;
-         const safeDateB = isNaN(dateB) ? 0 : dateB;
+      // Handle Dates robustly
+      if (key === 'dueDate') {
+         const dateA = safeParseDate(a.dueDate);
+         const dateB = safeParseDate(b.dueDate);
          
-         return sortConfig.direction === 'asc' ? safeDateA - safeDateB : safeDateB - safeDateA;
+         // If dates are equal (both 0 or same), keep stable
+         if (dateA === dateB) return 0;
+         // If one is invalid (0), push to end? Or treat as 0.
+         // Standard sort: asc means 0 -> infinity.
+         return direction === 'asc' ? dateA - dateB : dateB - dateA;
       }
 
-      // String comparison (fallback for everything else)
-      const strA = String(aValue || '').toLowerCase();
-      const strB = String(bValue || '').toLowerCase();
+      // String comparison (fallback for title, status, priority)
+      // Safely access property, default to empty string
+      const valA = a[key];
+      const valB = b[key];
+      const strA = String(valA || '').toLowerCase();
+      const strB = String(valB || '').toLowerCase();
 
-      if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
+      if (strA < strB) return direction === 'asc' ? -1 : 1;
+      if (strA > strB) return direction === 'asc' ? 1 : -1;
       return 0;
     });
   }, [tasks, sortConfig]);
@@ -130,17 +154,18 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
                // SAFETY GUARD: Check for valid task to prevent crash
                if (!task || !task.id) return null;
 
-               // Safe Date Access
+               // Safe Date Display
                let dateDisplay = '-';
-               if (task.dueDate) {
-                   const d = new Date(task.dueDate);
-                   if (!isNaN(d.getTime())) {
-                       dateDisplay = d.toLocaleDateString();
-                   }
+               const dateMs = safeParseDate(task.dueDate);
+               if (dateMs > 0) {
+                   dateDisplay = new Date(dateMs).toLocaleDateString();
                }
 
                // Safe Assignee Access
-               const assigneeName = task.assignee || 'Unassigned';
+               const assigneeName = typeof task.assignee === 'object' 
+                    ? (task.assignee as any).displayName || 'Unassigned' 
+                    : (task.assignee || 'Unassigned');
+               
                const assigneeAvatar = task.assigneeAvatar;
 
                return (

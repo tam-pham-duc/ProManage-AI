@@ -44,22 +44,30 @@ interface DashboardProps {
 
 // --- Helper: Smart Time Formatting ---
 const formatSmartTime = (timestampStr: string | any) => {
+    if (!timestampStr) return 'Just now';
+    
     try {
-        // Handle Firestore Timestamp if passed directly (though interface implies ISO string or similar)
         let date: Date;
-        if (timestampStr && typeof timestampStr.toDate === 'function') {
+        // Handle Firestore Timestamp (has seconds)
+        if (timestampStr && typeof timestampStr === 'object' && 'seconds' in timestampStr) {
+             date = new Date(timestampStr.seconds * 1000);
+        } 
+        // Handle Firestore Timestamp object (has toDate)
+        else if (timestampStr && typeof timestampStr.toDate === 'function') {
             date = timestampStr.toDate();
-        } else {
+        } 
+        // Handle Date object or String
+        else {
             date = new Date(timestampStr);
         }
+
+        // Invalid Date Check
+        if (isNaN(date.getTime())) return 'Just now';
 
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffHours = diffMs / (1000 * 60 * 60);
         
-        // Invalid Date Check
-        if (isNaN(date.getTime())) return 'Just now';
-
         if (diffHours < 24) {
             if (diffHours < 1) {
                 const minutes = Math.floor(diffMs / (1000 * 60));
@@ -73,6 +81,23 @@ const formatSmartTime = (timestampStr: string | any) => {
         }
     } catch (e) {
         return 'Just now';
+    }
+};
+
+// --- Helper: Safe Date Parser ---
+const safeParseDate = (dateInput: any): number => {
+    if (!dateInput) return 0;
+    try {
+        if (typeof dateInput === 'object' && 'seconds' in dateInput) {
+            return dateInput.seconds * 1000;
+        }
+        if (typeof dateInput.toDate === 'function') {
+            return dateInput.toDate().getTime();
+        }
+        const d = new Date(dateInput);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+    } catch (e) {
+        return 0;
     }
 };
 
@@ -128,9 +153,12 @@ const UpcomingDeadlines: React.FC<UpcomingDeadlinesProps> = ({ tasks, onTaskClic
         return (tasks || [])
             .filter(t => t && t.status !== 'Done' && t.dueDate)
             .sort((a, b) => {
-                const dateA = new Date(a.dueDate).getTime();
-                const dateB = new Date(b.dueDate).getTime();
-                return (isNaN(dateA) ? Infinity : dateA) - (isNaN(dateB) ? Infinity : dateB);
+                const dateA = safeParseDate(a.dueDate);
+                const dateB = safeParseDate(b.dueDate);
+                // Sort ascending (soonest first), push invalid dates to end
+                if (dateA === 0) return 1;
+                if (dateB === 0) return -1;
+                return dateA - dateB;
             })
             .slice(0, 5);
     }, [tasks]);
@@ -155,8 +183,10 @@ const UpcomingDeadlines: React.FC<UpcomingDeadlinesProps> = ({ tasks, onTaskClic
                 )}
                 {deadlines.map(task => {
                     if (!task || !task.id) return null;
-                    const isOverdue = new Date(task.dueDate) < new Date();
-                    const isToday = new Date(task.dueDate).toDateString() === new Date().toDateString();
+                    const dueDateTs = safeParseDate(task.dueDate);
+                    const isOverdue = dueDateTs < Date.now();
+                    const isToday = new Date(dueDateTs).toDateString() === new Date().toDateString();
+                    const displayDate = new Date(dueDateTs).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
                     
                     return (
                         <div
@@ -176,7 +206,7 @@ const UpcomingDeadlines: React.FC<UpcomingDeadlinesProps> = ({ tasks, onTaskClic
                             </div>
                             <div className="flex justify-between items-center text-xs relative z-10">
                                 <span className={`font-medium ${isOverdue ? 'text-red-600 dark:text-red-400' : isToday ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                                    {new Date(task.dueDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                    {displayDate}
                                 </span>
                                 
                                 <div className="relative print:hidden">
@@ -440,7 +470,8 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
     const todo = safeTasks.filter(t => t && t.status === 'To Do').length;
     const overdue = safeTasks.filter(t => {
       if (!t || !t.dueDate) return false;
-      const isOverdue = new Date(t.dueDate) < new Date();
+      const dueDateTs = safeParseDate(t.dueDate);
+      const isOverdue = dueDateTs < Date.now();
       return isOverdue && t.status !== 'Done';
     }).length;
 
@@ -502,12 +533,16 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
       const unsubscribe = onSnapshot(q, (snapshot) => {
           const fetchedActivities = snapshot.docs.map(doc => {
               const data = doc.data();
-              // Convert Firestore Timestamp to serializable format immediately
-              let timestamp = new Date().toISOString();
-              if (data.timestamp && typeof data.timestamp.toDate === 'function') {
-                  timestamp = data.timestamp.toDate().toISOString();
-              } else if (typeof data.timestamp === 'string') {
-                  timestamp = data.timestamp;
+              // Safely parse Timestamp
+              let timestamp = 'Just now';
+              if (data.timestamp) {
+                  if (typeof data.timestamp.toDate === 'function') {
+                      timestamp = data.timestamp.toDate().toISOString();
+                  } else if (typeof data.timestamp === 'object' && 'seconds' in data.timestamp) {
+                      timestamp = new Date(data.timestamp.seconds * 1000).toISOString();
+                  } else if (typeof data.timestamp === 'string') {
+                      timestamp = data.timestamp;
+                  }
               }
 
               return {
