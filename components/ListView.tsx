@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Task } from '../types';
 import { ArrowUp, ArrowDown, Edit3, Trash2, ChevronsUpDown, User } from 'lucide-react';
+import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 
 interface ListViewProps {
   tasks: Task[];
@@ -105,75 +106,80 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
              </tr>
            </thead>
            <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-             {sortedTasks.map(task => (
-               <tr 
-                 key={task.id} 
-                 onClick={() => onTaskClick(task)} 
-                 className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors group"
-               >
-                 <td className="px-6 py-4">
-                   <span className="font-bold text-slate-800 dark:text-white text-sm">{task.title}</span>
-                 </td>
-                 
-                 <td className="px-6 py-4">
-                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-                     {task.status}
-                   </span>
-                 </td>
-                 
-                 <td className="px-6 py-4">
-                   <span className={`text-xs font-bold ${getPriorityColor(task.priority)}`}>
-                     {task.priority}
-                   </span>
-                 </td>
-                 
-                 <td className="px-6 py-4">
-                   <div className="flex items-center gap-2">
-                     <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden">
-                       {task.assigneeAvatar ? (
-                         <img src={task.assigneeAvatar} alt={task.assignee} className="w-full h-full object-cover" />
-                       ) : (
-                         task.assignee === 'Unassigned' ? <User size={12} /> : task.assignee.substring(0, 2).toUpperCase()
-                       )}
-                     </div>
-                     <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px]">
-                       {task.assignee === 'Unassigned' ? 'Unassigned' : task.assignee}
+             {sortedTasks.map(task => {
+               // SAFETY GUARD: Check for valid task to prevent crash
+               if (!task) return null;
+
+               return (
+                 <tr 
+                   key={task.id} 
+                   onClick={() => onTaskClick(task)} 
+                   className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors group"
+                 >
+                   <td className="px-6 py-4">
+                     <span className="font-bold text-slate-800 dark:text-white text-sm">{task.title}</span>
+                   </td>
+                   
+                   <td className="px-6 py-4">
+                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
+                       {task.status}
                      </span>
-                   </div>
-                 </td>
-                 
-                 <td className="px-6 py-4">
-                   <span className="text-sm text-slate-600 dark:text-slate-400 font-medium">
-                     {new Date(task.dueDate).toLocaleDateString()}
-                   </span>
-                 </td>
-                 
-                 <td className="px-6 py-4 text-right">
-                   <span className="text-sm text-slate-700 dark:text-slate-300 font-mono">
-                     {formatCurrency(task.estimatedCost)}
-                   </span>
-                 </td>
-                 
-                 <td className="px-6 py-4 text-right">
-                   <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <button 
-                        onClick={(e) => { e.stopPropagation(); onTaskClick(task); }}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
-                        title="Edit Task"
-                     >
-                       <Edit3 size={16} />
-                     </button>
-                     <button 
-                        onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                        title="Delete Task"
-                     >
-                       <Trash2 size={16} />
-                     </button>
-                   </div>
-                 </td>
-               </tr>
-             ))}
+                   </td>
+                   
+                   <td className="px-6 py-4">
+                     <span className={`text-xs font-bold ${getPriorityColor(task.priority)}`}>
+                       {task.priority}
+                     </span>
+                   </td>
+                   
+                   <td className="px-6 py-4">
+                     <div className="flex items-center gap-2">
+                       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold overflow-hidden ${task.assigneeAvatar && task.assigneeAvatar.startsWith('http') ? '' : getAvatarColor(task.assignee)}`}>
+                         {task.assigneeAvatar && task.assigneeAvatar.startsWith('http') ? (
+                           <img src={task.assigneeAvatar} alt={task.assignee} className="w-full h-full object-cover" />
+                         ) : (
+                           getAvatarInitials(task.assignee)
+                         )}
+                       </div>
+                       <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px]">
+                         {task.assignee === 'Unassigned' || task.assignee === 'UN' ? 'Unassigned' : task.assignee}
+                       </span>
+                     </div>
+                   </td>
+                   
+                   <td className="px-6 py-4">
+                     <span className="text-sm text-slate-600 dark:text-slate-400 font-medium">
+                       {new Date(task.dueDate).toLocaleDateString()}
+                     </span>
+                   </td>
+                   
+                   <td className="px-6 py-4 text-right">
+                     <span className="text-sm text-slate-700 dark:text-slate-300 font-mono">
+                       {formatCurrency(task.estimatedCost)}
+                     </span>
+                   </td>
+                   
+                   <td className="px-6 py-4 text-right">
+                     <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                       <button 
+                          onClick={(e) => { e.stopPropagation(); onTaskClick(task); }}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                          title="Edit Task"
+                       >
+                         <Edit3 size={16} />
+                       </button>
+                       <button 
+                          onClick={(e) => { e.stopPropagation(); onDeleteTask(task.id); }}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                          title="Delete Task"
+                       >
+                         <Trash2 size={16} />
+                       </button>
+                     </div>
+                   </td>
+                 </tr>
+               );
+             })}
              
              {sortedTasks.length === 0 && (
                <tr>

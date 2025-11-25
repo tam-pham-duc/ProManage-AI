@@ -4,6 +4,7 @@ import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHor
 import { motion } from 'framer-motion';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
+import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -136,7 +137,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
 
   const theme = getPriorityStyles(task.priority);
 
-  // Overdue/Today overrides for the border/shadow to ensure urgency isn't lost in the pastel theme
+  // Overdue/Today overrides
   let statusIndicatorClass = "";
   if (isOverdue) {
       statusIndicatorClass = "ring-2 ring-red-500 ring-offset-1 dark:ring-offset-slate-900";
@@ -153,35 +154,34 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       }
   };
 
+  // Fix for ghost card: Use class based opacity instead of inline styles for cleaner reset
+  const dragClass = isDragging ? 'opacity-50 cursor-grabbing' : 'opacity-100 cursor-pointer hover:shadow-md hover:z-10';
+
   return (
     <motion.div 
       layout
       layoutId={task.id}
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      transition={{ duration: 0.2 }}
       draggable={!isReadOnly && !isBlocked}
       onDragStart={(e) => !isReadOnly && !isBlocked && onDragStart(e as unknown as React.DragEvent, task.id)}
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-all duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
+        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-shadow duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
+        ${dragClass}
         ${isBlocked 
             ? 'bg-stripes-gray border-slate-300 dark:border-slate-600 opacity-90 border-l-slate-500' 
             : theme.container}
         ${statusIndicatorClass}
-        ${isDragging 
-            ? '!opacity-50 cursor-grabbing' 
-            : 'hover:shadow-md cursor-pointer hover:z-10'
-        }
         ${isReadOnly ? 'cursor-default' : ''}
         ${isJustDropped ? 'ring-2 ring-yellow-400 ring-offset-2 shadow-[0_0_15px_rgba(250,204,21,0.5)] z-20' : ''}
       `}
       title={isBlocked ? `Blocked by: ${blockingTaskTitles}` : ''}
     >
       {/* Quick Delete Button */}
-      {!isReadOnly && onDelete && (
+      {!isReadOnly && onDelete && !isDragging && (
           <button
             onClick={(e) => {
               e.preventDefault();
@@ -196,7 +196,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       )}
 
       {/* Blocked Overlay / Icon with Tooltip */}
-      {isBlocked && (
+      {isBlocked && !isDragging && (
           <div className="absolute -top-2 -right-2 z-30 group/blocked">
               <div className="bg-white dark:bg-slate-800 rounded-full p-1.5 shadow-md border border-red-200 dark:border-red-900 cursor-help transition-transform hover:scale-110 hover:bg-red-50 dark:hover:bg-red-900/20">
                   <Ban size={16} className="text-red-500" />
@@ -229,7 +229,6 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
                           return null;
                       })}
                   </ul>
-                   {/* Arrow (pointing up to the icon) */}
                    <div className="absolute top-[-5px] right-3 w-2.5 h-2.5 bg-white dark:bg-slate-800 border-t border-l border-red-100 dark:border-red-900/50 transform rotate-45"></div>
               </div>
           </div>
@@ -237,14 +236,13 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
 
       {/* Content Wrapper */}
       <div className={isBlocked ? 'opacity-60 grayscale-[0.5]' : ''}>
-        {/* Row 1: Title & Priority (Top Aligned, Bold) */}
+        {/* Row 1: Title & Priority */}
         <div className="flex justify-between items-start gap-2 mb-2">
             <h4 className={`flex-1 font-bold text-base leading-snug text-left line-clamp-3 ${theme.title}`}>
               {task.title}
             </h4>
             
             <div className="flex items-center gap-2 shrink-0">
-                {/* Deadline Status Icon */}
                 {deadlineStatus === 'overdue' && (
                     <AlertCircle size={16} className="text-red-500 animate-pulse" title="Overdue!" />
                 )}
@@ -270,12 +268,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
                 </span>
             ))
             ) : (
-                // Placeholder to keep spacing consistent if no tags
                 <div className="h-1"></div>
             )}
         </div>
         
-        {/* Progress Bar (Optional Middle) */}
+        {/* Progress Bar */}
         {totalSubtasks > 0 && (
           <div className="mb-3 group/progress">
             <div className={`flex items-center justify-between text-[10px] mb-1 font-medium opacity-80 ${theme.meta}`}>
@@ -295,19 +292,17 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
         )}
       </div>
 
-      {/* Row 3: Footer (Meta Data) */}
+      {/* Row 3: Footer */}
       <div className={`flex items-center justify-between pt-3 border-t border-black/5 dark:border-white/5 mt-auto ${theme.meta} ${isBlocked ? 'opacity-60' : ''}`}>
         <div className="flex items-center gap-2">
-          {/* Assignee Avatar */}
-          <div className="w-6 h-6 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold shadow-sm ring-1 ring-black/10 dark:ring-white/10 overflow-hidden text-slate-600 dark:text-slate-300">
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shadow-sm ring-1 ring-black/10 dark:ring-white/10 overflow-hidden ${task.assigneeAvatar && task.assigneeAvatar.startsWith('http') ? '' : getAvatarColor(task.assignee)}`}>
             {task.assigneeAvatar && task.assigneeAvatar.startsWith('http') ? (
               <img src={task.assigneeAvatar} alt={task.assignee} className="w-full h-full object-cover" />
             ) : (
-              task.assignee === 'Unassigned' || task.assignee === 'UN' ? 'UN' : task.assignee.substring(0, 2).toUpperCase()
+              getAvatarInitials(task.assignee)
             )}
           </div>
           
-          {/* Meta Icons */}
           {(attachmentCount > 0 || commentCount > 0) && (
              <div className="flex items-center gap-2 text-[10px] font-medium opacity-70">
                 {attachmentCount > 0 && (
@@ -327,7 +322,6 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
         </div>
         
         <div className="flex items-center gap-2">
-           {/* Timer Control */}
            {!isReadOnly && (
                <button
                   onClick={handleTimerClick}
@@ -346,7 +340,6 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
                </button>
            )}
 
-           {/* Date */}
            <div className={`flex items-center gap-1 text-[10px] font-bold ${isOverdue ? 'text-red-600 dark:text-red-400 animate-pulse' : isDueToday ? 'text-amber-600 dark:text-amber-400' : 'opacity-80'}`}>
              {isOverdue ? <AlertCircle size={12} /> : <Clock size={12} />}
              <span>
@@ -401,18 +394,16 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   // --- Helper: Theme Generator ---
   const getColumnTheme = (title: string, assignedColor?: string) => {
     const t = title.toLowerCase();
-    let mode = 'slate'; // default
+    let mode = 'slate';
 
-    // Logic to determine theme based on Title first, fallback to assigned color
     if (t.includes('done') || t.includes('complete') || t.includes('closed')) mode = 'emerald';
     else if (t.includes('progress') || t.includes('active') || t.includes('doing')) mode = 'blue';
     else if (t.includes('review') || t.includes('qa') || t.includes('test')) mode = 'purple';
     else if (t.includes('hold') || t.includes('block') || t.includes('wait')) mode = 'rose';
-    else if (assignedColor && assignedColor !== 'slate') mode = assignedColor; // Explicit override
+    else if (assignedColor && assignedColor !== 'slate') mode = assignedColor;
     else if (t.includes('todo') || t.includes('to do') || t.includes('open') || t.includes('backlog')) mode = 'slate';
-    else mode = 'cyan'; // Default for custom/unknown columns
+    else mode = 'cyan';
 
-    // Styles Map
     switch (mode) {
         case 'blue':
         case 'indigo':
@@ -503,7 +494,11 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       if (isReadOnly) return;
       e.preventDefault(); 
       setIsDragOver(false); 
-      if (draggedTaskId) onDropTask(draggedTaskId, column.title); 
+      if (draggedTaskId) {
+          onDropTask(draggedTaskId, column.title);
+          // CRITICAL FIX: Force drag end to ensure state is cleared and opacity resets
+          onDragEnd();
+      } 
   };
 
   return (
@@ -605,17 +600,18 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
     if (isReadOnly) return;
     
-    // Native HTML5 Drag setup
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
     
-    // Delay setting state so the browser snapshot (drag image) is of the fully opaque card
+    // Small delay to ensure the browser creates the drag preview from the un-dimmed element
     setTimeout(() => {
         setDraggedTaskId(taskId);
     }, 0);
   };
 
-  const handleDragEnd = () => setDraggedTaskId(null);
+  const handleDragEnd = () => {
+      setDraggedTaskId(null);
+  };
 
   const handleAddSubmit = () => {
     if (newColumnTitle.trim() && onAddColumn) {

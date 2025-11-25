@@ -8,6 +8,7 @@ import { db } from '../firebase';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { saveTaskAsTemplate, getTemplates } from '../services/templateService';
+import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -62,7 +63,6 @@ const formatMessageTime = (timestampStr: string) => {
     }
 };
 
-// ... (MiniTaskCard and TaskDependencyVisualizer components remain unchanged) ...
 const MiniTaskCard: React.FC<{ 
     task: Task; 
     type: 'upstream' | 'downstream' | 'current'; 
@@ -127,7 +127,7 @@ const MiniTaskCard: React.FC<{
 
             <div className="flex items-center justify-between mt-auto">
                 <div className="flex items-center gap-1.5">
-                    <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden border border-white dark:border-slate-600">
+                    <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden border border-white dark:border-slate-600 ${task.assigneeAvatar ? '' : 'bg-slate-200 dark:bg-slate-700'}`}>
                         {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full object-cover" /> : task.assignee.charAt(0)}
                     </div>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[80px]">{task.assignee}</span>
@@ -1002,98 +1002,225 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="pt-6 border-t border-slate-100 dark:border-slate-700">
                   <label className="block text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-3"><Paperclip size={16} className="text-indigo-500" /> Attachments</label>
                    {attachments.length > 0 && (<div className="space-y-2 mb-4">{attachments.map((att) => (<div key={att.id} className="flex items-center gap-3 group p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-600"><div className="p-2 bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 rounded-lg"><FileText size={16} /></div><div className="flex-1 min-w-0"><a href={att.fileUrl} target="_blank" rel="noopener noreferrer" className="block text-sm font-medium text-slate-700 dark:text-slate-200 truncate hover:text-indigo-600 dark:hover:text-indigo-400">{att.fileName}</a><p className="text-[10px] text-slate-400">{att.uploadedAt}</p></div>{!isReadOnly && <button type="button" onClick={() => handleDeleteAttachment(att.id)} className="text-slate-400 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"><Trash2 size={16} /></button>}</div>))}</div>)}
-                   {!isReadOnly && (<div className="flex gap-2 items-end"><div className="flex-1 space-y-2"><input type="text" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} className={inputBaseClass} placeholder="File Name" /><input type="text" value={newFileUrl} onChange={(e) => setNewFileUrl(e.target.value)} className={inputBaseClass} placeholder="File URL (e.g. https://...)" /></div><button type="button" onClick={handleAddAttachment} disabled={!newFileName.trim() || !newFileUrl.trim()} className="px-4 py-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-colors h-[46px] flex items-center justify-center disabled:opacity-50"><Plus size={20} /></button></div>)}
+                   {!isReadOnly && (<div className="flex gap-2 items-end"><div className="flex-1 space-y-2"><input type="text" value={newFileName} onChange={(e) => setNewFileName(e.target.value)} className={inputBaseClass} placeholder="File Name" /><input type="text" value={newFileUrl} onChange={(e) => setNewFileUrl(e.target.value)} className={inputBaseClass} placeholder="File URL (e.g. https://...)" /></div><button type="button" onClick={handleAddAttachment} disabled={!newFileName.trim() || !newFileUrl.trim()} className="px-4 py-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-colors disabled:opacity-50"><Plus size={20} /></button></div>)}
                 </div>
               </>
             )}
 
             {activeTab === 'discussion' && (
-                <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 relative -m-6">
-                    <div className="flex-1 overflow-y-auto p-4 custom-scrollbar h-[400px]">
-                        {streamItems.length === 0 && (<div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500 opacity-50"><MessageSquare size={48} strokeWidth={1.5} /><p className="text-sm mt-2">Start the conversation</p></div>)}
-                        {streamItems.map((item: any) => {
-                            const isLog = item.source === 'log' || item.user === 'System';
-                            if (isLog) { return (<div key={item.id} className="flex justify-center my-2"><span className="text-xs text-gray-400 dark:text-slate-500 italic text-center bg-gray-100 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent dark:border-slate-700">{formatMessageTime(item.timestamp)} - {item.userName || 'System'} {item.action}</span></div>); }
-                            const isMe = item.user === currentUser;
-                            
-                            // Look up member for avatar
-                            const member = projectMembers?.find(m => m.displayName === (item.userName || item.user));
-                            const avatarUrl = member?.avatar;
-
-                            return (
-                                <div key={item.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`flex max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
-                                        {!isMe && (
-                                            <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-sm mb-1 overflow-hidden">
-                                                {avatarUrl ? (
-                                                    <img src={avatarUrl} alt={item.user} className="w-full h-full object-cover" />
-                                                ) : (
-                                                    (item.user || item.userName || 'U').charAt(0).toUpperCase()
-                                                )}
+                <div className="h-full flex flex-col min-h-[400px]">
+                    <div className="flex-1 overflow-y-auto space-y-4 mb-4 custom-scrollbar pr-2">
+                        {streamItems.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
+                                <MessageSquare size={32} className="mb-2" />
+                                <p className="text-sm">No activity yet. Start the discussion!</p>
+                            </div>
+                        ) : (
+                            streamItems.map((item, idx) => {
+                                const isComment = item.source === 'comment';
+                                const isMe = item.user === currentUser; // Assuming currentUser matches username for simplicity, otherwise check ID
+                                
+                                if (isComment) {
+                                    return (
+                                        <div key={item.id} className={`flex gap-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                            {!isMe && (
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getAvatarColor(item.user)}`}>
+                                                    {getAvatarInitials(item.user)}
+                                                </div>
+                                            )}
+                                            <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${isMe ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
+                                                <div className="font-bold text-xs mb-1 opacity-80">{item.user}</div>
+                                                <div className="whitespace-pre-wrap">{item.text}</div>
+                                                <div className={`text-[10px] mt-1 text-right ${isMe ? 'text-indigo-200' : 'text-slate-400'}`}>
+                                                    {formatMessageTime(item.timestamp)}
+                                                </div>
                                             </div>
-                                        )}
-                                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                                            {!isMe && (<span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1">{item.user}</span>)}
-                                            <div className={`px-4 py-2 text-sm shadow-sm relative group ${isMe ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-sm border border-gray-200 dark:border-gray-700'}`}>
-                                                <div dangerouslySetInnerHTML={{ __html: item.text }} />
-                                                {isMe && (<div className="text-[9px] text-blue-200 text-right mt-1 font-medium opacity-80">{formatMessageTime(item.timestamp)}</div>)}
-                                            </div>
-                                            {!isMe && (<span className="text-[9px] text-slate-400 mt-1 ml-1 font-medium">{formatMessageTime(item.timestamp)}</span>)}
                                         </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                    );
+                                } else {
+                                    // Activity Log
+                                    return (
+                                        <div key={item.id} className="flex items-center justify-center gap-2 my-4">
+                                            <div className="h-px bg-slate-200 dark:bg-slate-700 w-12"></div>
+                                            <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wide bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-100 dark:border-slate-700">
+                                                {item.userName || 'System'} {item.action} • {formatMessageTime(item.timestamp)}
+                                            </span>
+                                            <div className="h-px bg-slate-200 dark:bg-slate-700 w-12"></div>
+                                        </div>
+                                    );
+                                }
+                            })
+                        )}
                         <div ref={messagesEndRef} />
                     </div>
-                    {!isReadOnly && (<div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 sticky bottom-0 z-20"><div className="relative flex items-end gap-2"><div className="relative flex-1 bg-gray-50 dark:bg-slate-800 rounded-3xl flex items-center px-2 border border-slate-200 dark:border-slate-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all"><button type="button" onClick={() => setNewComment(prev => prev + '@')} className="p-2 text-slate-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/20" title="Mention someone"><AtSign size={18} /></button><textarea ref={commentInputRef} value={newComment} onChange={handleCommentChange} onKeyDown={handleCommentKeyDown} placeholder="Type a message..." className="flex-1 max-h-32 min-h-[44px] py-3 px-2 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none custom-scrollbar placeholder-slate-400" style={{ height: '44px' }} rows={1} /><button type="button" onClick={handleSendComment} disabled={!newComment.trim()} className="p-2 m-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-sm transition-all disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-slate-700 flex items-center justify-center"><Send size={16} className={newComment.trim() ? "ml-0.5" : ""} /></button></div></div>{showMentionList && filteredMembers.length > 0 && (<div className="absolute bottom-16 left-4 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto z-50 animate-fade-in">{filteredMembers.map((member, idx) => (<button key={member.uid || idx} type="button" onClick={() => handleInsertMention(member.displayName)} className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 ${idx === mentionHighlightIndex ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}><div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300">{member.avatar ? <img src={member.avatar} alt="" className="w-full h-full rounded-full object-cover" /> : member.displayName.charAt(0)}</div><span className="text-slate-800 dark:text-slate-200 font-medium">{member.displayName}</span></button>))}</div>)}</div>)}
-                </div>
-            )}
-
-            {activeTab === 'flow' && task && <TaskDependencyVisualizer task={task} upstreamTasks={upstreamTasks} downstreamTasks={downstreamTasks} onTaskSelect={onTaskSelect} />}
-
-            {activeTab === 'timeLogs' && task && (
-                <div className="flex flex-col h-full">
-                    {/* Manual Entry Form */}
+                    
                     {!isReadOnly && (
-                        <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700 mb-6">
-                            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
-                                <Clock size={16} /> Add Manual Entry
-                            </h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Start Time</label>
-                                    <input type="datetime-local" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} className={inputBaseClass} />
+                        <div className="relative pt-2 border-t border-slate-100 dark:border-slate-700">
+                            {showMentionList && filteredMembers.length > 0 && (
+                                <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-40 overflow-y-auto z-50">
+                                    {filteredMembers.map((m, i) => (
+                                        <button
+                                            key={m.uid || i}
+                                            onMouseDown={(e) => { e.preventDefault(); handleInsertMention(m.displayName); }}
+                                            className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${i === mentionHighlightIndex ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
+                                        >
+                                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${m.avatar ? '' : getAvatarColor(m.displayName)}`}>
+                                                {m.avatar ? <img src={m.avatar} className="w-full h-full object-cover rounded-full" /> : getAvatarInitials(m.displayName)}
+                                            </div>
+                                            {m.displayName}
+                                        </button>
+                                    ))}
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">End Time</label>
-                                    <input type="datetime-local" value={manualEndTime} onChange={e => setManualEndTime(e.target.value)} className={inputBaseClass} />
+                            )}
+                            <div className="flex gap-2 items-end bg-slate-50 dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                                <textarea 
+                                    ref={commentInputRef}
+                                    value={newComment}
+                                    onChange={handleCommentChange}
+                                    onKeyDown={handleCommentKeyDown}
+                                    placeholder="Type a message... Use @ to mention"
+                                    className="flex-1 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none max-h-32 min-h-[40px] py-2 px-1 custom-scrollbar"
+                                    rows={1}
+                                />
+                                <div className="flex flex-col gap-1 pb-1">
+                                    <button 
+                                        type="button" 
+                                        onClick={() => handleInsertMention('')} 
+                                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                        title="Mention someone"
+                                    >
+                                        <AtSign size={16} />
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        onClick={handleSendComment}
+                                        disabled={!newComment.trim()}
+                                        className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                                    >
+                                        <Send size={16} />
+                                    </button>
                                 </div>
-                            </div>
-                            <div className="mb-4">
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Notes (Optional)</label>
-                                <input type="text" value={manualNotes} onChange={e => setManualNotes(e.target.value)} className={inputBaseClass} placeholder="What were you working on?" />
-                            </div>
-                            <div className="flex justify-end">
-                                <button type="button" onClick={handleAddManualLog} className="px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition-colors">
-                                    Add Log
-                                </button>
                             </div>
                         </div>
                     )}
-
-                    <div className="flex items-center justify-between mb-4"><div><h3 className="font-bold text-slate-900 dark:text-white">Time Tracking History</h3><p className="text-xs text-slate-500">Total Recorded: <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">{formatDuration(task.totalTimeSeconds || 0)}</span></p></div></div>
-                    <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900"><table className="w-full text-left text-sm"><thead className="bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase sticky top-0"><tr><th className="px-4 py-3">User</th><th className="px-4 py-3">Date</th><th className="px-4 py-3">Start - End</th><th className="px-4 py-3">Notes</th><th className="px-4 py-3 text-right">Duration</th>{!isReadOnly && <th className="px-4 py-3 text-right">Actions</th>}</tr></thead><tbody className="divide-y divide-slate-100 dark:divide-slate-800">{task.timeLogs?.map(log => { const member = projectMembers.find(m => m.uid === log.userId); const userName = member ? member.displayName : 'Unknown'; return (<tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"><td className="px-4 py-3 font-medium text-slate-700 dark:text-slate-300">{userName}</td><td className="px-4 py-3 text-slate-500 dark:text-slate-400">{new Date(log.startTime).toLocaleDateString()}</td><td className="px-4 py-3 text-slate-500 dark:text-slate-400 text-xs font-mono">{new Date(log.startTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.endTime).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</td><td className="px-4 py-3 text-slate-600 dark:text-slate-300 italic truncate max-w-[150px]">{log.notes || '-'}</td><td className="px-4 py-3 text-right font-mono font-bold text-slate-700 dark:text-slate-300">{formatDuration(log.durationSeconds)}</td>{!isReadOnly && (<td className="px-4 py-3 text-right"><div className="flex items-center justify-end gap-2"><button type="button" onClick={() => handleEditLogClick(log)} className="p-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 rounded"><Pencil size={14} /></button><button type="button" onClick={() => handleDeleteLog(log.id)} className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-600 rounded"><Trash2 size={14} /></button></div></td>)}</tr>); })}{(!task.timeLogs || task.timeLogs.length === 0) && (<tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 italic">No time logs recorded.</td></tr>)}</tbody></table></div>
                 </div>
             )}
 
+            {activeTab === 'flow' && task && (
+                <div className="h-full overflow-y-auto custom-scrollbar">
+                    <TaskDependencyVisualizer 
+                        task={task} 
+                        upstreamTasks={upstreamTasks} 
+                        downstreamTasks={downstreamTasks} 
+                        onTaskSelect={onTaskSelect}
+                    />
+                </div>
+            )}
+
+            {activeTab === 'timeLogs' && (
+                <div className="h-full flex flex-col">
+                    {/* Stats Header */}
+                    <div className="flex gap-4 mb-6">
+                        <div className="flex-1 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/30 flex flex-col items-center justify-center text-center">
+                            <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Total Time</span>
+                            <span className="text-2xl font-mono font-bold text-indigo-700 dark:text-indigo-300">
+                                {useTimeTracking ? (
+                                    // Need to access helper from context or utils
+                                    // Since we can't access hook outside, we rely on prop or util
+                                    // For now simplified calculation display
+                                    `${Math.floor((task.totalTimeSeconds || 0) / 3600)}h ${Math.floor(((task.totalTimeSeconds || 0) % 3600) / 60)}m`
+                                ) : '0h 0m'}
+                            </span>
+                        </div>
+                        <div className="flex-1 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center">
+                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Est. Hours</span>
+                            <span className="text-2xl font-mono font-bold text-slate-700 dark:text-slate-300">
+                                {task.estimatedHours || 0}h
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Log List */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar mb-6 space-y-2 pr-1">
+                        {(!task.timeLogs || task.timeLogs.length === 0) && (
+                            <div className="text-center py-8 text-slate-400">No time logs recorded yet.</div>
+                        )}
+                        {task.timeLogs && [...task.timeLogs].sort((a,b) => b.startTime - a.startTime).map(log => (
+                            <div key={log.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors group">
+                                <div>
+                                    <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
+                                        {new Date(log.startTime).toLocaleDateString()} • {Math.floor(log.durationSeconds / 60)}m
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex gap-2">
+                                        <span>{new Date(log.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - {new Date(log.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                        {log.notes && <span className="italic text-slate-400 border-l border-slate-300 pl-2">{log.notes}</span>}
+                                    </div>
+                                </div>
+                                {!isReadOnly && (
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => handleEditLogClick(log)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-indigo-600"><Pencil size={14} /></button>
+                                        <button onClick={() => handleDeleteLog(log.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Manual Add Form */}
+                    {!isReadOnly && (
+                        <div className="pt-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 -mx-6 px-6 -mb-6 pb-6">
+                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Add Manual Entry</h4>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                                <input type="datetime-local" value={manualStartTime} onChange={(e) => setManualStartTime(e.target.value)} className={inputBaseClass} />
+                                <input type="datetime-local" value={manualEndTime} onChange={(e) => setManualEndTime(e.target.value)} className={inputBaseClass} />
+                            </div>
+                            <div className="flex gap-3">
+                                <input type="text" value={manualNotes} onChange={(e) => setManualNotes(e.target.value)} placeholder="Notes (optional)" className={`${inputBaseClass} flex-1`} />
+                                <button onClick={handleAddManualLog} disabled={!manualStartTime || !manualEndTime} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm disabled:opacity-50 transition-colors">Add</button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Hidden Submit Button for Form submission via Enter key if needed */}
+            <button type="submit" className="hidden" />
           </form>
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 flex justify-between items-center shrink-0 backdrop-blur-sm">
-            {onDelete && canDelete && task && (<button onClick={() => onDelete(task.id)} type="button" className="flex items-center gap-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 px-4 py-2 rounded-xl font-bold transition-colors text-sm"><Trash2 size={18} /> Delete</button>)}
-            <div className="flex gap-3 ml-auto"><button onClick={onClose} type="button" className="px-6 py-2.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl font-bold text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-600 transition-all shadow-sm">Cancel</button>{!isReadOnly && canEdit && (<button onClick={handleSubmit} type="button" className="px-8 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 flex items-center gap-2"><Check size={18} strokeWidth={3} />{task ? 'Save Changes' : 'Create Task'}</button>)}</div>
+        <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 shrink-0 backdrop-blur-sm flex justify-between items-center">
+            <div>
+                {!isReadOnly && canDelete && onDelete && task && (
+                    <button 
+                        type="button"
+                        onClick={() => onDelete(task.id)}
+                        className="p-2.5 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors flex items-center gap-2"
+                        title="Delete Task"
+                    >
+                        <Trash2 size={18} />
+                    </button>
+                )}
+            </div>
+            <div className="flex gap-3">
+                <button 
+                    type="button" 
+                    onClick={onClose}
+                    className="px-6 py-2.5 rounded-xl font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                >
+                    Cancel
+                </button>
+                {!isReadOnly && canEdit && (
+                    <button 
+                        type="button"
+                        onClick={handleSubmit}
+                        className="px-6 py-2.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 flex items-center gap-2"
+                    >
+                        <Check size={18} strokeWidth={3} />
+                        Save Changes
+                    </button>
+                )}
+            </div>
         </div>
 
       </div>

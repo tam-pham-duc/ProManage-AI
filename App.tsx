@@ -40,6 +40,7 @@ const TAGS_KEY = 'promanage_tags_v1';
 const PROJECT_KEY = 'promanage_project_v1';
 const SIDEBAR_KEY = 'promanage_sidebar_open';
 const SNOOZE_KEY = 'app_snooze_until';
+const SUPER_ADMIN_EMAIL = 'admin@dev.com';
 
 const TAG_COLORS = [
   'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
@@ -182,6 +183,7 @@ const App: React.FC = () => {
   const currentProject = projects.find(p => p.id === selectedProjectId);
   
   const userRole = useMemo<ProjectRole>(() => {
+      if (currentUser?.email === SUPER_ADMIN_EMAIL) return 'admin'; // Super Admin God Mode
       if (!currentProject || !currentUser) return 'guest';
       // If owner, assume admin
       if (currentProject.ownerId === currentUser.id) return 'admin';
@@ -228,7 +230,7 @@ const App: React.FC = () => {
                  email: firebaseUser.email || '',
                  password: '',
                  jobTitle: sanitizedData.jobTitle || 'Project Member',
-                 avatar: firebaseUser.photoURL || undefined,
+                 avatar: sanitizedData.avatar || firebaseUser.photoURL || undefined,
                  kanbanColumns: sanitizedData.kanbanColumns
                };
                setCurrentUser(user);
@@ -270,13 +272,22 @@ const App: React.FC = () => {
         setProjects([]);
         return;
     }
-    const q = query(
-        collection(db, 'projects'),
-        or(
-            where('ownerId', '==', currentUser.id),
-            where('memberUIDs', 'array-contains', currentUser.id)
-        )
-    );
+
+    let q;
+    if (currentUser.email === SUPER_ADMIN_EMAIL) {
+        // All-Seeing Eye: Fetch ALL projects for Super Admin
+        q = query(collection(db, 'projects'));
+    } else {
+        // Standard Security: Fetch only associated projects
+        q = query(
+            collection(db, 'projects'),
+            or(
+                where('ownerId', '==', currentUser.id),
+                where('memberUIDs', 'array-contains', currentUser.id)
+            )
+        );
+    }
+
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetchedProjects: Project[] = snapshot.docs.map(doc => {
             const data = doc.data();
@@ -297,7 +308,7 @@ const App: React.FC = () => {
         }
     });
     return () => unsubscribe();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.email]);
 
   // --- Tasks Listener ---
   useEffect(() => {
@@ -542,7 +553,8 @@ const App: React.FC = () => {
       const projectToDelete = projects.find(p => p.id === id);
       if (!projectToDelete) return;
       
-      if (!currentUser || projectToDelete.ownerId !== currentUser.id) {
+      // Allow Super Admin or Owner
+      if (!currentUser || (projectToDelete.ownerId !== currentUser.id && currentUser.email !== SUPER_ADMIN_EMAIL)) {
           notify('warning', "Only the project owner can delete this project.");
           return;
       }
@@ -732,33 +744,37 @@ const App: React.FC = () => {
   };
 
   const handleDropTask = async (taskId: string, newStatus: TaskStatus) => {
-      // 1. Safety Check
+      // 1. Safety Check: Input validation
       if (!taskId || !newStatus) return;
       
+      // Find index safely
       const taskIndex = tasks.findIndex(t => t.id === taskId);
       if (taskIndex === -1) return;
       
       const task = tasks[taskIndex];
-      if (task.status === newStatus) return; // No change
+      if (task.status === newStatus) return; // No change needed
 
-      // 2. Snapshot for Rollback
+      // 2. Snapshot for Rollback (Deep copy not strictly needed for array of objects if we don't mutate objects in place, 
+      // but a shallow copy of the array is essential)
       const originalTasks = [...tasks];
 
-      // 3. Optimistic Update (Strict Immutable)
+      // 3. Optimistic Update (Strict Immutable Pattern)
       try {
-          const updatedTask = { 
+          // Create a brand new object for the updated task to avoid reference mutation
+          const updatedTask: Task = { 
               ...task, 
               status: newStatus,
-              updatedAt: new Date().toISOString() // Safe local date
+              updatedAt: new Date().toISOString() 
           };
           
+          // Create a new array for the state
           const newTasks = [...tasks];
           newTasks[taskIndex] = updatedTask;
           
           // Update state immediately
           setTasks(newTasks);
 
-          // 4. Async Operations
+          // 4. Async Operations (Firestore)
           const taskRef = doc(db, 'tasks', taskId);
           
           await updateDoc(taskRef, { 
@@ -768,6 +784,8 @@ const App: React.FC = () => {
 
           // 5. Isolated Logging (Non-blocking)
           if (currentUser && selectedProjectId) {
+              // We use the original task object for logging title to avoid any potential state race issues, 
+              // though 'task' constant is safe here from closure
               logProjectActivity(
                   selectedProjectId,
                   taskId,
@@ -813,6 +831,8 @@ const App: React.FC = () => {
 
   const modalPermissions = useMemo(() => {
       if (!currentUser) return { canEdit: false, canDelete: false, isReadOnly: true };
+      if (currentUser.email === SUPER_ADMIN_EMAIL) return { canEdit: true, canDelete: true, isReadOnly: false }; // Super Admin Override
+      
       if (!editingTask) return { canEdit: userRole !== 'guest', canDelete: true, isReadOnly: userRole === 'guest' };
       const isOwner = editingTask.createdBy === currentUser.id || editingTask.ownerId === currentUser.id;
       const isAdmin = userRole === 'admin';
@@ -870,10 +890,12 @@ const App: React.FC = () => {
           isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen}
           onAddTask={() => openNewTaskModal()} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}
           userName={userSettings.userName} userTitle={userSettings.userTitle}
+          userAvatar={currentUser.avatar}
           projects={projects} selectedProjectId={selectedProjectId} onSelectProject={handleSelectProject}
           onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
           isDesktopOpen={isSidebarOpen}
           currentUserRole={userRole}
+          userEmail={currentUser.email}
         />
         <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
           <div className="absolute inset-0 z-0 print:hidden">
@@ -940,7 +962,7 @@ const App: React.FC = () => {
                         <div className="fixed inset-0 z-40" onClick={() => setIsProjectSettingsOpen(false)}></div>
                         <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 overflow-hidden">
                             <button onClick={() => { setProjectToEdit(currentProject || null); setIsProjectModalOpen(true); setIsProjectSettingsOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"><Edit3 size={16} /> Project Settings</button>
-                            {currentProject?.ownerId === currentUser.id && (
+                            {(currentProject?.ownerId === currentUser.id || currentUser.email === SUPER_ADMIN_EMAIL) && (
                                 <button onClick={() => handleDeleteProject(currentProject.id)} className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"><Trash2 size={16} /> Delete Project</button>
                             )}
                         </div>

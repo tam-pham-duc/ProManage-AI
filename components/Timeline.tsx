@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { Task } from '../types';
 import { User, Calendar, AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Clock, Link } from 'lucide-react';
+import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 
 interface TimelineProps {
   tasks: Task[];
@@ -176,13 +177,11 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
             tabIndex={0}
             aria-label={`${group.assignee}, ${group.tasks.length} tasks`}
         >
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shadow-sm overflow-hidden ${group.assignee === 'Unassigned' ? 'bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500' : 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400'}`}>
-                {group.assignee === 'Unassigned' ? (
-                  <User size={16} aria-hidden="true" />
-                ) : group.assigneeAvatar && group.assigneeAvatar.startsWith('http') ? (
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shadow-sm overflow-hidden ${group.assigneeAvatar && group.assigneeAvatar.startsWith('http') ? '' : getAvatarColor(group.assignee)}`}>
+                {group.assigneeAvatar && group.assigneeAvatar.startsWith('http') ? (
                   <img src={group.assigneeAvatar} alt="" className="w-full h-full object-cover" aria-hidden="true" />
                 ) : (
-                  group.assignee.substring(0, 2).toUpperCase()
+                  getAvatarInitials(group.assignee)
                 )}
             </div>
             <div className="min-w-0">
@@ -195,6 +194,11 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
         <div className="relative flex-1 py-2 transition-colors group-hover/row:bg-slate-50/20 dark:group-hover/row:bg-slate-700/10" style={{ height: Math.max(group.lanes.length * 40, 60) + 'px' }}>
             {group.lanes.map((lane, laneIdx) => (
                 lane.map(task => {
+                    // SAFETY GUARD: Prevent crashes from corrupted task data
+                    if (!task || !task.startTs || isNaN(task.startTs) || !task.dueTs || isNaN(task.dueTs)) {
+                        return null;
+                    }
+
                     // CULLING OPTIMIZATION:
                     // Only render task if it overlaps with the current view window.
                     if (task.dueTs < timelineStartTimestamp || task.startTs > windowEndTimestamp) {
@@ -244,11 +248,17 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
 
   // --- Optimization: Pre-process tasks to use timestamps ---
   const processedTasks = useMemo(() => {
-      return tasks.map(t => ({
-          ...t,
-          startTs: new Date(t.startDate).getTime(),
-          dueTs: new Date(t.dueDate).getTime()
-      }));
+      return tasks.map(t => {
+          // Safe date parsing
+          const start = t.startDate ? new Date(t.startDate).getTime() : NaN;
+          const due = t.dueDate ? new Date(t.dueDate).getTime() : NaN;
+          
+          return {
+              ...t,
+              startTs: start,
+              dueTs: due
+          };
+      }).filter(t => !isNaN(t.startTs) && !isNaN(t.dueTs)); // Initial filter
   }, [tasks]);
 
   // Cell dimensions
