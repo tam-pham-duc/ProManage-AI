@@ -17,8 +17,16 @@ const TrashView: React.FC = () => {
   // Helper to safely parse timestamps
   const parseDate = (timestamp: any): Date | null => {
     if (!timestamp) return null;
-    if (typeof timestamp.toDate === 'function') return timestamp.toDate();
-    return new Date(timestamp);
+    let date: Date;
+    try {
+        if (typeof timestamp.toDate === 'function') date = timestamp.toDate();
+        else date = new Date(timestamp);
+        
+        if (isNaN(date.getTime())) return null;
+        return date;
+    } catch (e) {
+        return null;
+    }
   };
 
   useEffect(() => {
@@ -199,6 +207,7 @@ const TrashView: React.FC = () => {
           <div className="space-y-3">
             {deletedProjects.length === 0 ? renderEmptyState('projects') : (
               deletedProjects.map(project => {
+                if (!project) return null;
                 const retention = getRetentionInfo(project.deletedAt, 'project');
                 return (
                   <div key={project.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-red-200 dark:hover:border-red-900/50 transition-colors">
@@ -207,7 +216,7 @@ const TrashView: React.FC = () => {
                         <Folder size={24} />
                       </div>
                       <div>
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{project.name}</h3>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{project.name || 'Untitled Project'}</h3>
                         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
                           <span>{project.clientName || 'No Client'}</span>
                           <span>•</span>
@@ -247,6 +256,7 @@ const TrashView: React.FC = () => {
           <div className="space-y-3">
             {deletedTasks.length === 0 ? renderEmptyState('tasks') : (
               deletedTasks.map(task => {
+                if (!task) return null;
                 const retention = getRetentionInfo(task.deletedAt, 'task');
                 return (
                   <div key={task.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-red-200 dark:hover:border-red-900/50 transition-colors">
@@ -255,11 +265,11 @@ const TrashView: React.FC = () => {
                         <CheckSquare size={24} />
                       </div>
                       <div>
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-1">{task.title}</h3>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white line-clamp-1">{task.title || 'Untitled Task'}</h3>
                         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded">{task.status}</span>
+                          <span className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded">{task.status || 'No Status'}</span>
                           <span>•</span>
-                          <span>{task.priority} Priority</span>
+                          <span>{task.priority || 'Medium'} Priority</span>
                         </div>
                         <div className={`mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold border ${retention.isUrgent ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'}`}>
                           {retention.isUrgent && <AlertTriangle size={10} />}
@@ -295,6 +305,7 @@ const TrashView: React.FC = () => {
           <div className="space-y-3">
             {deletedTemplates.length === 0 ? renderEmptyState('templates') : (
               deletedTemplates.map(template => {
+                if (!template) return null;
                 const retention = getRetentionInfo(template.deletedAt, 'template');
                 return (
                   <div key={template.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-red-200 dark:hover:border-red-900/50 transition-colors">
@@ -303,11 +314,11 @@ const TrashView: React.FC = () => {
                         <LayoutTemplate size={24} />
                       </div>
                       <div>
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{template.name}</h3>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{template.name || 'Untitled Template'}</h3>
                         <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          <span className="uppercase font-bold">{template.type}</span>
+                          <span className="uppercase font-bold">{template.type || 'Unknown'}</span>
                           <span>•</span>
-                          <span>{new Date(template.createdAt?.toDate ? template.createdAt.toDate() : template.createdAt).toLocaleDateString()}</span>
+                          <span>{template.createdAt ? new Date(template.createdAt.toDate ? template.createdAt.toDate() : template.createdAt).toLocaleDateString() : 'No Date'}</span>
                         </div>
                         <div className={`mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold border ${retention.isUrgent ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'}`}>
                           {retention.isUrgent && <AlertTriangle size={10} />}

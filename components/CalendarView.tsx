@@ -162,10 +162,11 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onTaskClick, onAddTa
 
   const getTasksForDay = (day: number) => {
     const dateStr = `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    return tasks.filter(t => t.dueDate === dateStr || t.startDate === dateStr);
+    return (tasks || []).filter(t => t && (t.dueDate === dateStr || t.startDate === dateStr));
   };
 
   const getTaskColorClass = (status: string) => {
+      if (!status) return 'bg-indigo-500';
       switch (status) {
           case 'Done': return 'bg-emerald-500';
           case 'In Progress': return 'bg-blue-500';
@@ -301,19 +302,22 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onTaskClick, onAddTa
 
                     {/* BODY: Scrollable Task List */}
                     <div className="flex-1 w-full overflow-y-auto px-1 gap-1 flex flex-col custom-scrollbar min-h-0">
-                        {tasksForDay.map(task => (
-                            <div 
-                                key={task.id}
-                                onClick={(e) => { e.stopPropagation(); onTaskClick(task); }}
-                                className={`
-                                    shrink-0 h-6 w-full rounded px-2 flex items-center text-[10px] font-semibold text-white cursor-pointer shadow-sm hover:opacity-90 transition-opacity
-                                    ${getTaskColorClass(task.status)}
-                                `}
-                                title={task.title}
-                            >
-                                <span className="truncate">{task.title}</span>
-                            </div>
-                        ))}
+                        {tasksForDay.map(task => {
+                            if (!task || !task.id) return null;
+                            return (
+                                <div 
+                                    key={task.id}
+                                    onClick={(e) => { e.stopPropagation(); onTaskClick(task); }}
+                                    className={`
+                                        shrink-0 h-6 w-full rounded px-2 flex items-center text-[10px] font-semibold text-white cursor-pointer shadow-sm hover:opacity-90 transition-opacity
+                                        ${getTaskColorClass(task.status)}
+                                    `}
+                                    title={task.title}
+                                >
+                                    <span className="truncate">{task.title || 'Untitled'}</span>
+                                </div>
+                            );
+                        })}
                     </div>
 
                     {/* FOOTER: Lunar Date & Holiday */}

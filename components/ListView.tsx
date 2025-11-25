@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Task } from '../types';
-import { ArrowUp, ArrowDown, Edit3, Trash2, ChevronsUpDown, User } from 'lucide-react';
+import { ArrowUp, ArrowDown, Edit3, Trash2, ChevronsUpDown } from 'lucide-react';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 
 interface ListViewProps {
@@ -26,29 +26,43 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
   };
 
   const sortedTasks = useMemo(() => {
-    return [...tasks].sort((a, b) => {
+    // 1. Safety Filter: Remove undefined/null tasks immediately
+    const validTasks = tasks.filter(t => t !== null && t !== undefined);
+
+    return validTasks.sort((a, b) => {
       const aValue = a[sortConfig.key];
       const bValue = b[sortConfig.key];
 
-      if (aValue === bValue) return 0;
-      
-      let comparison = 0;
-      
-      // Handle specific types
+      // Handle specific types gracefully
       if (sortConfig.key === 'estimatedCost') {
-         comparison = (Number(aValue) || 0) - (Number(bValue) || 0);
-      } else if (sortConfig.key === 'dueDate') {
-         comparison = new Date(aValue as string).getTime() - new Date(bValue as string).getTime();
-      } else {
-         // String comparison
-         comparison = String(aValue).localeCompare(String(bValue));
+         const numA = Number(aValue) || 0;
+         const numB = Number(bValue) || 0;
+         return sortConfig.direction === 'asc' ? numA - numB : numB - numA;
+      } 
+      
+      if (sortConfig.key === 'dueDate') {
+         // Treat missing dates as far future (or past depending on preference, here effectively 0)
+         const dateA = aValue ? new Date(aValue as string).getTime() : 0;
+         const dateB = bValue ? new Date(bValue as string).getTime() : 0;
+         // Handle Invalid Date results from getTime() -> NaN
+         const safeDateA = isNaN(dateA) ? 0 : dateA;
+         const safeDateB = isNaN(dateB) ? 0 : dateB;
+         
+         return sortConfig.direction === 'asc' ? safeDateA - safeDateB : safeDateB - safeDateA;
       }
 
-      return sortConfig.direction === 'asc' ? comparison : -comparison;
+      // String comparison (fallback for everything else)
+      const strA = String(aValue || '').toLowerCase();
+      const strB = String(bValue || '').toLowerCase();
+
+      if (strA < strB) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (strA > strB) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
     });
   }, [tasks, sortConfig]);
 
   const getStatusColor = (status: string) => {
+    if (!status) return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
     switch (status) {
       case 'Done': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400';
       case 'In Progress': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
@@ -57,6 +71,7 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
   };
 
   const getPriorityColor = (priority: string) => {
+    if (!priority) return 'text-slate-600 dark:text-slate-400';
     switch (priority) {
       case 'High': return 'text-red-600 dark:text-red-400';
       case 'Medium': return 'text-amber-600 dark:text-amber-400';
@@ -66,8 +81,13 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
   };
 
   const formatCurrency = (amount?: number) => {
-    if (amount === undefined || amount === null) return '-';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    const val = Number(amount);
+    if (isNaN(val)) return '-';
+    try {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+    } catch (e) {
+        return '-';
+    }
   };
 
   const renderHeader = (key: SortKey, label: string, className = "") => (
@@ -108,7 +128,20 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
            <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
              {sortedTasks.map(task => {
                // SAFETY GUARD: Check for valid task to prevent crash
-               if (!task) return null;
+               if (!task || !task.id) return null;
+
+               // Safe Date Access
+               let dateDisplay = '-';
+               if (task.dueDate) {
+                   const d = new Date(task.dueDate);
+                   if (!isNaN(d.getTime())) {
+                       dateDisplay = d.toLocaleDateString();
+                   }
+               }
+
+               // Safe Assignee Access
+               const assigneeName = task.assignee || 'Unassigned';
+               const assigneeAvatar = task.assigneeAvatar;
 
                return (
                  <tr 
@@ -117,39 +150,39 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
                    className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors group"
                  >
                    <td className="px-6 py-4">
-                     <span className="font-bold text-slate-800 dark:text-white text-sm">{task.title}</span>
+                     <span className="font-bold text-slate-800 dark:text-white text-sm block truncate max-w-[250px]">{task.title || 'Untitled Task'}</span>
                    </td>
                    
                    <td className="px-6 py-4">
                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}>
-                       {task.status}
+                       {task.status || 'To Do'}
                      </span>
                    </td>
                    
                    <td className="px-6 py-4">
                      <span className={`text-xs font-bold ${getPriorityColor(task.priority)}`}>
-                       {task.priority}
+                       {task.priority || 'Medium'}
                      </span>
                    </td>
                    
                    <td className="px-6 py-4">
                      <div className="flex items-center gap-2">
-                       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold overflow-hidden ${task.assigneeAvatar && task.assigneeAvatar.startsWith('http') ? '' : getAvatarColor(task.assignee)}`}>
-                         {task.assigneeAvatar && task.assigneeAvatar.startsWith('http') ? (
-                           <img src={task.assigneeAvatar} alt={task.assignee} className="w-full h-full object-cover" />
+                       <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold overflow-hidden shrink-0 ${assigneeAvatar && assigneeAvatar.startsWith('http') ? '' : getAvatarColor(assigneeName)}`}>
+                         {assigneeAvatar && assigneeAvatar.startsWith('http') ? (
+                           <img src={assigneeAvatar} alt={assigneeName} className="w-full h-full object-cover" />
                          ) : (
-                           getAvatarInitials(task.assignee)
+                           getAvatarInitials(assigneeName)
                          )}
                        </div>
                        <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px]">
-                         {task.assignee === 'Unassigned' || task.assignee === 'UN' ? 'Unassigned' : task.assignee}
+                         {assigneeName}
                        </span>
                      </div>
                    </td>
                    
                    <td className="px-6 py-4">
                      <span className="text-sm text-slate-600 dark:text-slate-400 font-medium">
-                       {new Date(task.dueDate).toLocaleDateString()}
+                       {dateDisplay}
                      </span>
                    </td>
                    

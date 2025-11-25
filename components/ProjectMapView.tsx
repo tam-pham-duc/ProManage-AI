@@ -55,20 +55,24 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
 
   // --- Layout Engine (Part 1) ---
   const graphNodes = useMemo<GraphNode[]>(() => {
+    // CRITICAL FIX: Filter out invalid tasks immediately
+    const validTasks = (tasks || []).filter(t => t && t.id);
+    
     const nodes: GraphNode[] = [];
     const levels = new Map<string, number>();
     
     // 1. Initialize levels
-    tasks.forEach(t => levels.set(t.id, 0));
+    validTasks.forEach(t => levels.set(t.id, 0));
 
     // 2. Calculate Levels (Longest Path Algorithm / Relaxation)
     // Run N times to propagate dependency depths (N = num tasks, sufficient for DAG)
-    for (let i = 0; i < tasks.length; i++) {
+    for (let i = 0; i < validTasks.length; i++) {
       let changed = false;
-      tasks.forEach(task => {
-        if (task.dependencies && task.dependencies.length > 0) {
+      validTasks.forEach(task => {
+        const deps = task.dependencies || [];
+        if (deps.length > 0) {
           let maxParentLevel = -1;
-          task.dependencies.forEach(depId => {
+          deps.forEach(depId => {
             if (levels.has(depId)) {
               maxParentLevel = Math.max(maxParentLevel, levels.get(depId)!);
             }
@@ -86,7 +90,7 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
 
     // 3. Group by Level
     const levelsArray: Task[][] = [];
-    tasks.forEach(task => {
+    validTasks.forEach(task => {
       const lvl = levels.get(task.id) || 0;
       if (!levelsArray[lvl]) levelsArray[lvl] = [];
       levelsArray[lvl].push(task);
@@ -100,7 +104,7 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
       if (!levelTasks) return;
       
       // Sort purely for stability (alphabetical)
-      levelTasks.sort((a, b) => a.title.localeCompare(b.title));
+      levelTasks.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
       const columnHeight = levelTasks.length * (NODE_HEIGHT + Y_GAP) - Y_GAP;
       const startY = (canvasHeight - columnHeight) / 2 + PADDING;
@@ -126,8 +130,8 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
   const connections = useMemo<Connection[]>(() => {
     const conns: Connection[] = [];
     graphNodes.forEach(node => {
-        if (!node.dependencies) return;
-        node.dependencies.forEach(depId => {
+        const deps = node.dependencies || [];
+        deps.forEach(depId => {
             const parent = graphNodes.find(n => n.id === depId);
             if (parent) {
                 // Coordinates
@@ -172,8 +176,10 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
       // 1. Upstream (Parents) - Recursive
       const traverseUp = (currentId: string) => {
           const node = graphNodes.find(n => n.id === currentId);
-          if (!node || !node.dependencies) return;
-          node.dependencies.forEach(depId => {
+          const deps = node?.dependencies || [];
+          if (!node || deps.length === 0) return;
+          
+          deps.forEach(depId => {
               if (!relatedNodes.has(depId)) {
                   relatedNodes.add(depId);
                   relatedConnections.add(`${depId}-${currentId}`);
@@ -190,7 +196,8 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
       // Need to scan all nodes to see who points to current
       const traverseDown = (currentId: string) => {
           graphNodes.forEach(possibleChild => {
-              if (possibleChild.dependencies && possibleChild.dependencies.includes(currentId)) {
+              const deps = possibleChild.dependencies || [];
+              if (deps.includes(currentId)) {
                   relatedConnections.add(`${currentId}-${possibleChild.id}`);
                   if (!relatedNodes.has(possibleChild.id)) {
                       relatedNodes.add(possibleChild.id);
@@ -288,7 +295,8 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
             {/* --- Node Layer (Cards) --- */}
             {graphNodes.map(node => {
                 // Calculate Blocked Status relative to parents
-                const isBlocked = node.dependencies && node.dependencies.some(depId => {
+                const deps = node.dependencies || [];
+                const isBlocked = deps.some(depId => {
                     const parent = tasks.find(t => t.id === depId);
                     return parent && parent.status !== 'Done';
                 });
@@ -342,14 +350,14 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                                         <img src={node.assigneeAvatar} className="w-5 h-5 rounded-full border border-white dark:border-slate-700" alt="" />
                                     ) : (
                                         <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[8px] font-bold">
-                                            {node.assignee.substring(0, 1)}
+                                            {node.assignee ? node.assignee.substring(0, 1) : 'U'}
                                         </div>
                                     )}
-                                    <span className="truncate max-w-[120px]">{node.assignee}</span>
+                                    <span className="truncate max-w-[120px]">{node.assignee || 'Unassigned'}</span>
                                 </div>
                                 <div className="flex items-center gap-1.5 text-slate-400 pl-0.5">
                                     <Clock size={12} />
-                                    <span>{new Date(node.dueDate).toLocaleDateString()}</span>
+                                    <span>{node.dueDate ? new Date(node.dueDate).toLocaleDateString() : 'No Date'}</span>
                                 </div>
                             </div>
                             

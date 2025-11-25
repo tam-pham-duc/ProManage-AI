@@ -125,9 +125,13 @@ const UpcomingDeadlines: React.FC<UpcomingDeadlinesProps> = ({ tasks, onTaskClic
     const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
     const deadlines = useMemo(() => {
-        return tasks
-            .filter(t => t.status !== 'Done')
-            .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        return (tasks || [])
+            .filter(t => t && t.status !== 'Done' && t.dueDate)
+            .sort((a, b) => {
+                const dateA = new Date(a.dueDate).getTime();
+                const dateB = new Date(b.dueDate).getTime();
+                return (isNaN(dateA) ? Infinity : dateA) - (isNaN(dateB) ? Infinity : dateB);
+            })
             .slice(0, 5);
     }, [tasks]);
 
@@ -150,6 +154,7 @@ const UpcomingDeadlines: React.FC<UpcomingDeadlinesProps> = ({ tasks, onTaskClic
                     </div>
                 )}
                 {deadlines.map(task => {
+                    if (!task || !task.id) return null;
                     const isOverdue = new Date(task.dueDate) < new Date();
                     const isToday = new Date(task.dueDate).toDateString() === new Date().toDateString();
                     
@@ -428,11 +433,13 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
   };
 
   const stats = useMemo(() => {
-    const total = tasks.length;
-    const inProgress = tasks.filter(t => t.status === 'In Progress').length;
-    const completed = tasks.filter(t => t.status === 'Done').length;
-    const todo = tasks.filter(t => t.status === 'To Do').length;
-    const overdue = tasks.filter(t => {
+    const safeTasks = tasks || [];
+    const total = safeTasks.length;
+    const inProgress = safeTasks.filter(t => t && t.status === 'In Progress').length;
+    const completed = safeTasks.filter(t => t && t.status === 'Done').length;
+    const todo = safeTasks.filter(t => t && t.status === 'To Do').length;
+    const overdue = safeTasks.filter(t => {
+      if (!t || !t.dueDate) return false;
       const isOverdue = new Date(t.dueDate) < new Date();
       return isOverdue && t.status !== 'Done';
     }).length;
@@ -441,8 +448,9 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
   }, [tasks]);
 
   const financials = useMemo(() => {
-    const totalBudget = tasks.reduce((sum, t) => sum + (t.estimatedCost || 0), 0);
-    const totalSpent = tasks.reduce((sum, t) => sum + (t.actualCost || 0), 0);
+    if (!tasks) return { totalBudget: 0, totalSpent: 0, variance: 0 };
+    const totalBudget = tasks.reduce((sum, t) => sum + (t?.estimatedCost || 0), 0);
+    const totalSpent = tasks.reduce((sum, t) => sum + (t?.actualCost || 0), 0);
     const variance = totalBudget - totalSpent;
     return { totalBudget, totalSpent, variance };
   }, [tasks]);
@@ -465,7 +473,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
     if (columns.length > 0) {
         return columns.map(col => ({
             label: col.title,
-            value: tasks.filter(t => t.status === col.title).length,
+            value: tasks?.filter(t => t && t.status === col.title).length || 0,
             colorClass: getColorClass(col.color)
         }));
     }
@@ -746,6 +754,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
             <div className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar print:max-h-none print:overflow-visible">
             <div className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-700 space-y-8">
                 {activities.map((item) => {
+                    if (!item) return null;
                     let Icon = Clock;
                     let iconBg = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400';
                     let borderColor = 'border-slate-100 dark:border-slate-700';
@@ -754,7 +763,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
                         Icon = MessageSquare;
                         iconBg = 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400';
                         borderColor = 'border-blue-100 dark:border-blue-900/30';
-                    } else if (item.type === 'status_change' || item.action.includes('Done') || item.action.includes('completed')) {
+                    } else if (item.type === 'status_change' || (item.action && (item.action.includes('Done') || item.action.includes('completed')))) {
                         Icon = CheckCircle2;
                         iconBg = 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
                         borderColor = 'border-emerald-100 dark:border-emerald-900/30';
