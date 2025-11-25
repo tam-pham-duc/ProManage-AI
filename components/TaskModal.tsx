@@ -794,8 +794,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const streamItems = [
-    ...comments.map(c => ({ ...c, source: 'comment', type: 'comment', timestamp: c.timestamp })),
-    ...activityLog.map(l => ({ ...l, source: 'log', timestamp: l.timestamp }))
+    ...comments.map(c => ({ ...c, source: 'comment' as const })),
+    ...activityLog.map(l => ({ ...l, source: 'log' as const }))
   ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
@@ -1017,10 +1017,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
                             </div>
                         ) : (
                             streamItems.map((item, idx) => {
-                                const isComment = item.source === 'comment';
-                                const isMe = item.user === currentUser; // Assuming currentUser matches username for simplicity, otherwise check ID
-                                
-                                if (isComment) {
+                                if (item.source === 'comment') {
+                                    const isMe = item.user === currentUser;
                                     return (
                                         <div key={item.id} className={`flex gap-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                             {!isMe && (

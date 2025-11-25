@@ -195,7 +195,10 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
             {group.lanes.map((lane, laneIdx) => (
                 lane.map(task => {
                     // SAFETY GUARD: Prevent crashes from corrupted task data
-                    if (!task || !task.startTs || isNaN(task.startTs) || !task.dueTs || isNaN(task.dueTs)) {
+                    if (!task || !task.id || !task.startDate || !task.dueDate) return null;
+                    
+                    // Extra check for NaN dates from processing
+                    if (!task.startTs || isNaN(task.startTs) || !task.dueTs || isNaN(task.dueTs)) {
                         return null;
                     }
 
@@ -246,19 +249,42 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
   const nowTs = useMemo(() => Date.now(), []);
   const todayDateString = useMemo(() => new Date().toDateString(), []);
 
-  // --- Optimization: Pre-process tasks to use timestamps ---
+  // --- Optimization: Pre-process tasks to use timestamps with SAFETY ---
   const processedTasks = useMemo(() => {
       return tasks.map(t => {
-          // Safe date parsing
-          const start = t.startDate ? new Date(t.startDate).getTime() : NaN;
-          const due = t.dueDate ? new Date(t.dueDate).getTime() : NaN;
+          if (!t) return null;
+
+          let startTs = NaN;
+          let dueTs = NaN;
+
+          try {
+              // Safe Date Conversion helper
+              const parseDate = (val: any): number => {
+                  if (!val) return NaN;
+                  // Handle Firestore Timestamp object (has seconds)
+                  if (typeof val === 'object' && 'seconds' in val) {
+                      return val.seconds * 1000;
+                  }
+                  // Handle standard Date string/object
+                  const d = new Date(val);
+                  return d.getTime();
+              };
+
+              startTs = parseDate(t.startDate);
+              dueTs = parseDate(t.dueDate);
+          } catch (e) {
+              // If parsing fails, task is invalid for timeline
+              return null;
+          }
           
+          if (isNaN(startTs) || isNaN(dueTs)) return null;
+
           return {
               ...t,
-              startTs: start,
-              dueTs: due
+              startTs,
+              dueTs
           };
-      }).filter(t => !isNaN(t.startTs) && !isNaN(t.dueTs)); // Initial filter
+      }).filter((t): t is ProcessedTask => t !== null);
   }, [tasks]);
 
   // Cell dimensions
