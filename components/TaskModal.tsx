@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
@@ -182,8 +182,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       // Check if we need to reset form state
-      // We reset if we are opening a new task (task is undefined) 
-      // OR if we switched to a different task ID
       const isNewTask = !task;
       const isDifferentTask = task?.id !== prevTaskIdRef.current;
 
@@ -289,10 +287,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
     return html;
   };
 
-  const formatDate = (ts: number) => new Date(ts).toLocaleDateString();
-  const formatTime = (ts: number) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  // Handlers modified to respect isReadOnly...
+  // Handlers
   const handleAddSubtask = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (isReadOnly || !newSubtaskTitle.trim()) return;
@@ -351,7 +346,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   const handleSendComment = () => {
     if (!newComment.trim()) return;
-    // Comments allowed even in read-only (usually) - but for strict Guest mode, maybe not?
     if (isReadOnly) return; 
     
     setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toISOString() }]);
@@ -359,26 +353,20 @@ const TaskModal: React.FC<TaskModalProps> = ({
     setShowMentionList(false);
   };
 
-  // Function 3: handleDeleteTimeLog (Robust Array Manipulation)
   const handleDeleteLog = async (logId: string) => {
     if (!task) return;
-    
-    // 1. Confirm
     if (!window.confirm("Delete this time entry?")) return;
 
     try {
-        // 2. Local Calculation
         const currentLogs = task.timeLogs || [];
         const newLogsArray = currentLogs.filter(l => l.id !== logId);
         const newTotalSeconds = newLogsArray.reduce((acc, l) => acc + l.durationSeconds, 0);
 
-        // 3. Operation
         await updateDoc(doc(db, 'tasks', task.id), {
             timeLogs: newLogsArray,
             totalTimeSeconds: newTotalSeconds
         });
         
-        // 4. UI Update
         notify('success', 'Time log deleted');
         if (editingLog?.id === logId) setEditingLog(null);
     } catch (e) {
@@ -421,7 +409,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             totalTimeSeconds: newTotal
         });
         notify('success', 'Time log updated');
-        setEditingLog(null); // Explicitly close the edit form
+        setEditingLog(null); 
     } catch (e) {
         console.error(e);
         notify('error', 'Failed to update log');
@@ -544,7 +532,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   onClick={(e) => e.stopPropagation()}
                 >
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Edit Time Entry</h3>
-                    
                     <div className="space-y-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Start Time</label>
@@ -565,30 +552,20 @@ const TaskModal: React.FC<TaskModalProps> = ({
                             />
                         </div>
                     </div>
-
                     <div className="flex gap-2 mt-6">
                         <button 
                             type="button"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setEditingLog(null);
-                            }}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingLog(null); }}
                             className="flex-1 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
                         >
                             Cancel
                         </button>
                         <button 
                             type="button"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleUpdateLog();
-                            }}
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleUpdateLog(); }}
                             className="flex-1 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
-                            <SaveIcon size={14} />
-                            Save
+                            <SaveIcon size={14} /> Save
                         </button>
                     </div>
                 </div>
@@ -611,12 +588,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
               {task && !isReadOnly && (
                   <button
                     onClick={() => isTracking ? stopTimer() : startTimer(task)}
-                    className={`ml-4 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold transition-all border
-                        ${isTracking 
-                            ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' 
-                            : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200'
-                        }
-                    `}
+                    className={`ml-4 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold transition-all border ${isTracking ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200'}`}
                   >
                       {isTracking ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
                       {isTracking ? 'STOP' : 'START TIMER'}
@@ -662,7 +634,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <FileText size={12} /> Description
                     </label>
-                    {/* If readOnly, show parsed markdown instead of editor */}
                     {isReadOnly ? (
                         <div 
                             className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl min-h-[100px] prose prose-sm dark:prose-invert max-w-none"
@@ -690,7 +661,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                 </div>
 
-                {/* Dates & Assignee */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Calendar size={12} /> Start</label>
@@ -731,12 +701,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                 </div>
                 
-                {/* Task Dependencies */}
+                {/* Dependencies */}
                 <div className="relative">
                     <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <LinkIcon size={12} /> Dependencies / Prerequisites
                     </label>
-                    
                     <div className="flex flex-wrap gap-2 mb-2">
                        {dependencies.map(depId => {
                            const parentTask = allTasks.find(t => t.id === depId);
@@ -747,16 +716,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                   className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 border ${isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}
                                 >
                                    {parentTask ? parentTask.title : 'Unknown Task'}
-                                   {!isReadOnly && (
-                                     <button type="button" onClick={() => handleToggleDependency(depId)} className="hover:bg-black/10 rounded-full p-0.5">
-                                       <X size={12} />
-                                     </button>
-                                   )}
+                                   {!isReadOnly && <button type="button" onClick={() => handleToggleDependency(depId)} className="hover:bg-black/10 rounded-full p-0.5"><X size={12} /></button>}
                                </span>
                            );
                        })}
                     </div>
-
                     {!isReadOnly && (
                        <div className="relative">
                           <button 
@@ -766,7 +730,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                           >
                              <Plus size={12} /> Add Dependency
                           </button>
-                          
                           {showDependencyDropdown && (
                              <>
                                 <div className="fixed inset-0 z-30" onClick={() => setShowDependencyDropdown(false)}></div>
@@ -846,47 +809,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   )}
                 </div>
 
-                {/* Time Estimation */}
-                <div className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1"><Clock size={12} /> Time Estimation</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     <div className="relative">
-                        <input type="number" min="0" step="0.5" readOnly={isReadOnly} value={estimatedHours} onChange={(e) => setEstimatedHours(e.target.value)} className={inputBaseClass} placeholder="0" />
-                         <span className="absolute right-4 top-3.5 text-slate-400 text-xs font-bold pointer-events-none">HRS</span>
-                     </div>
-                     <div className="relative">
-                        <input type="number" min="0" step="0.5" readOnly={isReadOnly} value={estimatedDays} onChange={(e) => setEstimatedDays(e.target.value)} className={inputBaseClass} placeholder="0" />
-                        <span className="absolute right-4 top-3.5 text-slate-400 text-xs font-bold pointer-events-none">DAYS</span>
-                     </div>
-                  </div>
-                </div>
-
-                {/* Financials */}
-                <div className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1"><DollarSign size={12} /> Financials</label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                     <div className="relative">
-                        <span className="absolute left-4 top-3.5 text-slate-400 font-bold">$</span>
-                        <input type="number" readOnly={isReadOnly} value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)} className={`${inputBaseClass} pl-8`} placeholder="0.00" />
-                        <label className="block text-[10px] font-bold text-slate-500 mt-1 ml-1 uppercase">Estimated</label>
-                     </div>
-                     <div className="relative">
-                        <span className="absolute left-4 top-3.5 text-slate-400 font-bold">$</span>
-                        <input type="number" readOnly={isReadOnly} value={actualCost} onChange={(e) => setActualCost(e.target.value)} className={`${inputBaseClass} pl-8`} placeholder="0.00" />
-                        <label className="block text-[10px] font-bold text-slate-500 mt-1 ml-1 uppercase">Actual</label>
-                     </div>
-                  </div>
-                </div>
-
                 {/* Checklist */}
                 <div className="pt-6 border-t border-slate-100 dark:border-slate-700">
                   <div className="flex items-center justify-between mb-3">
                     <label className="block text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"><CheckSquare size={16} className="text-indigo-500" /> Checklist</label>
-                    {subtasks.length > 0 && <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-md">{completedCount}/{subtasks.length} Done</span>}
+                    {subtasks.length > 0 && <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-md">{subtasks.filter(st => st.completed).length}/{subtasks.length} Done</span>}
                   </div>
                   {subtasks.length > 0 && (
                     <div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full mb-4 overflow-hidden">
-                      <div className="h-full bg-indigo-500 transition-all duration-300 ease-out" style={{ width: `${progressPercentage}%` }} />
+                      <div className="h-full bg-indigo-500 transition-all duration-300 ease-out" style={{ width: `${subtasks.length > 0 ? Math.round((subtasks.filter(st => st.completed).length / subtasks.length) * 100) : 0}%` }} />
                     </div>
                   )}
                   <div className="space-y-2 mb-4">
@@ -923,7 +854,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                       ))}
                     </div>
                    )}
-                   
                    {!isReadOnly && (
                     <div className="flex gap-2 items-end">
                         <div className="flex-1 space-y-2">
@@ -939,16 +869,22 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
             {activeTab === 'discussion' && (
                 <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 relative -m-6">
-                    {/* Chat Area */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                    {/* Chat Area Container */}
+                    <div className="flex-1 overflow-y-auto p-4 custom-scrollbar h-[400px]">
+                        {streamItems.length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400 dark:text-slate-500 opacity-50">
+                                <MessageSquare size={48} strokeWidth={1.5} />
+                                <p className="text-sm mt-2">Start the conversation</p>
+                            </div>
+                        )}
                         {streamItems.map((item: any) => {
-                            const isLog = item.source === 'log';
+                            const isLog = item.source === 'log' || item.user === 'System';
                             
                             // Case A: System Log
                             if (isLog) {
                                 return (
                                     <div key={item.id} className="flex justify-center my-2">
-                                        <span className="text-xs text-gray-400 italic text-center bg-gray-100 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent dark:border-slate-700">
+                                        <span className="text-xs text-gray-400 dark:text-slate-500 italic text-center bg-gray-100 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent dark:border-slate-700">
                                             {formatMessageTime(item.timestamp)} - {item.userName || 'System'} {item.action}
                                         </span>
                                     </div>
@@ -959,7 +895,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                             const isMe = item.user === currentUser; 
 
                             return (
-                                <div key={item.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                <div key={item.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                     <div className={`flex max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
                                         
                                         {/* Avatar (Only for others) */}
@@ -989,7 +925,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                                 <div dangerouslySetInnerHTML={{ __html: parseMarkdown(item.text) }} />
                                                 
                                                 {isMe && (
-                                                    <div className="text-[9px] text-white/70 text-right mt-1 font-medium">
+                                                    <div className="text-[9px] text-blue-200 text-right mt-1 font-medium opacity-80">
                                                         {formatMessageTime(item.timestamp)}
                                                     </div>
                                                 )}
@@ -1006,18 +942,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                 </div>
                             );
                         })}
-                        {streamItems.length === 0 && (
-                            <div className="flex flex-col items-center justify-center h-40 text-slate-400 dark:text-slate-500 opacity-50">
-                                <MessageSquare size={48} strokeWidth={1.5} />
-                                <p className="text-sm mt-2">Start the conversation</p>
-                            </div>
-                        )}
                         <div ref={messagesEndRef} />
                     </div>
 
                     {/* Input Area */}
                     {!isReadOnly && (
-                        <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0">
+                        <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 sticky bottom-0 z-20">
                             <div className="relative flex items-end gap-2">
                                 <div className="relative flex-1 bg-gray-50 dark:bg-slate-800 rounded-3xl flex items-center px-2 border border-slate-200 dark:border-slate-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
                                     <button 
