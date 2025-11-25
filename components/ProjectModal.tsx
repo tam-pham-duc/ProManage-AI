@@ -6,6 +6,7 @@ import { db } from '../firebase';
 import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { saveProjectAsTemplate, getTemplates } from '../services/templateService';
+import Avatar from './Avatar';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -86,7 +87,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             displayName: currentUser.displayName,
             role: 'admin',
             status: 'active',
-            avatar: currentUser.displayName.charAt(0).toUpperCase()
+            avatar: currentUser.displayName.charAt(0).toUpperCase() // This will likely be replaced by user object avatar logic if passed
           }]);
         } else {
           setLocalMembers([]);
@@ -379,17 +380,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
                 return (
                 <div key={member.uid || member.email} className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 border ${isPending ? 'border-yellow-200 dark:border-yellow-900/30 bg-yellow-50 dark:bg-yellow-900/10' : 'border-slate-200 dark:border-slate-700'} rounded-xl transition-all gap-3`}>
                     <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shadow-sm overflow-hidden shrink-0 ${isPending ? 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-400' : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'}`}>
-                            {isPending ? (
-                                <Clock size={16} />
-                            ) : (
-                                member.avatar && member.avatar.startsWith('http') ? (
-                                <img src={member.avatar} alt={member.displayName} className="w-full h-full object-cover" />
-                                ) : (
-                                (member.avatar || member.displayName.charAt(0)).toUpperCase()
-                                )
-                            )}
-                        </div>
+                        <Avatar src={member.avatar} name={member.displayName} className="w-9 h-9" />
                         <div className="min-w-0">
                             <div className="flex items-center gap-2">
                                 <p className={`text-sm font-bold truncate ${isPending ? 'text-slate-500 dark:text-slate-400' : 'text-slate-900 dark:text-white'}`}>

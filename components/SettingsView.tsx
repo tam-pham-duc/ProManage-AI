@@ -8,6 +8,7 @@ import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc, getDocs, q
 import { useNotification } from '../context/NotificationContext';
 import { clearDevData, generateDemoData } from '../services/demoDataService';
 import HealthCheckModal from './HealthCheckModal';
+import Avatar from './Avatar';
 
 interface SettingsViewProps {
   tasks: Task[];
@@ -633,578 +634,316 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                       });
                   setTemplates(data);
               }
-
-          } catch (err: any) {
-              console.error("Import error:", err);
-              notify('error', err.message || "Failed to import template.");
-          } finally {
-              if (templateFileInputRef.current) {
-                  templateFileInputRef.current.value = '';
-              }
+          } catch (e: any) {
+              console.error("Import Template Error:", e);
+              notify('error', e.message || "Failed to import template.");
+          }
+          
+          if (templateFileInputRef.current) {
+              templateFileInputRef.current.value = '';
           }
       };
       reader.readAsText(file);
   };
 
-  const filteredTemplates = templates.filter(t => t.type === activeTemplateType);
-
-  const tabs = [
-    { id: 'general', label: 'General', icon: User },
-    { id: 'preferences', label: 'Preferences', icon: Sliders },
-    { id: 'templates', label: 'Templates', icon: LayoutTemplate },
-    { id: 'data', label: 'Data Management', icon: Database },
-  ];
-
-  const colorOptions = [
-    { name: 'slate', class: 'bg-slate-500' },
-    { name: 'blue', class: 'bg-blue-500' },
-    { name: 'emerald', class: 'bg-emerald-500' },
-    { name: 'indigo', class: 'bg-indigo-500' },
-    { name: 'purple', class: 'bg-purple-500' },
-    { name: 'rose', class: 'bg-rose-500' },
-    { name: 'amber', class: 'bg-amber-500' },
-  ];
-
   return (
-    <div className="max-w-5xl mx-auto animate-fade-in space-y-6 h-[calc(100vh-140px)] flex flex-col">
-      <div className="flex justify-between items-center">
-        <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Settings</h1>
-            <p className="text-slate-600 dark:text-slate-400 mt-1">Manage your account and application preferences.</p>
-        </div>
-        <button 
-            onClick={onClose}
-            className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
-            title="Close Settings"
-        >
-            <X size={24} />
-        </button>
-      </div>
-
-      <div className="flex flex-col md:flex-row bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex-1 overflow-hidden">
-        {/* Sidebar Navigation */}
-        <div className="w-full md:w-64 bg-slate-50 dark:bg-slate-900/50 border-b md:border-b-0 md:border-r border-slate-200 dark:border-slate-700 p-4">
-          <nav className="space-y-1">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as SettingsTab)}
-                  className={`
-                    w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200
-                    ${isActive 
-                      ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700' 
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800'
-                    }
-                  `}
-                >
-                  <Icon size={18} />
-                  {tab.label}
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Sliders size={20} className="text-indigo-500" />
+                    Settings & Configuration
+                </h2>
+                <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors">
+                    <X size={24} />
                 </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 p-6 md:p-8 overflow-y-auto custom-scrollbar bg-white dark:bg-slate-800">
-          
-          {/* Tab: General */}
-          {activeTab === 'general' && (
-            <div className="max-w-xl space-y-8 animate-fade-in">
-              <form onSubmit={handleSaveProfile} className="space-y-8">
-                {/* Profile Header with Avatar */}
-                <div className="flex items-center gap-6">
-                  <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
-                    <div className="w-24 h-24 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-3xl font-bold text-white shadow-lg overflow-hidden border-4 border-white dark:border-slate-700">
-                      {avatarPreview ? (
-                        <img src={avatarPreview} alt="Profile" className="w-full h-full object-cover" />
-                      ) : (
-                        profileName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
-                      )}
-                    </div>
-                    {/* Camera Overlay */}
-                    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Camera className="text-white" size={24} />
-                    </div>
-                    <input 
-                        type="file" 
-                        ref={avatarInputRef} 
-                        onChange={handleAvatarChange} 
-                        className="hidden" 
-                        accept="image/*" 
-                    />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Profile Information</h2>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Update your photo and personal details.</p>
-                  </div>
-                </div>
-
-                {/* Editable Fields */}
-                <div className="space-y-5">
-                   <div>
-                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Display Name</label>
-                     <input 
-                       type="text" 
-                       value={profileName}
-                       onChange={(e) => setProfileName(e.target.value)}
-                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all"
-                       required
-                     />
-                   </div>
-
-                   <div>
-                     <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Job Title</label>
-                     <input 
-                       type="text" 
-                       value={profileTitle}
-                       onChange={(e) => setProfileTitle(e.target.value)}
-                       className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all"
-                       placeholder="e.g. Project Manager"
-                     />
-                   </div>
-                </div>
-
-                <div className="h-px bg-slate-100 dark:bg-slate-700 my-6"></div>
-
-                {/* Account Security */}
-                <div className="space-y-5">
-                    <div className="flex items-center gap-2 mb-2">
-                        <ShieldCheck className="text-indigo-600 dark:text-indigo-400" size={20} />
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Account Security</h3>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Email Address</label>
-                        <div className="relative">
-                            <input 
-                                type="email" 
-                                value={auth.currentUser?.email || ''}
-                                disabled
-                                className="w-full pl-4 pr-10 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed font-medium"
-                            />
-                            <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
-                        </div>
-                        <p className="text-xs text-slate-400 mt-1.5">Contact admin to change email.</p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">New Password</label>
-                            <input 
-                                type="password" 
-                                value={newPassword}
-                                onChange={(e) => setNewPassword(e.target.value)}
-                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all"
-                                placeholder="••••••••"
-                                autoComplete="new-password"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Confirm Password</label>
-                            <input 
-                                type="password" 
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                className={`w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white transition-all ${confirmPassword && newPassword !== confirmPassword ? 'border-red-500' : 'border-slate-200 dark:border-slate-700'}`}
-                                placeholder="••••••••"
-                                autoComplete="new-password"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Footer Actions */}
-                <div className="pt-6 flex items-center justify-between border-t border-slate-100 dark:border-slate-700">
-                    <button 
-                        type="button"
-                        onClick={handleLogout}
-                        className="flex items-center gap-2 text-red-600 dark:text-red-400 font-bold hover:text-red-700 dark:hover:text-red-300 transition-colors px-4 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-sm"
-                    >
-                        <LogOut size={16} />
-                        Log Out
-                    </button>
-
-                    <button 
-                        type="submit"
-                        disabled={isSavingProfile}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 disabled:opacity-70"
-                    >
-                        {isSavingProfile ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                        Save Changes
-                    </button>
-                </div>
-              </form>
             </div>
-          )}
 
-          {/* Tab: Preferences */}
-          {activeTab === 'preferences' && (
-            <div className="max-w-2xl space-y-8 animate-fade-in">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">App Preferences</h2>
-                
-                <div className="space-y-8 divide-y divide-slate-100 dark:divide-slate-700">
-                  
-                  {/* Default View */}
-                  <div className="pt-4 first:pt-0">
-                     <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Start Page</label>
-                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {['dashboard', 'kanban', 'timeline'].map((view) => (
-                          <button
-                            key={view}
-                            onClick={() => setUserSettings(prev => ({ ...prev, defaultView: view as Tab }))}
-                            className={`
-                              px-4 py-3 rounded-lg border text-sm font-medium capitalize transition-all
-                              ${userSettings.defaultView === view 
-                                ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-500' 
-                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
-                              }
-                            `}
-                          >
-                            {view}
-                          </button>
-                        ))}
-                     </div>
-                  </div>
-
-                  {/* Kanban Columns Settings */}
-                  <div className="pt-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <KanbanSquare className="text-indigo-500" size={20} />
-                      <h3 className="text-base font-bold text-slate-900 dark:text-white">Kanban Columns</h3>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Customize the stages of your workflow.</p>
-
-                    <div className="space-y-3 mb-6">
-                       {columns.map((col, index) => (
-                         <div key={col.id} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl group">
-                            <GripVertical size={16} className="text-slate-400 cursor-grab" />
-                            <div className={`w-4 h-4 rounded-full bg-${col.color}-500 shadow-sm`}></div>
-                            <span className="flex-1 font-medium text-sm text-slate-700 dark:text-slate-200">{col.title}</span>
-                            {onDeleteColumn && (
-                                <button 
-                                    onClick={() => onDeleteColumn(col.id)}
-                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                    title="Delete Column"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
-                            )}
-                         </div>
-                       ))}
-                    </div>
-
-                    {/* Add Column Form */}
-                    {onAddColumn && (
-                        <div className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl">
-                            <Plus size={16} className="text-slate-400 ml-1" />
-                            <input 
-                                type="text" 
-                                value={newColumnTitle}
-                                onChange={(e) => setNewColumnTitle(e.target.value)}
-                                placeholder="New Column Name" 
-                                className="flex-1 bg-transparent outline-none text-sm text-slate-900 dark:text-white placeholder-slate-400"
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddColumnClick()}
-                            />
-                            <div className="flex gap-1">
-                                {colorOptions.map(c => (
-                                    <button 
-                                        key={c.name}
-                                        onClick={() => setNewColumnColor(c.name)}
-                                        className={`w-5 h-5 rounded-full ${c.class} transition-transform hover:scale-110 ${newColumnColor === c.name ? 'ring-2 ring-offset-1 dark:ring-offset-slate-800 ring-slate-400' : ''}`}
-                                    />
-                                ))}
-                            </div>
-                            <button 
-                                onClick={handleAddColumnClick}
-                                disabled={!newColumnTitle.trim()}
-                                className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-                            >
-                                Add
-                            </button>
-                        </div>
-                    )}
-                  </div>
-
-                  {/* Dark Mode */}
-                  <div className="pt-6 flex items-center justify-between">
-                    <div>
-                       <h3 className="text-sm font-medium text-slate-900 dark:text-white">Dark Mode</h3>
-                       <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Switch between light and dark themes.</p>
-                    </div>
-                    <button 
-                      onClick={toggleDarkMode}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-200'}`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${isDarkMode ? 'translate-x-6' : 'translate-x-1'}`} />
+            <div className="flex flex-1 overflow-hidden">
+                {/* Sidebar Navigation */}
+                <div className="w-64 bg-slate-50 dark:bg-slate-900/50 border-r border-slate-200 dark:border-slate-700 flex flex-col p-4 gap-2">
+                    <button onClick={() => setActiveTab('general')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'general' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}>
+                        <User size={18} /> General
                     </button>
-                  </div>
-
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tab: Templates */}
-          {activeTab === 'templates' && (
-            <div className="max-w-4xl mx-auto animate-fade-in h-full flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                    <div>
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Template Manager</h2>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Manage your saved project and task templates.</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <input 
-                            type="file" 
-                            ref={templateFileInputRef} 
-                            className="hidden" 
-                            accept=".json" 
-                            onChange={handleImportTemplate}
-                        />
-                        <button 
-                            onClick={handleImportTemplateClick}
-                            className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors shadow-sm"
-                        >
-                            <Upload size={14} /> Import
+                    <button onClick={() => setActiveTab('preferences')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'preferences' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}>
+                        <KanbanSquare size={18} /> Preferences
+                    </button>
+                    <button onClick={() => setActiveTab('data')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'data' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}>
+                        <Database size={18} /> Data Management
+                    </button>
+                    <button onClick={() => setActiveTab('templates')} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'templates' ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50'}`}>
+                        <LayoutTemplate size={18} /> Templates
+                    </button>
+                    
+                    <div className="mt-auto pt-4 border-t border-slate-200 dark:border-slate-700">
+                        <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                            <LogOut size={18} /> Sign Out
                         </button>
-                        
-                        <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
-                            <button 
-                                onClick={() => setActiveTemplateType('project')}
-                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'project' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-                            >
-                                Project Templates
-                            </button>
-                            <button 
-                                onClick={() => setActiveTemplateType('task')}
-                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${activeTemplateType === 'task' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-                            >
-                                Task Templates
-                            </button>
-                        </div>
                     </div>
                 </div>
 
-                {isLoadingTemplates ? (
-                    <div className="flex flex-col items-center justify-center h-64 text-slate-400">
-                        <Loader2 className="animate-spin mb-2" size={32} />
-                        <p className="text-sm">Loading templates...</p>
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto custom-scrollbar pb-4">
-                        {filteredTemplates.length === 0 ? (
-                            <div className="col-span-full flex flex-col items-center justify-center h-64 text-slate-400 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-                                <LayoutTemplate size={48} className="mb-4 opacity-20" />
-                                <p className="text-sm font-medium">No {activeTemplateType} templates found.</p>
-                                <p className="text-xs mt-1">Save a {activeTemplateType} as a template to see it here.</p>
-                            </div>
-                        ) : (
-                            filteredTemplates.map(template => (
-                                <div key={template.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow group flex flex-col">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div className={`p-2 rounded-lg ${template.type === 'project' ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400' : 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'}`}>
-                                            {template.type === 'project' ? <Briefcase size={20} /> : <CheckSquare size={20} />}
+                {/* Content Area */}
+                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white dark:bg-slate-800">
+                    
+                    {/* GENERAL TAB */}
+                    {activeTab === 'general' && (
+                        <div className="max-w-2xl space-y-8 animate-fade-in">
+                            {/* Profile Section */}
+                            <section>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">Profile Settings</h3>
+                                <div className="flex gap-6 items-start">
+                                    <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+                                        <Avatar src={avatarPreview} name={profileName} className="w-24 h-24 text-3xl" />
+                                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <Camera className="text-white" size={24} />
                                         </div>
-                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button 
-                                                onClick={() => handleExportTemplate(template)}
-                                                className="p-1.5 text-slate-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
-                                                title="Export JSON"
-                                            >
-                                                <Download size={16} />
-                                            </button>
-                                            <button 
-                                                onClick={() => setPreviewTemplate(template)}
-                                                className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                                title="Preview"
-                                            >
-                                                <Eye size={16} />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleDeleteTemplate(template.id)}
-                                                className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                                title="Delete"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </div>
+                                        <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
                                     </div>
-                                    
-                                    <h3 className="font-bold text-slate-900 dark:text-white text-sm mb-1 line-clamp-1">{template.name}</h3>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 line-clamp-2 h-8">{template.description || 'No description provided.'}</p>
-                                    
-                                    <div className="mt-auto pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between items-center text-[10px] text-slate-400">
-                                        <span>{new Date(template.createdAt?.toDate ? template.createdAt.toDate() : template.createdAt).toLocaleDateString()}</span>
-                                        <span className="uppercase font-bold tracking-wider">{template.type}</span>
+                                    <div className="flex-1 space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Display Name</label>
+                                            <input type="text" value={profileName} onChange={(e) => setProfileName(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Job Title</label>
+                                            <input type="text" value={profileTitle} onChange={(e) => setProfileTitle(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white" />
+                                        </div>
                                     </div>
                                 </div>
-                            ))
-                        )}
-                    </div>
-                )}
+                            </section>
 
-                {/* Preview Modal Overlay */}
-                {previewTemplate && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4" onClick={() => setPreviewTemplate(null)}>
-                        <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
-                                <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
-                                    <FileJson size={20} className="text-indigo-500" />
-                                    Template Preview
-                                </h3>
-                                <button onClick={() => setPreviewTemplate(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-                                    <X size={20} />
+                            <div className="h-px bg-slate-200 dark:border-slate-700"></div>
+
+                            {/* Password Section */}
+                            <section>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2"><Lock size={18} /> Security</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">New Password</label>
+                                        <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white" placeholder="Leave blank to keep current" />
+                                    </div>
+                                    {newPassword && (
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Confirm Password</label>
+                                            <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white" />
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+
+                            <div className="h-px bg-slate-200 dark:border-slate-700"></div>
+
+                            {/* Theme Section */}
+                            <section className="flex items-center justify-between">
+                                <div>
+                                    <h4 className="font-bold text-slate-900 dark:text-white">Appearance</h4>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Toggle between light and dark mode.</p>
+                                </div>
+                                <button onClick={toggleDarkMode} className={`relative w-14 h-8 rounded-full transition-colors duration-300 ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+                                    <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-300 ${isDarkMode ? 'translate-x-7' : 'translate-x-1'}`}></div>
                                 </button>
-                            </div>
-                            <div className="flex-1 overflow-auto custom-scrollbar bg-white dark:bg-slate-900">
-                                <TemplatePreview template={previewTemplate} />
-                            </div>
-                            <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50/50 dark:bg-slate-800/50">
-                                <button onClick={() => setPreviewTemplate(null)} className="px-4 py-2 bg-white dark:bg-slate-700 hover:bg-slate-50 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 rounded-lg text-sm font-bold transition-colors shadow-sm">
-                                    Close
+                            </section>
+
+                            <div className="pt-4">
+                                <button onClick={handleSaveProfile} disabled={isSavingProfile} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 dark:shadow-indigo-900/20 transition-all flex items-center gap-2 disabled:opacity-50">
+                                    {isSavingProfile ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                                    Save Changes
                                 </button>
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
-          )}
+                    )}
 
-          {/* Tab: Data Management */}
-          {activeTab === 'data' && (
-            <div className="max-w-xl space-y-8 animate-fade-in">
-               <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Data Management</h2>
-                
-                <div className="space-y-4">
-                   {/* Project Templates */}
-                   <div className="p-5 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
-                      <div className="flex items-start gap-4">
-                         <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-indigo-500">
-                           <LayoutTemplate size={24} />
-                         </div>
-                         <div className="flex-1">
-                           <h3 className="font-bold text-slate-900 dark:text-white text-sm">Standard House Template</h3>
-                           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 mb-4">
-                             Quickly populate your board with standard tasks for a Wood-frame House.
-                           </p>
-                           <button
-                             onClick={handleLoadTemplate}
-                             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white border border-transparent rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-200 dark:shadow-indigo-900/20 active:scale-95"
-                           >
-                             <PlusCircle size={16} />
-                             Load House Template
-                           </button>
-                         </div>
-                      </div>
-                   </div>
+                    {/* PREFERENCES TAB */}
+                    {activeTab === 'preferences' && (
+                        <div className="max-w-2xl space-y-8 animate-fade-in">
+                            <section>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">Kanban Columns</h3>
+                                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Customize the stages of your workflow.</p>
+                                
+                                <div className="space-y-3 mb-6">
+                                    {columns.map((col) => (
+                                        <div key={col.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
+                                            <div className="flex items-center gap-3">
+                                                <div className="cursor-grab text-slate-400 hover:text-slate-600"><GripVertical size={16} /></div>
+                                                <span className="font-bold text-slate-700 dark:text-slate-200">{col.title}</span>
+                                                <span className="text-xs px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded text-slate-500 capitalize">{col.color}</span>
+                                            </div>
+                                            {/* Prevent deleting default columns if desired, or check tasks count */}
+                                            {onDeleteColumn && (
+                                                <button onClick={() => onDeleteColumn(col.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
 
-                   {/* Developer Zone - Only for Admin */}
-                   {auth.currentUser?.email === 'admin@dev.com' && (
-                       <div className="p-5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-200 dark:border-red-900/50 ring-1 ring-red-500/20">
-                          <div className="flex items-start gap-4">
-                             <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg shadow-sm text-red-600 dark:text-red-400">
-                               <RefreshCcw size={24} />
-                             </div>
-                             <div className="flex-1">
-                               <h3 className="font-bold text-red-700 dark:text-red-400 text-sm flex items-center gap-2">
-                                   Developer Zone
-                                   <span className="text-[10px] bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-300 px-1.5 py-0.5 rounded uppercase">Admin Only</span>
-                               </h3>
-                               <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-1 mb-4">
-                                 Advanced system tools for database maintenance and diagnostics.
-                               </p>
-                               <div className="flex flex-wrap gap-3">
-                                   <button
-                                     onClick={handleFactoryReset}
-                                     disabled={isResetting}
-                                     className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-red-700 transition-colors shadow-sm active:scale-95 disabled:opacity-70"
-                                   >
-                                     {isResetting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                                     Factory Reset
-                                   </button>
-                                   <button
-                                     onClick={() => setIsHealthCheckOpen(true)}
-                                     className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-slate-900 transition-colors shadow-sm active:scale-95"
-                                   >
-                                     <Activity size={14} />
-                                     Run System Health Check
-                                   </button>
-                               </div>
-                             </div>
-                          </div>
-                       </div>
-                   )}
+                                <div className="flex gap-2 items-end">
+                                    <div className="flex-1 space-y-1">
+                                        <label className="text-xs font-bold text-slate-500 uppercase">New Column Name</label>
+                                        <input type="text" value={newColumnTitle} onChange={(e) => setNewColumnTitle(e.target.value)} className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm" placeholder="e.g. Review" />
+                                    </div>
+                                    <div className="w-32 space-y-1">
+                                        <label className="text-xs font-bold text-slate-500 uppercase">Color</label>
+                                        <select value={newColumnColor} onChange={(e) => setNewColumnColor(e.target.value)} className="w-full px-3 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm cursor-pointer">
+                                            <option value="blue">Blue</option>
+                                            <option value="emerald">Green</option>
+                                            <option value="purple">Purple</option>
+                                            <option value="amber">Orange</option>
+                                            <option value="rose">Red</option>
+                                            <option value="slate">Gray</option>
+                                        </select>
+                                    </div>
+                                    <button onClick={handleAddColumnClick} disabled={!newColumnTitle.trim()} className="px-4 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50">
+                                        Add
+                                    </button>
+                                </div>
+                            </section>
+                        </div>
+                    )}
 
-                   <div className="h-px bg-slate-100 dark:bg-slate-700 my-6"></div>
+                    {/* DATA TAB */}
+                    {activeTab === 'data' && (
+                        <div className="max-w-2xl space-y-8 animate-fade-in">
+                            <section>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Import / Export</h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <button onClick={handleExport} className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-indigo-500 dark:hover:border-indigo-500 transition-colors group text-left">
+                                        <Download size={24} className="text-slate-400 group-hover:text-indigo-500 mb-3" />
+                                        <div className="font-bold text-slate-900 dark:text-white">Export Data</div>
+                                        <p className="text-xs text-slate-500 mt-1">Download all tasks as JSON backup.</p>
+                                    </button>
+                                    <button onClick={handleImportClick} className="p-6 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-indigo-500 dark:hover:border-indigo-500 transition-colors group text-left relative">
+                                        {isImporting ? <Loader2 className="animate-spin text-indigo-500 mb-3" size={24} /> : <Upload size={24} className="text-slate-400 group-hover:text-indigo-500 mb-3" />}
+                                        <div className="font-bold text-slate-900 dark:text-white">Import Data</div>
+                                        <p className="text-xs text-slate-500 mt-1">Restore tasks from backup file.</p>
+                                        <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleFileChange} />
+                                    </button>
+                                </div>
+                            </section>
 
-                   {/* Export */}
-                   <div className="p-5 bg-slate-50 dark:bg-slate-700/30 rounded-xl border border-slate-100 dark:border-slate-700">
-                      <div className="flex items-start gap-4">
-                         <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-slate-400">
-                           <FileJson size={24} />
-                         </div>
-                         <div className="flex-1">
-                           <h3 className="font-bold text-slate-900 dark:text-white text-sm">Export Backup</h3>
-                           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">
-                             Download all your tasks and settings as a JSON file.
-                           </p>
-                           <button
-                             onClick={handleExport}
-                             className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm"
-                           >
-                             <Download size={16} />
-                             Download JSON
-                           </button>
-                         </div>
-                      </div>
-                   </div>
+                            <div className="h-px bg-slate-200 dark:border-slate-700"></div>
 
-                   {/* Import */}
-                   <div className="p-5 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/30">
-                      <div className="flex items-start gap-4">
-                         <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-amber-500">
-                           <AlertTriangle size={24} />
-                         </div>
-                         <div className="flex-1">
-                           <h3 className="font-bold text-slate-900 dark:text-white text-sm">Import Data</h3>
-                           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 mb-4">
-                             Restore from a backup file. <span className="font-bold">This will append tasks to the cloud database.</span>
-                           </p>
-                           <input 
-                              type="file" 
-                              accept=".json" 
-                              ref={fileInputRef} 
-                              onChange={handleFileChange} 
-                              className="hidden" 
-                            />
-                           <button
-                             onClick={handleImportClick}
-                             disabled={isImporting}
-                             className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shadow-sm"
-                           >
-                             {isImporting ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
-                             Select File
-                           </button>
-                         </div>
-                      </div>
-                   </div>
+                            <section>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Tools & Maintenance</h3>
+                                <div className="space-y-4">
+                                    <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg text-indigo-600 dark:text-indigo-400"><Briefcase size={20} /></div>
+                                            <div>
+                                                <h4 className="font-bold text-slate-900 dark:text-white">Load Demo Template</h4>
+                                                <p className="text-xs text-slate-500">Adds sample "House Construction" tasks.</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleLoadTemplate} className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
+                                            Load
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-emerald-600 dark:text-emerald-400"><Activity size={20} /></div>
+                                            <div>
+                                                <h4 className="font-bold text-slate-900 dark:text-white">System Health Check</h4>
+                                                <p className="text-xs text-slate-500">Run diagnostics on data integrity.</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => setIsHealthCheckOpen(true)} className="px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors">
+                                            Run
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-4 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-2 bg-red-100 dark:bg-red-900/20 rounded-lg text-red-600 dark:text-red-400"><RefreshCcw size={20} /></div>
+                                            <div>
+                                                <h4 className="font-bold text-red-900 dark:text-red-100">Factory Reset</h4>
+                                                <p className="text-xs text-red-700 dark:text-red-300">Clear all data and regenerate demo set.</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={handleFactoryReset} disabled={isResetting} className="px-4 py-2 bg-white dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-300 rounded-lg text-xs font-bold hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+                                            {isResetting ? <Loader2 className="animate-spin" size={14} /> : 'Reset'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+                    )}
+
+                    {/* TEMPLATES TAB */}
+                    {activeTab === 'templates' && (
+                        <div className="h-full flex flex-col animate-fade-in">
+                            <div className="flex justify-between items-center mb-6 shrink-0">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">Template Library</h3>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">Manage reusable project and task structures.</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={handleImportTemplateClick} className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 transition-colors">
+                                        <Upload size={14} /> Import JSON
+                                    </button>
+                                    <input ref={templateFileInputRef} type="file" accept=".json" className="hidden" onChange={handleImportTemplate} />
+                                </div>
+                            </div>
+
+                            {/* Filter Tabs */}
+                            <div className="flex gap-4 mb-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
+                                <button onClick={() => { setActiveTemplateType('project'); setPreviewTemplate(null); }} className={`pb-2 text-sm font-bold transition-colors border-b-2 ${activeTemplateType === 'project' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500'}`}>Projects</button>
+                                <button onClick={() => { setActiveTemplateType('task'); setPreviewTemplate(null); }} className={`pb-2 text-sm font-bold transition-colors border-b-2 ${activeTemplateType === 'task' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500'}`}>Tasks</button>
+                            </div>
+
+                            <div className="flex-1 flex gap-6 overflow-hidden">
+                                {/* Template List */}
+                                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
+                                    {isLoadingTemplates ? (
+                                        <div className="flex justify-center py-10"><Loader2 className="animate-spin text-indigo-500" size={24} /></div>
+                                    ) : templates.filter(t => t.type === activeTemplateType).length === 0 ? (
+                                        <div className="text-center py-12 text-slate-400 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                            <LayoutTemplate size={32} className="mx-auto mb-3 opacity-30" />
+                                            <p>No {activeTemplateType} templates found.</p>
+                                        </div>
+                                    ) : (
+                                        templates.filter(t => t.type === activeTemplateType).map(t => (
+                                            <div 
+                                                key={t.id} 
+                                                onClick={() => setPreviewTemplate(t)}
+                                                className={`p-4 rounded-xl border cursor-pointer transition-all group relative ${previewTemplate?.id === t.id ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-200' : 'bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-700 hover:border-indigo-300'}`}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-900 dark:text-white text-sm">{t.name}</h4>
+                                                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">{t.description || 'No description'}</p>
+                                                    </div>
+                                                    {/* Actions */}
+                                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white dark:bg-slate-800 p-1 rounded-lg shadow-sm border border-slate-100 dark:border-slate-700 absolute top-3 right-3">
+                                                        <button onClick={(e) => { e.stopPropagation(); handleExportTemplate(t); }} className="p-1.5 text-slate-400 hover:text-indigo-600 rounded"><Download size={14} /></button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDeleteTemplate(t.id); }} className="p-1.5 text-slate-400 hover:text-red-600 rounded"><Trash2 size={14} /></button>
+                                                    </div>
+                                                </div>
+                                                <div className="mt-3 flex items-center gap-2 text-[10px] text-slate-400">
+                                                    <Clock size={12} /> {new Date(t.createdAt?.toDate ? t.createdAt.toDate() : t.createdAt).toLocaleDateString()}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                {/* Preview Panel */}
+                                {previewTemplate && (
+                                    <div className="w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-4 overflow-y-auto custom-scrollbar shrink-0 animate-slide-in">
+                                        <TemplatePreview template={previewTemplate} />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                 </div>
-              </div>
             </div>
-          )}
-
         </div>
-      </div>
 
-      <HealthCheckModal 
-        isOpen={isHealthCheckOpen} 
-        onClose={() => setIsHealthCheckOpen(false)} 
-      />
+        <HealthCheckModal isOpen={isHealthCheckOpen} onClose={() => setIsHealthCheckOpen(false)} />
     </div>
   );
 };

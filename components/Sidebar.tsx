@@ -19,6 +19,7 @@ import {
   List
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
+import Avatar from './Avatar';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -30,12 +31,13 @@ interface SidebarProps {
   toggleDarkMode: () => void;
   userName: string;
   userTitle: string;
+  userAvatar?: string;
   projects: Project[];
   selectedProjectId: string | null;
   onSelectProject: (projectId: string | null) => void;
   onCreateProject: () => void;
   isDesktopOpen: boolean;
-  currentUserRole?: ProjectRole; // Added role prop
+  currentUserRole?: ProjectRole; 
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -48,6 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   toggleDarkMode,
   userName,
   userTitle,
+  userAvatar,
   projects,
   selectedProjectId,
   onSelectProject,
@@ -93,10 +96,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     onSelectProject(projectId);
     setIsProjectDropdownOpen(false);
   };
-
-  const initials = userName
-    ? userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
-    : 'U';
 
   // Helper to get badge color based on role
   const getRoleBadgeColor = (role?: ProjectRole) => {
@@ -280,8 +279,8 @@ const Sidebar: React.FC<SidebarProps> = ({
             </button>
 
             <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={() => setActiveTab('settings')}>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-400 to-purple-400 border border-white/10 shadow-lg shadow-black/20 shrink-0 flex items-center justify-center text-white font-bold text-sm ring-1 ring-black/20 relative">
-                    {initials}
+                <div className="relative">
+                    <Avatar src={userAvatar} name={userName} className="w-10 h-10" />
                     {/* Role Badge */}
                     {selectedProjectId && currentUserRole && (
                         <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-900 flex items-center justify-center text-[8px] ${getRoleBadgeColor(currentUserRole)}`} title={currentUserRole}>
