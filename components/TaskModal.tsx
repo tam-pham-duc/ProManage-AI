@@ -40,6 +40,24 @@ const toDateTimeLocal = (timestamp: number) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+const formatMessageTime = (timestampStr: string) => {
+    try {
+        const date = new Date(timestampStr);
+        if (isNaN(date.getTime())) return timestampStr;
+        const now = new Date();
+        const isToday = date.toDateString() === now.toDateString();
+        const isThisYear = date.getFullYear() === now.getFullYear();
+
+        const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        if (isToday) return timeStr;
+        if (isThisYear) return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${timeStr}`;
+        return `${date.toLocaleDateString()} ${timeStr}`;
+    } catch (e) {
+        return timestampStr;
+    }
+};
+
 const TaskModal: React.FC<TaskModalProps> = ({ 
   isOpen, 
   onClose, 
@@ -90,6 +108,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [comments, setComments] = useState<Comment[]>([]);
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
   const [newComment, setNewComment] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Mention State
   const [showMentionList, setShowMentionList] = useState(false);
@@ -150,6 +169,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setEditingLog(null);
     }
   }, [isOpen]);
+
+  // Auto-scroll chat
+  useEffect(() => {
+    if (activeTab === 'discussion') {
+        setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+    }
+  }, [activeTab, comments, activityLog]);
 
   useEffect(() => {
     if (isOpen) {
@@ -326,7 +354,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
     // Comments allowed even in read-only (usually) - but for strict Guest mode, maybe not?
     if (isReadOnly) return; 
     
-    setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toLocaleString() }]);
+    setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toISOString() }]);
     setNewComment('');
     setShowMentionList(false);
   };
@@ -405,6 +433,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
     if (isReadOnly) return;
     const val = e.target.value;
     setNewComment(val);
+    // Adjust height automatically
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+
     const cursorPos = e.target.selectionStart;
     const textBefore = val.slice(0, cursorPos);
     const match = textBefore.match(/(?:^|\s)@(\w*)$/);
@@ -490,35 +522,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const progressPercentage = subtasks.length > 0 ? Math.round((completedCount / subtasks.length) * 100) : 0;
   const filteredAvailableTags = availableTags.filter(at => at.name.toLowerCase().includes(tagInput.toLowerCase()) && !tags.find(t => t.id === at.id));
   
-  // --- Enhanced Activity Log Logic ---
-  const getLogIcon = (type: string) => {
-    switch (type) {
-      case 'create': return <Plus size={14} />;
-      case 'update': return <Pencil size={14} />;
-      case 'status_change':
-      case 'move': return <MoveRight size={14} />;
-      case 'priority_change': 
-      case 'alert': return <AlertTriangle size={14} />;
-      case 'attachment': return <Paperclip size={14} />;
-      case 'assign': return <UserPlus size={14} />;
-      case 'comment': return <MessageSquare size={14} />;
-      default: return <History size={14} />;
-    }
-  };
-
-  const getLogColor = (type: string) => {
-      switch (type) {
-          case 'create': return 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400';
-          case 'alert':
-          case 'priority_change': return 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400';
-          case 'status_change':
-          case 'move': return 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400';
-          case 'attachment': return 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400';
-          case 'assign': return 'bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400';
-          default: return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
-      }
-  };
-
   const streamItems = [
     ...comments.map(c => ({ ...c, source: 'comment', type: 'comment', timestamp: c.timestamp })),
     ...activityLog.map(l => ({ ...l, source: 'log', timestamp: l.timestamp }))
@@ -935,68 +938,140 @@ const TaskModal: React.FC<TaskModalProps> = ({
             )}
 
             {activeTab === 'discussion' && (
-              <div className="flex flex-col h-full">
-                 <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2 custom-scrollbar max-h-[400px]">
-                    {streamItems.length === 0 && (
-                        <div className="text-center py-10 text-slate-400 dark:text-slate-500">
-                            <MessageSquare size={32} className="mx-auto mb-2 opacity-20" />
-                            <p>No discussion yet.</p>
-                        </div>
-                    )}
-                    {streamItems.map((item: any) => (
-                        <div key={item.id} className={`flex gap-3 ${item.source === 'log' ? 'opacity-70' : ''}`}>
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${item.source === 'log' ? getLogColor(item.type) : 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400'}`}>
-                                {item.source === 'log' ? getLogIcon(item.type) : (item.user ? item.user.charAt(0).toUpperCase() : 'U')}
-                            </div>
-                            <div className="flex-1">
-                                <div className="flex items-baseline justify-between">
-                                    <p className="text-sm font-bold text-slate-900 dark:text-white">{item.source === 'log' ? 'System' : item.user} <span className="font-normal text-slate-500 dark:text-slate-400 ml-2 text-xs">{item.timestamp}</span></p>
-                                </div>
-                                <div className={`text-sm mt-1 ${item.source === 'log' ? 'text-slate-500 italic' : 'text-slate-700 dark:text-slate-300'}`}>
-                                    {item.source === 'log' ? `${item.userName || 'User'} ${item.action}` : <span dangerouslySetInnerHTML={{ __html: parseMarkdown(item.text) }} />}
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                 </div>
-                 
-                 {!isReadOnly && (
-                     <div className="relative mt-auto pt-4 border-t border-slate-100 dark:border-slate-700">
-                        <textarea 
-                            ref={commentInputRef}
-                            value={newComment} 
-                            onChange={handleCommentChange}
-                            onKeyDown={handleCommentKeyDown}
-                            placeholder="Type a comment... (Use @ to mention)" 
-                            className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none h-24 text-sm"
-                        />
-                        <div className="flex justify-end mt-2">
-                            <button type="button" onClick={handleSendComment} disabled={!newComment.trim()} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs flex items-center gap-2 transition-colors disabled:opacity-50">
-                                <Send size={14} /> Send
-                            </button>
-                        </div>
+                <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 relative -m-6">
+                    {/* Chat Area */}
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                        {streamItems.map((item: any) => {
+                            const isLog = item.source === 'log';
+                            
+                            // Case A: System Log
+                            if (isLog) {
+                                return (
+                                    <div key={item.id} className="flex justify-center my-2">
+                                        <span className="text-xs text-gray-400 italic text-center bg-gray-100 dark:bg-slate-800/50 px-3 py-1 rounded-full border border-transparent dark:border-slate-700">
+                                            {formatMessageTime(item.timestamp)} - {item.userName || 'System'} {item.action}
+                                        </span>
+                                    </div>
+                                );
+                            }
 
-                        {/* Mention List Dropdown */}
-                        {showMentionList && filteredMembers.length > 0 && (
-                            <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto z-50">
-                                {filteredMembers.map((member, idx) => (
-                                    <button
-                                        key={member.uid || idx}
-                                        type="button"
-                                        onClick={() => handleInsertMention(member.displayName)}
-                                        className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 ${idx === mentionHighlightIndex ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
-                                    >
-                                        <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                                            {member.avatar ? <img src={member.avatar} alt="" className="w-full h-full rounded-full object-cover" /> : member.displayName.charAt(0)}
+                            // Case B: User Comment
+                            const isMe = item.user === currentUser; 
+
+                            return (
+                                <div key={item.id} className={`flex w-full ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`flex max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
+                                        
+                                        {/* Avatar (Only for others) */}
+                                        {!isMe && (
+                                            <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-sm mb-1">
+                                                {item.user ? item.user.charAt(0).toUpperCase() : 'U'}
+                                            </div>
+                                        )}
+
+                                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                            {/* Name (Only for others) */}
+                                            {!isMe && (
+                                                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1">
+                                                    {item.user}
+                                                </span>
+                                            )}
+
+                                            {/* Bubble */}
+                                            <div className={`
+                                                px-4 py-2 text-sm shadow-sm relative group
+                                                ${isMe 
+                                                    ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm' 
+                                                    : 'bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 rounded-2xl rounded-tl-sm border border-gray-200 dark:border-gray-700'
+                                                }
+                                            `}>
+                                                {/* Content */}
+                                                <div dangerouslySetInnerHTML={{ __html: parseMarkdown(item.text) }} />
+                                                
+                                                {isMe && (
+                                                    <div className="text-[9px] text-white/70 text-right mt-1 font-medium">
+                                                        {formatMessageTime(item.timestamp)}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            
+                                            {/* Timestamp for others (outside) */}
+                                            {!isMe && (
+                                                <span className="text-[9px] text-slate-400 mt-1 ml-1 font-medium">
+                                                    {formatMessageTime(item.timestamp)}
+                                                </span>
+                                            )}
                                         </div>
-                                        <span className="text-slate-800 dark:text-slate-200 font-medium">{member.displayName}</span>
-                                    </button>
-                                ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {streamItems.length === 0 && (
+                            <div className="flex flex-col items-center justify-center h-40 text-slate-400 dark:text-slate-500 opacity-50">
+                                <MessageSquare size={48} strokeWidth={1.5} />
+                                <p className="text-sm mt-2">Start the conversation</p>
                             </div>
                         )}
-                     </div>
-                 )}
-              </div>
+                        <div ref={messagesEndRef} />
+                    </div>
+
+                    {/* Input Area */}
+                    {!isReadOnly && (
+                        <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0">
+                            <div className="relative flex items-end gap-2">
+                                <div className="relative flex-1 bg-gray-50 dark:bg-slate-800 rounded-3xl flex items-center px-2 border border-slate-200 dark:border-slate-700 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+                                    <button 
+                                       type="button"
+                                       onClick={() => setNewComment(prev => prev + '@')}
+                                       className="p-2 text-slate-400 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                       title="Mention someone"
+                                    >
+                                        <AtSign size={18} />
+                                    </button>
+                                    
+                                    <textarea 
+                                        ref={commentInputRef}
+                                        value={newComment}
+                                        onChange={handleCommentChange}
+                                        onKeyDown={handleCommentKeyDown}
+                                        placeholder="Type a message..."
+                                        className="flex-1 max-h-32 min-h-[44px] py-3 px-2 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none custom-scrollbar placeholder-slate-400"
+                                        style={{ height: '44px' }}
+                                        rows={1}
+                                    />
+                                    
+                                    <button 
+                                        type="button"
+                                        onClick={handleSendComment}
+                                        disabled={!newComment.trim()}
+                                        className="p-2 m-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-sm transition-all disabled:opacity-50 disabled:bg-slate-300 dark:disabled:bg-slate-700 flex items-center justify-center"
+                                    >
+                                        <Send size={16} className={newComment.trim() ? "ml-0.5" : ""} />
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            {/* Mention Popover */}
+                            {showMentionList && filteredMembers.length > 0 && (
+                                <div className="absolute bottom-16 left-4 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-48 overflow-y-auto z-50 animate-fade-in">
+                                    {filteredMembers.map((member, idx) => (
+                                        <button
+                                            key={member.uid || idx}
+                                            type="button"
+                                            onClick={() => handleInsertMention(member.displayName)}
+                                            className={`w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 ${idx === mentionHighlightIndex ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+                                        >
+                                            <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                                                {member.avatar ? <img src={member.avatar} alt="" className="w-full h-full rounded-full object-cover" /> : member.displayName.charAt(0)}
+                                            </div>
+                                            <span className="text-slate-800 dark:text-slate-200 font-medium">{member.displayName}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                           )}
+                        </div>
+                    )}
+                </div>
             )}
 
             {activeTab === 'flow' && task && (
