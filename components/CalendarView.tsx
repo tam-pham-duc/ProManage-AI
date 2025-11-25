@@ -13,14 +13,14 @@ interface CalendarViewProps {
 // This approach relies on hardcoded start dates of lunar months to ensure 100% accuracy 
 // for the most relevant years without a heavy astronomical library.
 
-interface LunarMonthStart {
+export interface LunarMonthStart {
     solarDate: string; // YYYY-MM-DD
     lunarMonth: number;
     isLeap: boolean;
 }
 
 // Data derived from standard Vietnamese Calendar
-const LUNAR_MONTH_STARTS: Record<number, LunarMonthStart[]> = {
+export const LUNAR_MONTH_STARTS: Record<number, LunarMonthStart[]> = {
     2024: [
         { solarDate: '2024-02-10', lunarMonth: 1, isLeap: false },
         { solarDate: '2024-03-11', lunarMonth: 2, isLeap: false },
@@ -65,7 +65,7 @@ const LUNAR_MONTH_STARTS: Record<number, LunarMonthStart[]> = {
     ]
 };
 
-const getLunarDate = (d: number, m: number, y: number) => {
+export const getLunarDate = (d: number, m: number, y: number) => {
     const targetDate = new Date(y, m, d);
     targetDate.setHours(0,0,0,0);
     

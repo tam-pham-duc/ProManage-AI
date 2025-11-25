@@ -116,6 +116,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
 
+  const prevTaskIdRef = useRef<string | undefined>(undefined);
+
   const activeMembers = useMemo(() => {
       return projectMembers.filter(m => (m.status === 'active' || !m.status) && m.uid !== null);
   }, [projectMembers]);
@@ -144,72 +146,87 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      if (task) {
-        setTitle(task.title);
-        setDescription(task.description || '');
-        setStatus(task.status);
-        setPriority(task.priority);
-        setStartDate(task.startDate);
-        setDueDate(task.dueDate);
-        setReminderDays(task.reminderDays !== undefined ? task.reminderDays : 1);
-        
-        setAssignee(task.assignee);
-        setAssigneeId(task.assigneeId || '');
-        setAssigneeAvatar(task.assigneeAvatar || '');
-        
-        if (!task.assigneeId && task.assignee && task.assignee !== 'UN' && projectMembers.length > 0) {
-           const found = projectMembers.find(m => m.displayName === task.assignee);
-           if (found && found.uid) {
-               setAssigneeId(found.uid);
-               setAssigneeAvatar(found.avatar || '');
-           }
-        }
+      // Check if we need to reset form state
+      // We reset if we are opening a new task (task is undefined) 
+      // OR if we switched to a different task ID
+      // We DO NOT reset if task.id matches prevTaskIdRef (this happens on background updates like TimeLog save)
+      const isNewTask = !task;
+      const isDifferentTask = task?.id !== prevTaskIdRef.current;
 
-        setSubtasks(task.subtasks || []);
-        setComments(task.comments || []);
-        setActivityLog(task.activityLog || []);
-        setAttachments(task.attachments || []);
-        setTags(task.tags || []);
-        setDependencies(task.dependencies || []);
-        setEstimatedCost(task.estimatedCost?.toString() || '');
-        setActualCost(task.actualCost?.toString() || '');
-        setEstimatedHours(task.estimatedHours?.toString() || '');
-        setEstimatedDays(task.estimatedDays?.toString() || '');
-      } else {
-        setTitle('');
-        setDescription('');
-        setStatus(columns.length > 0 ? columns[0].title : 'To Do');
-        setPriority('Medium');
-        const defaultDate = initialDate || new Date().toISOString().split('T')[0];
-        setStartDate(defaultDate);
-        setDueDate(initialDate || '');
-        setReminderDays(1);
-        setAssignee('Unassigned');
-        setAssigneeId('UN');
-        setAssigneeAvatar('');
-        setSubtasks([]);
-        setComments([]);
-        setActivityLog([]);
-        setAttachments([]);
-        setTags([]);
-        setDependencies([]);
-        setEstimatedCost('');
-        setActualCost('');
-        setEstimatedHours('');
-        setEstimatedDays('');
+      if (isNewTask || isDifferentTask) {
+          if (task) {
+            setTitle(task.title);
+            setDescription(task.description || '');
+            setStatus(task.status);
+            setPriority(task.priority);
+            setStartDate(task.startDate);
+            setDueDate(task.dueDate);
+            setReminderDays(task.reminderDays !== undefined ? task.reminderDays : 1);
+            
+            setAssignee(task.assignee);
+            setAssigneeId(task.assigneeId || '');
+            setAssigneeAvatar(task.assigneeAvatar || '');
+            
+            if (!task.assigneeId && task.assignee && task.assignee !== 'UN' && projectMembers.length > 0) {
+              const found = projectMembers.find(m => m.displayName === task.assignee);
+              if (found && found.uid) {
+                  setAssigneeId(found.uid);
+                  setAssigneeAvatar(found.avatar || '');
+              }
+            }
+
+            setSubtasks(task.subtasks || []);
+            setComments(task.comments || []);
+            setActivityLog(task.activityLog || []);
+            setAttachments(task.attachments || []);
+            setTags(task.tags || []);
+            setDependencies(task.dependencies || []);
+            setEstimatedCost(task.estimatedCost?.toString() || '');
+            setActualCost(task.actualCost?.toString() || '');
+            setEstimatedHours(task.estimatedHours?.toString() || '');
+            setEstimatedDays(task.estimatedDays?.toString() || '');
+          } else {
+            // Default values for New Task
+            setTitle('');
+            setDescription('');
+            setStatus(columns.length > 0 ? columns[0].title : 'To Do');
+            setPriority('Medium');
+            const defaultDate = initialDate || new Date().toISOString().split('T')[0];
+            setStartDate(defaultDate);
+            setDueDate(initialDate || '');
+            setReminderDays(1);
+            setAssignee('Unassigned');
+            setAssigneeId('UN');
+            setAssigneeAvatar('');
+            setSubtasks([]);
+            setComments([]);
+            setActivityLog([]);
+            setAttachments([]);
+            setTags([]);
+            setDependencies([]);
+            setEstimatedCost('');
+            setActualCost('');
+            setEstimatedHours('');
+            setEstimatedDays('');
+          }
+          
+          // Reset UI toggles
+          setNewSubtaskTitle('');
+          setNewComment('');
+          setNewFileName('');
+          setNewFileUrl('');
+          setTagInput('');
+          setShowTagDropdown(false);
+          setShowMentionList(false);
+          setMentionQuery('');
+          setMentionHighlightIndex(0);
+          setActiveTab('details');
+          setShowDependencyDropdown(false);
+          setEditingLog(null);
+
+          // Update Ref
+          prevTaskIdRef.current = task?.id;
       }
-      setNewSubtaskTitle('');
-      setNewComment('');
-      setNewFileName('');
-      setNewFileUrl('');
-      setTagInput('');
-      setShowTagDropdown(false);
-      setShowMentionList(false);
-      setMentionQuery('');
-      setMentionHighlightIndex(0);
-      setActiveTab('details');
-      setShowDependencyDropdown(false);
-      setEditingLog(null);
     }
   }, [isOpen, task, columns, projectMembers, initialDate]);
 
@@ -311,17 +328,25 @@ const TaskModal: React.FC<TaskModalProps> = ({
   // --- TIME LOG MANAGEMENT ---
   const handleDeleteLog = async (logId: string) => {
     if (!task) return;
-    if (!window.confirm("Remove this time entry?")) return;
+    
+    // 1. Confirm
+    if (!window.confirm("Delete this time entry?")) return;
 
+    // 2. Local Calculation
     const updatedLogs = (task.timeLogs || []).filter(l => l.id !== logId);
-    const newTotal = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
+    const newTotalSeconds = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
 
     try {
+        // 3. Operation
         await updateDoc(doc(db, 'tasks', task.id), {
             timeLogs: updatedLogs,
-            totalTimeSeconds: newTotal
+            totalTimeSeconds: newTotalSeconds
         });
+        
+        // 4. UI Update (Implicit via realtime listener in App -> prop update, but for local optimisim or consistency)
         notify('success', 'Time log deleted');
+        // If editingLog matches, clear it
+        if (editingLog?.id === logId) setEditingLog(null);
     } catch (e) {
         console.error(e);
         notify('error', 'Failed to delete log');
