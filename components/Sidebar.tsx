@@ -15,11 +15,9 @@ import {
   Check,
   Layers,
   GitGraph,
-  Trash2,
-  Download
+  Trash2
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
-import { usePWAInstall } from '../hooks/usePWAInstall';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -58,7 +56,6 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const { isInstallable, handleInstall } = usePWAInstall();
 
   const currentProject = projects.find(p => p.id === selectedProjectId);
 
@@ -247,16 +244,6 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div className="px-4 pb-2">
                 <div className="h-px bg-slate-800 my-2"></div>
                 
-                {isInstallable && (
-                    <button
-                        onClick={handleInstall}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl mb-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold shadow-lg hover:shadow-indigo-500/25 transition-all duration-200 transform hover:-translate-y-0.5"
-                    >
-                        <Download size={18} />
-                        <span>Install App</span>
-                    </button>
-                )}
-
                 <button
                     onClick={() => handleNavClick('trash')}
                     className={`
