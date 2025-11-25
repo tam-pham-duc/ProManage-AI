@@ -33,6 +33,19 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
   
   const isActive = activeTimer?.taskId === task.id;
 
+  // --- Flash Effect State ---
+  const prevStatusRef = useRef(task.status);
+  const [isJustDropped, setIsJustDropped] = useState(false);
+
+  useEffect(() => {
+      if (prevStatusRef.current !== task.status) {
+          setIsJustDropped(true);
+          const timer = setTimeout(() => setIsJustDropped(false), 1000); // 1s flash
+          prevStatusRef.current = task.status;
+          return () => clearTimeout(timer);
+      }
+  }, [task.status]);
+
   // Date Logic
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -145,14 +158,9 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       layout
       layoutId={task.id}
       initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: isDragging ? 0.5 : 1, scale: 1 }}
+      animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.9 }}
-      transition={{
-        type: "spring",
-        stiffness: 500,
-        damping: 30,
-        mass: 1
-      }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
       draggable={!isReadOnly && !isBlocked}
       onDragStart={(e) => !isReadOnly && !isBlocked && onDragStart(e as unknown as React.DragEvent, task.id)}
       onDragEnd={onDragEnd}
@@ -164,10 +172,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
             : theme.container}
         ${statusIndicatorClass}
         ${isDragging 
-            ? 'opacity-50 cursor-grabbing' 
+            ? '!opacity-50 cursor-grabbing' 
             : 'hover:shadow-md cursor-pointer hover:z-10'
         }
         ${isReadOnly ? 'cursor-default' : ''}
+        ${isJustDropped ? 'ring-2 ring-yellow-400 ring-offset-2 shadow-[0_0_15px_rgba(250,204,21,0.5)] z-20' : ''}
       `}
       title={isBlocked ? `Blocked by: ${blockingTaskTitles}` : ''}
     >
