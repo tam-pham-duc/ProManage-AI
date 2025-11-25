@@ -151,7 +151,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
       <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-8 flex flex-col md:flex-row gap-4 items-center">
         {/* Search */}
         <div className="relative flex-1 w-full">
-          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
           <input
             type="text"
             placeholder="Search projects..."
@@ -165,7 +165,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
         <div className="flex items-center gap-3 w-full md:w-auto">
            {/* Status Filter */}
            <div className="relative flex-1 md:flex-none">
-              <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
               <select
                   value={filterStatus}
                   onChange={(e) => setFilterStatus(e.target.value)}
@@ -180,7 +180,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
 
            {/* Sort Dropdown */}
            <div className="relative flex-1 md:flex-none">
-              <ArrowUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <ArrowUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
               <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}

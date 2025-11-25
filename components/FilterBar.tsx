@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Search, X, Filter } from 'lucide-react';
 import { KanbanColumn } from '../types';
@@ -27,7 +28,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
     <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200/60 dark:border-slate-700 shadow-sm mb-8 flex flex-col md:flex-row gap-4 items-center animate-fade-in transition-colors duration-300">
       {/* Search */}
       <div className="relative flex-1 w-full">
-        <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <Search size={20} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
         <input
           type="text"
           placeholder="Search tasks by name..."
@@ -40,7 +41,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
       {/* Filters Group */}
       <div className="flex items-center gap-3 w-full md:w-auto">
         <div className="relative flex-1 md:flex-none">
-            <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
             <select
                 value={filterPriority}
                 onChange={(e) => setFilterPriority(e.target.value)}
@@ -54,7 +55,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
         </div>
 
         <div className="relative flex-1 md:flex-none">
-            <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 pointer-events-none" />
             <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
@@ -77,7 +78,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
         <button
             onClick={onReset}
-            className="p-2.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-colors"
+            className="p-2.5 text-slate-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-colors"
             title="Reset Filters"
         >
             <X size={20} />

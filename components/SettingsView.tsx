@@ -514,7 +514,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                                 disabled
                                 className="w-full pl-4 pr-10 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 cursor-not-allowed font-medium"
                             />
-                            <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Lock size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
                         </div>
                         <p className="text-xs text-slate-400 mt-1.5">Contact admin to change email.</p>
                     </div>

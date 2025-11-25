@@ -520,7 +520,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
                     <div className="space-y-1.5">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email Address</label>
                         <div className="relative group">
-                           <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                           <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                            <input 
                              type="email" 
                              value={email}
@@ -558,7 +558,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Full Name</label>
                                 <div className="relative group">
-                                    <UserIcon size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                                    <UserIcon size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                                     <input 
                                         type="text" 
                                         value={username}
@@ -572,7 +572,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Job Title</label>
                                 <div className="relative group">
-                                    <BriefcaseIcon size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                                    <BriefcaseIcon size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                                     <input 
                                         type="text" 
                                         value={jobTitle}
@@ -588,7 +588,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
                         <div className="space-y-1.5">
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Email Address</label>
                             <div className="relative group">
-                                <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                                <Mail size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                                 <input 
                                     type="email" 
                                     value={email}
@@ -617,7 +617,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onSeedingStart,
                                 )}
                             </div>
                             <div className="relative group">
-                                <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                                <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
                                 <input 
                                     type="password" 
                                     value={password}

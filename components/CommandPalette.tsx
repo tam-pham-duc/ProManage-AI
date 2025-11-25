@@ -96,7 +96,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
             
             {/* Input Header */}
             <div className="flex items-center px-4 py-4 border-b border-slate-100 dark:border-slate-800">
-                <Search className="text-slate-400 w-6 h-6 mr-3" />
+                <Search className="text-slate-500 dark:text-slate-400 w-6 h-6 mr-3" />
                 <input 
                     ref={inputRef}
                     type="text" 

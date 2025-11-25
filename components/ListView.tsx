@@ -76,7 +76,7 @@ export const ListView: React.FC<ListViewProps> = ({ tasks, onTaskClick, onDelete
     >
       <div className="flex items-center gap-1.5">
         {label}
-        <span className="text-slate-300 dark:text-slate-600 group-hover:text-indigo-500 dark:group-hover:text-indigo-400">
+        <span className="text-slate-400 dark:text-slate-600 group-hover:text-indigo-500 dark:group-hover:text-indigo-400">
           {sortConfig.key === key ? (
             sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />
           ) : (

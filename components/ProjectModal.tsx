@@ -281,7 +281,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         {canManageRoles && (
         <div className="flex gap-2 shrink-0">
             <div className="relative flex-1">
-                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
                 <input 
                     type="email" 
                     value={inviteEmail}
@@ -388,7 +388,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             <Briefcase size={20} className="text-indigo-500" />
             {isEditMode ? 'Project Settings' : 'Create New Project'}
           </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors">
             <X size={24} />
           </button>
         </div>

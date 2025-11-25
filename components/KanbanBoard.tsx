@@ -164,7 +164,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
               e.stopPropagation();
               onDelete(task.id);
             }}
-            className="absolute top-2 right-2 z-30 opacity-0 group-hover:opacity-100 transition-all duration-200 p-1.5 rounded-full text-slate-400 hover:bg-red-500 hover:text-white shadow-sm bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm transform scale-90 hover:scale-100"
+            className="absolute top-2 right-2 z-30 opacity-0 group-hover:opacity-100 transition-all duration-200 p-1.5 rounded-full text-slate-500 hover:bg-red-500 hover:text-white shadow-sm bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm transform scale-90 hover:scale-100"
             title="Quick Delete"
           >
             <X size={14} strokeWidth={2.5} />
@@ -533,9 +533,9 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             ${isDragOver ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-300/50 dark:border-slate-700/50'}
           `}>
             <div className="w-10 h-10 rounded-full bg-white/50 dark:bg-slate-800/50 shadow-sm flex items-center justify-center">
-              <Plus size={20} className="text-slate-300 dark:text-slate-600" />
+              <Plus size={20} className="text-slate-400 dark:text-slate-600" />
             </div>
-            <span className="text-sm font-medium text-slate-400 dark:text-slate-500">
+            <span className="text-sm font-medium text-slate-500 dark:text-slate-500">
                {isDragOver ? 'Drop item here' : 'No tasks'}
             </span>
           </div>
