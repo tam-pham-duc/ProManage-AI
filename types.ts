@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type Tab = 'dashboard' | 'kanban' | 'timeline' | 'calendar' | 'map' | 'settings' | 'image-gen' | 'projects' | 'trash';
+export type Tab = 'dashboard' | 'kanban' | 'list' | 'timeline' | 'calendar' | 'map' | 'settings' | 'image-gen' | 'projects' | 'trash';
 
 export interface MetricCardProps {
   title: string;

@@ -5,6 +5,7 @@ import { AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import KanbanBoard from './components/KanbanBoard';
+import { ListView } from './components/ListView';
 import Timeline from './components/Timeline';
 import CalendarView from './components/CalendarView';
 import ProjectMapView from './components/ProjectMapView';
@@ -705,6 +706,8 @@ const App: React.FC = () => {
         return <PageTransition key="projects"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
       case 'kanban': 
         return <PageTransition key="kanban"><div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} />}</div></PageTransition>;
+      case 'list':
+        return <PageTransition key="list"><div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <ListView tasks={filteredTasks} onTaskClick={openEditTaskModal} onDeleteTask={handleDeleteTask} />}</div></PageTransition>;
       case 'timeline': 
         return <PageTransition key="timeline"><div className="flex flex-col h-full"><FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />{filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />}</div></PageTransition>;
       case 'map': 

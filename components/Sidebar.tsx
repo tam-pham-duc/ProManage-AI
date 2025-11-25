@@ -15,7 +15,8 @@ import {
   Check,
   Layers,
   GitGraph,
-  Trash2
+  Trash2,
+  List
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 
@@ -72,6 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'kanban', label: 'Kanban Board', icon: KanbanSquare },
+    { id: 'list', label: 'List View', icon: List },
     { id: 'timeline', label: 'Timeline', icon: CalendarClock },
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
