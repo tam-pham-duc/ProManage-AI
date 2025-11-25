@@ -23,6 +23,7 @@ import CommandPalette from './components/CommandPalette';
 import ImageGenerator from './components/ImageGenerator';
 import ActiveTimerBar from './components/ActiveTimerBar';
 import PageTransition from './components/PageTransition';
+import ErrorBoundary from './components/ErrorBoundary';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType } from './types';
@@ -229,6 +230,16 @@ const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // --- Theme Effect ---
+  useEffect(() => { 
+      localStorage.setItem(THEME_KEY, JSON.stringify(isDarkMode));
+      if (isDarkMode) {
+          document.documentElement.classList.add('dark');
+      } else {
+          document.documentElement.classList.remove('dark');
+      }
+  }, [isDarkMode]);
+
   // --- Firebase Auth Listener ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
@@ -402,7 +413,6 @@ const App: React.FC = () => {
   }, [tasks]); 
 
   // --- Persistence Effects ---
-  useEffect(() => { localStorage.setItem(THEME_KEY, JSON.stringify(isDarkMode)); }, [isDarkMode]);
   useEffect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(userSettings)); }, [userSettings]);
   useEffect(() => { localStorage.setItem(TAGS_KEY, JSON.stringify(availableTags)); }, [availableTags]);
   useEffect(() => { localStorage.setItem(SIDEBAR_KEY, JSON.stringify(isSidebarOpen)); }, [isSidebarOpen]);
@@ -925,110 +935,116 @@ const App: React.FC = () => {
 
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}><Loader2 size={48} className="text-indigo-600 animate-spin" /></div>;
   if (isSeeding) return <div className={`min-h-screen flex flex-col items-center justify-center gap-4 ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}><Loader2 size={64} className="text-indigo-600 animate-spin" /><h2 className="text-2xl font-bold animate-pulse">Setting up Demo Environment...</h2><p className="text-slate-500">Generating projects, tasks, and analytics data.</p></div>;
-  if (!currentUser) return <div className={isDarkMode ? 'dark' : ''}><AuthScreen onLoginSuccess={() => {}} onSeedingStart={() => setIsSeeding(true)} onSeedingEnd={() => setIsSeeding(false)} /></div>;
+  if (!currentUser) return (
+    <ErrorBoundary>
+      <NotificationProvider>
+        <div className={isDarkMode ? 'dark' : ''}>
+          <AuthScreen onLoginSuccess={() => {}} onSeedingStart={() => setIsSeeding(true)} onSeedingEnd={() => setIsSeeding(false)} />
+        </div>
+      </NotificationProvider>
+    </ErrorBoundary>
+  );
 
   return (
-    <div className={isDarkMode ? 'dark' : ''}>
-      <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-300 relative">
-        
-        <Sidebar 
-          activeTab={activeTab} setActiveTab={setActiveTab}
-          isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen}
-          onAddTask={() => openNewTaskModal()} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}
-          userName={userSettings.userName} userTitle={userSettings.userTitle}
-          userAvatar={currentUser.avatar}
-          projects={projects} selectedProjectId={selectedProjectId} onSelectProject={handleSelectProject}
-          onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
-          isDesktopOpen={isSidebarOpen}
-          currentUserRole={userRole}
-          userEmail={currentUser.email}
-        />
-        <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
-          <div className="absolute inset-0 z-0 print:hidden">
-             <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
+    <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-300 relative">
+      
+      <Sidebar 
+        activeTab={activeTab} setActiveTab={setActiveTab}
+        isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen}
+        onAddTask={() => openNewTaskModal()} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}
+        userName={userSettings.userName} userTitle={userSettings.userTitle}
+        userAvatar={currentUser.avatar}
+        projects={projects} selectedProjectId={selectedProjectId} onSelectProject={handleSelectProject}
+        onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
+        isDesktopOpen={isSidebarOpen}
+        currentUserRole={userRole}
+        userEmail={currentUser.email}
+      />
+      <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
+        <div className="absolute inset-0 z-0 print:hidden">
+          <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
+        </div>
+
+        {/* Updated Dismissable Verification Banner */}
+        {auth.currentUser && !auth.currentUser.emailVerified && showBanner && (
+          <div className="flex items-center justify-between px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 border-b border-yellow-200 dark:border-yellow-800 relative z-50 print:hidden">
+              <div className="flex items-center gap-3">
+                  <AlertTriangle size={18} className="text-yellow-600 dark:text-yellow-400" />
+                  <span className="text-sm font-medium">Your email is not verified. Please check your inbox.</span>
+              </div>
+              <div className="flex items-center gap-3">
+                  <button 
+                      onClick={handleResendVerification}
+                      className="text-xs font-bold bg-yellow-200 hover:bg-yellow-300 dark:bg-yellow-800 dark:hover:bg-yellow-700 text-yellow-900 dark:text-yellow-100 px-3 py-1.5 rounded transition-colors flex items-center gap-1"
+                  >
+                      <Send size={12} /> Resend Link
+                  </button>
+                  <button 
+                      onClick={() => setShowBanner(false)}
+                      className="p-1 rounded hover:bg-yellow-200 dark:hover:bg-yellow-800 text-yellow-700 dark:text-yellow-300 transition-colors"
+                  >
+                      <X size={18} />
+                  </button>
+              </div>
           </div>
+        )}
 
-          {/* Updated Dismissable Verification Banner */}
-          {auth.currentUser && !auth.currentUser.emailVerified && showBanner && (
-             <div className="flex items-center justify-between px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 border-b border-yellow-200 dark:border-yellow-800 relative z-50 print:hidden">
-                <div className="flex items-center gap-3">
-                    <AlertTriangle size={18} className="text-yellow-600 dark:text-yellow-400" />
-                    <span className="text-sm font-medium">Your email is not verified. Please check your inbox.</span>
+        <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between sticky top-0 z-40 h-16 relative print:hidden">
+          <div className="flex items-center gap-3">
+              <button onClick={() => setIsMobileOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><Menu size={24} /></button>
+              <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="hidden md:flex p-2 -ml-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}><PanelLeft size={20} /></button>
+              {currentProject && (
+                <div>
+                    <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{currentProject.name}</h2>
+                    {currentProject.clientName && <p className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden md:block">{currentProject.clientName}</p>}
                 </div>
-                <div className="flex items-center gap-3">
-                    <button 
-                        onClick={handleResendVerification}
-                        className="text-xs font-bold bg-yellow-200 hover:bg-yellow-300 dark:bg-yellow-800 dark:hover:bg-yellow-700 text-yellow-900 dark:text-yellow-100 px-3 py-1.5 rounded transition-colors flex items-center gap-1"
-                    >
-                        <Send size={12} /> Resend Link
-                    </button>
-                    <button 
-                        onClick={() => setShowBanner(false)}
-                        className="p-1 rounded hover:bg-yellow-200 dark:hover:bg-yellow-800 text-yellow-700 dark:text-yellow-300 transition-colors"
-                    >
-                        <X size={18} />
-                    </button>
-                </div>
-             </div>
-          )}
-
-          <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between sticky top-0 z-40 h-16 relative print:hidden">
-             <div className="flex items-center gap-3">
-                <button onClick={() => setIsMobileOpen(true)} className="md:hidden p-2 -ml-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"><Menu size={24} /></button>
-                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="hidden md:flex p-2 -ml-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}><PanelLeft size={20} /></button>
-                {currentProject && (
-                   <div>
-                      <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">{currentProject.name}</h2>
-                      {currentProject.clientName && <p className="text-xs text-slate-500 dark:text-slate-400 font-medium hidden md:block">{currentProject.clientName}</p>}
-                   </div>
-                )}
-             </div>
-             
-             <div className="flex items-center gap-2 relative">
-                {/* Global Search Trigger */}
-                <button 
-                    onClick={() => setIsSearchOpen(true)}
-                    className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg text-sm font-medium transition-colors mr-2 border border-transparent hover:border-slate-300 dark:hover:border-slate-600"
-                >
-                    <Search size={14} />
-                    <span className="hidden lg:inline">Search...</span>
-                    <span className="text-[10px] bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1.5 py-0.5 rounded shadow-sm font-mono">Ctrl+K</span>
-                </button>
-                <button onClick={() => setIsSearchOpen(true)} className="md:hidden p-2 text-slate-500 dark:text-slate-400"><Search size={20} /></button>
-
-                <NotificationCenter />
-
-                {selectedProjectId && (
-                  <div className="relative">
-                    {userRole === 'admin' && (
-                        <button onClick={() => setIsProjectSettingsOpen(!isProjectSettingsOpen)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors" title="Project Settings"><Settings size={20} /></button>
-                    )}
-                    {isProjectSettingsOpen && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setIsProjectSettingsOpen(false)}></div>
-                        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 overflow-hidden">
-                            <button onClick={() => { setProjectToEdit(currentProject || null); setIsProjectModalOpen(true); setIsProjectSettingsOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"><Edit3 size={16} /> Project Settings</button>
-                            {(currentProject?.ownerId === currentUser.id || currentUser.email === SUPER_ADMIN_EMAIL) && (
-                                <button onClick={() => handleDeleteProject(currentProject.id)} className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"><Trash2 size={16} /> Delete Project</button>
-                            )}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-             </div>
-          </div>
-
-          <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar relative z-10 print:p-0 print:overflow-visible overflow-x-hidden">
-             <AnimatePresence mode="wait">
-               {renderContent()}
-             </AnimatePresence>
+              )}
           </div>
           
-          {/* Floating Active Timer */}
-          <ActiveTimerBar />
-        </main>
-      </div>
+          <div className="flex items-center gap-2 relative">
+              {/* Global Search Trigger */}
+              <button 
+                  onClick={() => setIsSearchOpen(true)}
+                  className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-lg text-sm font-medium transition-colors mr-2 border border-transparent hover:border-slate-300 dark:hover:border-slate-600"
+              >
+                  <Search size={14} />
+                  <span className="hidden lg:inline">Search...</span>
+                  <span className="text-[10px] bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-1.5 py-0.5 rounded shadow-sm font-mono">Ctrl+K</span>
+              </button>
+              <button onClick={() => setIsSearchOpen(true)} className="md:hidden p-2 text-slate-500 dark:text-slate-400"><Search size={20} /></button>
+
+              <NotificationCenter />
+
+              {selectedProjectId && (
+                <div className="relative">
+                  {userRole === 'admin' && (
+                      <button onClick={() => setIsProjectSettingsOpen(!isProjectSettingsOpen)} className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors" title="Project Settings"><Settings size={20} /></button>
+                  )}
+                  {isProjectSettingsOpen && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setIsProjectSettingsOpen(false)}></div>
+                      <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 py-1 overflow-hidden">
+                          <button onClick={() => { setProjectToEdit(currentProject || null); setIsProjectModalOpen(true); setIsProjectSettingsOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"><Edit3 size={16} /> Project Settings</button>
+                          {(currentProject?.ownerId === currentUser.id || currentUser.email === SUPER_ADMIN_EMAIL) && (
+                              <button onClick={() => handleDeleteProject(currentProject.id)} className="w-full text-left px-4 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"><Trash2 size={16} /> Delete Project</button>
+                          )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar relative z-10 print:p-0 print:overflow-visible overflow-x-hidden">
+          <AnimatePresence mode="wait">
+            {renderContent()}
+          </AnimatePresence>
+        </div>
+        
+        {/* Floating Active Timer */}
+        <ActiveTimerBar />
+      </main>
 
       {/* Global Command Palette */}
       <CommandPalette 
@@ -1051,10 +1067,10 @@ const App: React.FC = () => {
       />
 
       <ProjectModal
-         isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)}
-         onSubmit={projectToEdit ? handleUpdateProject : handleCreateProject}
-         project={projectToEdit} currentUser={{ uid: currentUser.id, email: currentUser.email, displayName: currentUser.username }}
-         currentUserRole={userRole} onDelete={handleDeleteProject}
+        isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)}
+        onSubmit={projectToEdit ? handleUpdateProject : handleCreateProject}
+        project={projectToEdit} currentUser={{ uid: currentUser.id, email: currentUser.email, displayName: currentUser.username }}
+        currentUserRole={userRole} onDelete={handleDeleteProject}
       />
 
       <ReminderModal 
@@ -1067,12 +1083,14 @@ const App: React.FC = () => {
 
 const MainApp = () => {
   return (
-    <NotificationProvider>
-      <TimeTrackingProvider>
-        <App />
-      </TimeTrackingProvider>
-    </NotificationProvider>
-  )
+    <ErrorBoundary>
+      <NotificationProvider>
+        <TimeTrackingProvider>
+          <App />
+        </TimeTrackingProvider>
+      </NotificationProvider>
+    </ErrorBoundary>
+  );
 }
 
 export default MainApp;
