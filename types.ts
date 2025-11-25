@@ -99,6 +99,7 @@ export interface Task {
   reminderDays?: number; // -1 (None), 0 (Same day), 1 (1 day before), etc.
   isDeleted?: boolean;
   deletedAt?: string;
+  originalProjectId?: string; // Used to track project association when in trash
 }
 
 export interface KanbanColumn {

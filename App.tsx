@@ -470,22 +470,24 @@ const App: React.FC = () => {
           return;
       }
 
-      const isConfirmed = window.confirm("This will delete the project and ALL its tasks. This cannot be undone.");
+      const isConfirmed = window.confirm("Move project to Trash? Items are kept for 30 days.");
       if (!isConfirmed) return;
 
       try {
-          // Chunked Deletion for reliability (Firestore Batch limit is 500)
-          // 1. Get all tasks first
+          // Chunked Soft Deletion
           const tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', projectToDelete.id));
           const tasksSnap = await getDocs(tasksQuery);
           
-          const CHUNK_SIZE = 400; // Safe margin below 500
+          const CHUNK_SIZE = 400;
           const chunks = [];
           let currentBatch = writeBatch(db);
           let opCount = 0;
           
-          // Add Project Delete to first batch
-          currentBatch.delete(doc(db, 'projects', projectToDelete.id));
+          // Update Project (Soft Delete)
+          currentBatch.update(doc(db, 'projects', projectToDelete.id), { 
+              isDeleted: true, 
+              deletedAt: serverTimestamp() 
+          });
           opCount++;
 
           tasksSnap.docs.forEach((taskDoc) => {
@@ -494,11 +496,15 @@ const App: React.FC = () => {
                  currentBatch = writeBatch(db);
                  opCount = 0;
              }
-             currentBatch.delete(taskDoc.ref);
+             // Update Tasks (Soft Delete)
+             currentBatch.update(taskDoc.ref, { 
+                 isDeleted: true, 
+                 deletedAt: serverTimestamp(),
+                 originalProjectId: projectToDelete.id
+             });
              opCount++;
           });
           
-          // Push final batch
           chunks.push(currentBatch);
 
           // Execute all batches
@@ -507,7 +513,6 @@ const App: React.FC = () => {
           }
           
           // 3. Cleanup State & Redirect
-          // Crucial: Clear selection BEFORE updating tabs/modals to prevent rendering errors
           if (selectedProjectId === projectToDelete.id) {
             setSelectedProjectId(null);
           }
@@ -522,10 +527,10 @@ const App: React.FC = () => {
               setActiveTab('projects');
           }
           
-          notify('success', "Project and all associated data deleted.");
+          notify('success', "Moved to Trash.");
       } catch (e) {
           console.error("Error deleting project:", e);
-          notify('error', "Failed to delete project. Please try again.");
+          notify('error', "Failed to move project to trash.");
       }
   };
 
@@ -708,12 +713,18 @@ const App: React.FC = () => {
         return;
     }
 
-    if (!window.confirm("Are you sure you want to delete this task permanently?")) return;
+    if (!window.confirm("Move this task to Trash? It will be kept for 14 days.")) return;
+    
     try {
-      await deleteDoc(doc(db, 'tasks', taskId));
+      // Soft Delete
+      await updateDoc(doc(db, 'tasks', taskId), {
+          isDeleted: true,
+          deletedAt: serverTimestamp(),
+          originalProjectId: taskToDelete?.projectId || null
+      });
       setIsTaskModalOpen(false);
       setEditingTask(undefined);
-      notify('success', "Task deleted");
+      notify('success', "Moved to Trash.");
     } catch (error) {
       console.error("Error deleting task:", error);
       notify('error', "Failed to delete task");
