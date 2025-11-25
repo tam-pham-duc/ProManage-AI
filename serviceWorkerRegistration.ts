@@ -3,8 +3,15 @@ export function register(config?: any) {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       // Construct absolute URL based on current location to avoid origin mismatch
-      // This fixes the error where base URI might differ from document origin in some environments
-      const swUrl = new URL('service-worker.js', window.location.href).href;
+      let swUrl = 'service-worker.js';
+      try {
+        // Only attempt to construct URL if protocol is http or https to avoid "Invalid URL" errors
+        if (window.location.protocol.startsWith('http')) {
+            swUrl = new URL('service-worker.js', window.location.href).href;
+        }
+      } catch (e) {
+        console.warn('Failed to construct absolute ServiceWorker URL, using relative path.');
+      }
 
       registerValidSW(swUrl, config);
     });

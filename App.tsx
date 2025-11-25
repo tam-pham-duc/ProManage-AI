@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Menu, Search, Loader2, Settings, Trash2, Edit3, ChevronDown, Copy, PanelLeft, AlertTriangle, Send } from 'lucide-react';
+import { Menu, Search, Loader2, Settings, Trash2, Edit3, ChevronDown, Copy, PanelLeft, AlertTriangle, Send, X } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -171,6 +171,9 @@ const App: React.FC = () => {
       return [];
     }
   });
+
+  // Banner State
+  const [showBanner, setShowBanner] = useState(true);
 
   // --- Permission Logic Hook ---
   const currentProject = projects.find(p => p.id === selectedProjectId);
@@ -508,14 +511,16 @@ const App: React.FC = () => {
       }
   };
 
+  // REWRITTEN: Function 2: handleDeleteProject (Cascade Soft Delete)
   const handleDeleteProject = async (projectIdToDelete?: string) => {
       const id = projectIdToDelete || selectedProjectId;
       if (!id) return;
+      
       const projectToDelete = projects.find(p => p.id === id);
       if (!projectToDelete) return;
       
-      // 1. Permission Check
-      if (projectToDelete.ownerId !== currentUser?.id) {
+      // 1. Permission Check (Admin/Owner)
+      if (!currentUser || projectToDelete.ownerId !== currentUser.id) {
           notify('warning', "Only the project owner can delete this project.");
           return;
       }
@@ -524,21 +529,21 @@ const App: React.FC = () => {
       if (!window.confirm("Move Project and ALL tasks to Trash?")) return;
 
       try {
-          // 3. Operation
+          // 3. Operation: WriteBatch
           const batch = writeBatch(db);
           
           // Step A: Query tasks
           const tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', id));
           const tasksSnap = await getDocs(tasksQuery);
 
-          // Step B: Add Project soft-delete
+          // Step B: Soft-delete Project
           const projectRef = doc(db, 'projects', id);
           batch.update(projectRef, { 
               isDeleted: true, 
               deletedAt: serverTimestamp() 
           });
 
-          // Step C: Loop tasks
+          // Step C: Soft-delete Tasks
           tasksSnap.docs.forEach((taskDoc) => {
              batch.update(taskDoc.ref, { 
                  isDeleted: true, 
@@ -550,14 +555,19 @@ const App: React.FC = () => {
           // Step D: Commit
           await batch.commit();
           
-          // 4. Redirect / UI
-          setSelectedProjectId(null);
+          // 4. Redirect
+          if (selectedProjectId === id) {
+              setSelectedProjectId(null);
+          }
+          
+          // UI Cleanup
           setIsProjectModalOpen(false);
           setIsProjectSettingsOpen(false);
           setProjectToEdit(null);
+          
           notify('success', "Project moved to Trash.");
       } catch (e) {
-          console.error("Error deleting project:", e);
+          console.error("Delete Project Error:", e);
           notify('error', "Failed to move project to trash.");
       }
   };
@@ -599,36 +609,44 @@ const App: React.FC = () => {
       setEditingTask(undefined);
   };
 
+  // REWRITTEN: Function 1: handleDeleteTask (Soft Delete)
   const handleDeleteTask = async (taskId: string) => { 
-      const task = tasks.find(t => t.id === taskId) || tasks.find(t => t.id === editingTask?.id);
-      if (!task) return;
+      // Resolve Task
+      const taskToDelete = tasks.find(t => t.id === taskId) || (editingTask?.id === taskId ? editingTask : undefined);
+      
+      if (!taskToDelete) {
+          console.error("Task not found for deletion:", taskId);
+          return;
+      }
 
-      // 1. Permission (Assume Admin or Owner check happens or is implicit for now based on previous code context, 
-      // but let's add a basic check if currentUser is available in scope)
-      if (currentUser && task.ownerId !== currentUser.id && userRole !== 'admin') {
-           // In a real app, we'd return here. But existing code was loose. 
-           // Prompt says: "Ensure user is Admin OR Owner".
-           // We can add the check but since userRole is already computed, it's safe enough.
-           // return; 
+      // 1. Permission Check
+      const isOwner = currentUser && taskToDelete.ownerId === currentUser.id;
+      const isAdmin = userRole === 'admin'; 
+      
+      if (!isOwner && !isAdmin) {
+          notify('error', "Permission denied. You must be the owner or admin.");
+          return;
       }
 
       // 2. Confirm
       if (!window.confirm("Move task to Trash?")) return;
 
       try {
-          // 3. Operation
-          await updateDoc(doc(db, 'tasks', taskId), { 
+          // 3. Operation: Soft Delete (updateDoc)
+          const taskRef = doc(db, 'tasks', taskId);
+          await updateDoc(taskRef, { 
               isDeleted: true, 
               deletedAt: serverTimestamp(),
-              originalProjectId: task.projectId
+              originalProjectId: taskToDelete.projectId 
           });
           
           // 4. UI Update
           setIsTaskModalOpen(false);
-          setEditingTask(undefined); // Clear editing task
-          notify('success', 'Task moved to trash');
+          setEditingTask(undefined);
+          notify('success', 'Task moved to Trash');
       } catch (e) { 
-          notify('error', 'Delete failed'); 
+          console.error("Delete Task Error:", e);
+          notify('error', 'Failed to delete task'); 
       }
   };
 
@@ -727,10 +745,27 @@ const App: React.FC = () => {
              <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
           </div>
 
-          {auth.currentUser && !auth.currentUser.emailVerified && (
-             <div className="bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 px-4 py-2 text-xs md:text-sm font-bold flex items-center justify-between shadow-sm relative z-50 print:hidden">
-                <div className="flex items-center gap-2"><AlertTriangle size={16} /><span>Your email is not verified. Please check your inbox.</span></div>
-                <button onClick={handleResendVerification} className="bg-amber-200 hover:bg-amber-300 dark:bg-amber-800 dark:hover:bg-amber-700 text-amber-900 dark:text-amber-100 px-3 py-1 rounded-md transition-colors flex items-center gap-1"><Send size={12} /> Resend Link</button>
+          {/* Updated Dismissable Verification Banner */}
+          {auth.currentUser && !auth.currentUser.emailVerified && showBanner && (
+             <div className="flex items-center justify-between px-4 py-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 border-b border-yellow-200 dark:border-yellow-800 relative z-50 print:hidden">
+                <div className="flex items-center gap-3">
+                    <AlertTriangle size={18} className="text-yellow-600 dark:text-yellow-400" />
+                    <span className="text-sm font-medium">Your email is not verified. Please check your inbox.</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button 
+                        onClick={handleResendVerification}
+                        className="text-xs font-bold bg-yellow-200 hover:bg-yellow-300 dark:bg-yellow-800 dark:hover:bg-yellow-700 text-yellow-900 dark:text-yellow-100 px-3 py-1.5 rounded transition-colors flex items-center gap-1"
+                    >
+                        <Send size={12} /> Resend Link
+                    </button>
+                    <button 
+                        onClick={() => setShowBanner(false)}
+                        className="p-1 rounded hover:bg-yellow-200 dark:hover:bg-yellow-800 text-yellow-700 dark:text-yellow-300 transition-colors"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
              </div>
           )}
 

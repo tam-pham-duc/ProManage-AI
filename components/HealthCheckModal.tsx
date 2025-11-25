@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Activity, Play, Download, Terminal, Cpu, Wifi, Database, Trash2, AlertOctagon, CheckCircle2, Clock, ShieldCheck, Calculator, Calendar } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { collection, addDoc, doc, getDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
@@ -35,7 +36,7 @@ const HealthCheckModal: React.FC<HealthCheckModalProps> = ({ isOpen, onClose }) 
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<DiagnosticLog[]>([]);
   const [metrics, setMetrics] = useState<TestMetrics>({
-    totalTests: 0,
+    totalTests: 20,
     testsRun: 0,
     passed: 0,
     failed: 0,
@@ -329,12 +330,13 @@ const HealthCheckModal: React.FC<HealthCheckModalProps> = ({ isOpen, onClose }) 
       }
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-fade-in font-mono">
-      <div className="w-full max-w-5xl h-[85vh] bg-slate-950 rounded-xl border border-slate-800 shadow-2xl flex flex-col overflow-hidden relative">
+  // Using Portal to render outside the current hierarchy, avoiding clipping/z-index issues from parent containers
+  return createPortal(
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6 animate-fade-in font-mono">
+      <div className="bg-slate-950 w-full max-w-5xl rounded-xl shadow-2xl border border-slate-700 flex flex-col max-h-[85vh] relative overflow-hidden">
         
         {/* Header */}
-        <div className="bg-slate-900 p-4 border-b border-slate-800 flex justify-between items-center">
+        <div className="bg-slate-900 p-4 border-b border-slate-800 flex justify-between items-center shrink-0">
             <div className="flex items-center gap-3">
                 <Activity className={isRunning ? 'text-green-500 animate-pulse' : 'text-slate-500'} size={24} />
                 <div>
@@ -361,7 +363,7 @@ const HealthCheckModal: React.FC<HealthCheckModalProps> = ({ isOpen, onClose }) 
         </div>
 
         {/* Progress Line */}
-        <div className="h-1 bg-slate-900 w-full relative">
+        <div className="h-1 bg-slate-900 w-full relative shrink-0">
             <div 
                 className={`h-full transition-all duration-300 ${metrics.failed > 0 ? 'bg-red-500' : 'bg-emerald-500'} relative`} 
                 style={{ width: `${progress}%` }}
@@ -373,7 +375,7 @@ const HealthCheckModal: React.FC<HealthCheckModalProps> = ({ isOpen, onClose }) 
         {/* Logs Area */}
         <div 
             ref={logContainerRef}
-            className="flex-1 bg-black p-6 overflow-y-auto custom-scrollbar text-sm space-y-1.5 font-mono"
+            className="flex-1 overflow-y-auto p-4 font-mono text-sm space-y-1.5 custom-scrollbar bg-black"
         >
             {logs.length === 0 && !isRunning && (
                 <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-6">
@@ -427,7 +429,7 @@ const HealthCheckModal: React.FC<HealthCheckModalProps> = ({ isOpen, onClose }) 
         </div>
 
         {/* Footer */}
-        <div className="bg-slate-900 p-4 border-t border-slate-800 flex justify-between items-center">
+        <div className="bg-slate-900 p-4 border-t border-slate-800 flex justify-between items-center shrink-0">
             <div className="flex gap-6 text-xs text-slate-500 font-bold uppercase tracking-wider">
                 <div className="flex items-center gap-2">
                     <CheckCircle2 size={14} className={metrics.passed > 0 ? 'text-emerald-500' : 'text-slate-600'} />
@@ -456,7 +458,8 @@ const HealthCheckModal: React.FC<HealthCheckModalProps> = ({ isOpen, onClose }) 
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

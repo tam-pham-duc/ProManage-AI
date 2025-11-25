@@ -144,12 +144,18 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   const isTracking = task && activeTimer?.taskId === task.id;
 
+  // Reset Edit State when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setEditingLog(null);
+    }
+  }, [isOpen]);
+
   useEffect(() => {
     if (isOpen) {
       // Check if we need to reset form state
       // We reset if we are opening a new task (task is undefined) 
       // OR if we switched to a different task ID
-      // We DO NOT reset if task.id matches prevTaskIdRef (this happens on background updates like TimeLog save)
       const isNewTask = !task;
       const isDifferentTask = task?.id !== prevTaskIdRef.current;
 
@@ -325,30 +331,30 @@ const TaskModal: React.FC<TaskModalProps> = ({
     setShowMentionList(false);
   };
 
-  // --- TIME LOG MANAGEMENT ---
+  // Function 3: handleDeleteTimeLog (Robust Array Manipulation)
   const handleDeleteLog = async (logId: string) => {
     if (!task) return;
     
     // 1. Confirm
     if (!window.confirm("Delete this time entry?")) return;
 
-    // 2. Local Calculation
-    const updatedLogs = (task.timeLogs || []).filter(l => l.id !== logId);
-    const newTotalSeconds = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
-
     try {
+        // 2. Local Calculation
+        const currentLogs = task.timeLogs || [];
+        const newLogsArray = currentLogs.filter(l => l.id !== logId);
+        const newTotalSeconds = newLogsArray.reduce((acc, l) => acc + l.durationSeconds, 0);
+
         // 3. Operation
         await updateDoc(doc(db, 'tasks', task.id), {
-            timeLogs: updatedLogs,
+            timeLogs: newLogsArray,
             totalTimeSeconds: newTotalSeconds
         });
         
-        // 4. UI Update (Implicit via realtime listener in App -> prop update, but for local optimisim or consistency)
+        // 4. UI Update
         notify('success', 'Time log deleted');
-        // If editingLog matches, clear it
         if (editingLog?.id === logId) setEditingLog(null);
     } catch (e) {
-        console.error(e);
+        console.error("Delete Log Error:", e);
         notify('error', 'Failed to delete log');
     }
   };
@@ -387,7 +393,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             totalTimeSeconds: newTotal
         });
         notify('success', 'Time log updated');
-        setEditingLog(null);
+        setEditingLog(null); // Explicitly close the edit form
     } catch (e) {
         console.error(e);
         notify('error', 'Failed to update log');
@@ -491,10 +497,16 @@ const TaskModal: React.FC<TaskModalProps> = ({
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 border border-slate-200 dark:border-slate-700 relative">
         
-        {/* Edit Log Mini Modal */}
+        {/* Edit Log Mini Modal Overlay */}
         {editingLog && (
-            <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm">
-                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl p-6 w-80 border border-slate-200 dark:border-slate-700 animate-fade-in">
+            <div 
+              className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm"
+              onClick={(e) => e.stopPropagation()} // Prevent clicking background from closing parent
+            >
+                <div 
+                  className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl p-6 w-80 border border-slate-200 dark:border-slate-700 animate-fade-in"
+                  onClick={(e) => e.stopPropagation()}
+                >
                     <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">Edit Time Entry</h3>
                     
                     <div className="space-y-4">
@@ -520,13 +532,23 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
                     <div className="flex gap-2 mt-6">
                         <button 
-                            onClick={() => setEditingLog(null)}
+                            type="button"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setEditingLog(null);
+                            }}
                             className="flex-1 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
                         >
                             Cancel
                         </button>
                         <button 
-                            onClick={handleUpdateLog}
+                            type="button"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleUpdateLog();
+                            }}
                             className="flex-1 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
                         >
                             <SaveIcon size={14} />
@@ -1044,14 +1066,24 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                                     {isOwner && (
                                                         <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <button 
-                                                                onClick={() => handleEditLogClick(log)}
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    handleEditLogClick(log);
+                                                                }}
                                                                 className="p-1.5 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-md transition-colors"
                                                                 title="Edit"
                                                             >
                                                                 <Pencil size={14} />
                                                             </button>
                                                             <button 
-                                                                onClick={() => handleDeleteLog(log.id)}
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.stopPropagation();
+                                                                    handleDeleteLog(log.id);
+                                                                }}
                                                                 className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
                                                                 title="Delete"
                                                             >
