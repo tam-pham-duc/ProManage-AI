@@ -139,21 +139,32 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       }
   };
 
+  const handleDragStartWrapper = (e: React.DragEvent) => {
+      if (isReadOnly || isBlocked) return;
+      
+      // Ensure the element being dragged doesn't have transforms applied at the moment of capture
+      const target = e.currentTarget as HTMLElement;
+      target.style.transform = "none";
+      
+      onDragStart(e, task.id);
+  };
+
   return (
     <div 
-      draggable={!isReadOnly && !isBlocked} // Prevent dragging if blocked? Maybe debatable, but good for enforcing flow
-      onDragStart={(e) => !isReadOnly && !isBlocked && onDragStart(e, task.id)}
+      draggable={!isReadOnly && !isBlocked}
+      onDragStart={handleDragStartWrapper}
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-all duration-300 group relative select-none flex flex-col justify-between min-h-[120px]
+        p-4 rounded-xl border-y border-r border-l-[4px] transition-shadow duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
         ${isBlocked 
             ? 'bg-stripes-gray border-slate-300 dark:border-slate-600 opacity-90 border-l-slate-500' 
             : theme.container}
         ${statusIndicatorClass}
-        ${isDragging ? 'opacity-60 rotate-2 scale-95 shadow-xl cursor-grabbing' : 'hover:shadow-md hover:-translate-y-1 cursor-pointer hover:z-10'}
+        ${isDragging ? 'opacity-50' : 'shadow-sm hover:shadow-md cursor-pointer hover:z-10'}
         ${isReadOnly ? 'cursor-default' : ''}
       `}
+      style={{ transform: 'none' }} // Explicitly prevent tilt/scale
       title={isBlocked ? `Blocked by: ${blockingTaskTitles}` : ''}
     >
       {/* Quick Delete Button */}
