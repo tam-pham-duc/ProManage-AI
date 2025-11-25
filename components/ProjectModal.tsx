@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Briefcase, User, MapPin, Plus, Trash2, Shield, Mail, Loader2, Clock, Ban, Save, ChevronDown, ArrowRight, ArrowLeft, Check } from 'lucide-react';
 import { Project, ProjectMember, ProjectRole } from '../types';
 import { db } from '../firebase';
@@ -18,6 +18,7 @@ interface ProjectModalProps {
 
 const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, project, currentUser, currentUserRole = 'admin', onDelete }) => {
   const { notify } = useNotification();
+  const isMounted = useRef(false);
   
   // Mode Determination
   const isEditMode = !!project;
@@ -46,6 +47,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
 
   // Reset State on Open
   useEffect(() => {
+    isMounted.current = true;
     if (isOpen) {
       setCurrentStep(1); // Reset wizard
       setActiveTab('details'); // Reset tabs
@@ -79,6 +81,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         }
       }
     }
+    return () => { isMounted.current = false; };
   }, [isOpen, project, currentUser]);
 
   if (!isOpen) return null;
@@ -139,7 +142,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
       console.error("Error finding user:", error);
       notify('error', "Error searching for user.");
     } finally {
-      setIsInviting(false);
+      if (isMounted.current) setIsInviting(false);
     }
   };
 
@@ -196,19 +199,21 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             const projectRef = doc(db, 'projects', project.id);
             await updateDoc(projectRef, projectPayload);
             setTimeout(() => {
-                setIsSaving(false);
-                onClose();
+                if (isMounted.current) {
+                    setIsSaving(false);
+                    onClose();
+                }
             }, 500);
         } else {
             // Create New
             await onSubmit(projectPayload);
-            setIsSaving(false);
+            if (isMounted.current) setIsSaving(false);
         }
 
     } catch (error) {
         console.error("Error saving project:", error);
         notify('error', "Failed to save project.");
-        setIsSaving(false);
+        if (isMounted.current) setIsSaving(false);
     }
   };
 
@@ -216,7 +221,10 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
       if (onDelete && project) {
           setIsDeleting(true);
           await onDelete(project.id);
-          setIsDeleting(false);
+          // Only update state if still mounted (i.e., delete failed or logic didn't unmount parent)
+          if (isMounted.current) {
+              setIsDeleting(false);
+          }
       }
   };
 

@@ -1,11 +1,12 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck } from 'lucide-react';
+import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw } from 'lucide-react';
 import { Task, UserSettings, Tab, TaskPriority, KanbanColumn } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
+import { clearDevData, generateDemoData } from '../services/demoDataService';
 
 interface SettingsViewProps {
   tasks: Task[];
@@ -109,6 +110,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   // --- Data Tab State ---
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   
   // --- Kanban Column Local State ---
   const [newColumnTitle, setNewColumnTitle] = useState('');
@@ -331,6 +333,30 @@ const SettingsView: React.FC<SettingsViewProps> = ({
         console.error("Error loading template", e);
         notify('error', "Failed to load template tasks.");
     }
+  };
+
+  const handleFactoryReset = async () => {
+      if (!window.confirm("FACTORY RESET WARNING: This will delete ALL projects and tasks associated with this account and regenerate standard demo data. This action cannot be undone. Are you sure?")) {
+          return;
+      }
+
+      setIsResetting(true);
+      try {
+          const uid = auth.currentUser?.uid;
+          if (!uid) throw new Error("No user ID found");
+
+          await clearDevData(uid);
+          await generateDemoData(uid);
+          
+          notify('success', "Factory reset complete. Reloading...");
+          setTimeout(() => {
+              window.location.reload();
+          }, 1500);
+      } catch (e) {
+          console.error("Factory Reset Failed", e);
+          notify('error', "Reset failed. Check console.");
+          setIsResetting(false);
+      }
   };
 
   const handleAddColumnClick = () => {
@@ -669,6 +695,34 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                          </div>
                       </div>
                    </div>
+
+                   {/* Developer Zone - Only for Admin */}
+                   {auth.currentUser?.email === 'admin@dev.com' && (
+                       <div className="p-5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-200 dark:border-red-900/50 ring-1 ring-red-500/20">
+                          <div className="flex items-start gap-4">
+                             <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg shadow-sm text-red-600 dark:text-red-400">
+                               <RefreshCcw size={24} />
+                             </div>
+                             <div className="flex-1">
+                               <h3 className="font-bold text-red-700 dark:text-red-400 text-sm flex items-center gap-2">
+                                   Developer Zone
+                                   <span className="text-[10px] bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-300 px-1.5 py-0.5 rounded uppercase">Admin Only</span>
+                               </h3>
+                               <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-1 mb-4">
+                                 Reset the entire database to factory demo state. <strong>Warning: This wipes all data.</strong>
+                               </p>
+                               <button
+                                 onClick={handleFactoryReset}
+                                 disabled={isResetting}
+                                 className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white border border-transparent rounded-lg text-sm font-medium hover:bg-red-700 transition-colors shadow-sm active:scale-95 disabled:opacity-70"
+                               >
+                                 {isResetting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                 Reset Demo Data (Factory Reset)
+                               </button>
+                             </div>
+                          </div>
+                       </div>
+                   )}
 
                    <div className="h-px bg-slate-100 dark:bg-slate-700 my-6"></div>
 

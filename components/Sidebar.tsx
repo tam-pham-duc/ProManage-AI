@@ -14,7 +14,8 @@ import {
   ChevronDown,
   Briefcase,
   Check,
-  Layers
+  Layers,
+  GitGraph
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 
@@ -72,6 +73,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'kanban', label: 'Kanban Board', icon: KanbanSquare },
     { id: 'timeline', label: 'Timeline', icon: CalendarClock },
+    { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'image-gen', label: 'Creative Assets', icon: Palette },
     { id: 'settings', label: 'Settings', icon: Settings },

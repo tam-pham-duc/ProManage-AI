@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type Tab = 'dashboard' | 'kanban' | 'timeline' | 'calendar' | 'settings' | 'image-gen' | 'projects';
+export type Tab = 'dashboard' | 'kanban' | 'timeline' | 'calendar' | 'map' | 'settings' | 'image-gen' | 'projects';
 
 export interface MetricCardProps {
   title: string;
@@ -88,8 +88,11 @@ export interface Task {
   activityLog?: ActivityLog[];
   attachments?: Attachment[];
   tags?: Tag[];
+  dependencies?: string[]; // Array of Task IDs that this task depends on
   estimatedCost?: number;
   actualCost?: number;
+  estimatedHours?: number;
+  estimatedDays?: number;
   createdAt?: any;
   updatedAt?: any;
   importedAt?: string;

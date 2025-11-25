@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass } from 'lucide-react';
+import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban } from 'lucide-react';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 
 interface KanbanBoardProps {
@@ -11,6 +11,7 @@ interface KanbanBoardProps {
   onTaskClick: (task: Task) => void;
   onAddColumn?: (title: string, color: string) => void;
   isReadOnly?: boolean;
+  allTasks?: Task[];
 }
 
 interface TaskCardProps {
@@ -20,9 +21,10 @@ interface TaskCardProps {
   onDragEnd: () => void;
   isDragging: boolean;
   isReadOnly?: boolean;
+  allTasks?: Task[];
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly }) => {
+const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [] }) => {
   // Date Logic
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -54,6 +56,32 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
   
   const attachmentCount = task.attachments?.length || 0;
   const commentCount = task.comments?.length || 0;
+
+  // Dependency Block Logic
+  const isBlocked = React.useMemo(() => {
+      if (!task.dependencies || task.dependencies.length === 0) return false;
+      if (task.status === 'Done') return false;
+      
+      // Find if ANY parent task is NOT done
+      return task.dependencies.some(depId => {
+          const parent = allTasks.find(t => t.id === depId);
+          return parent && parent.status !== 'Done';
+      });
+  }, [task.dependencies, task.status, allTasks]);
+
+  // Get titles of blocking tasks for tooltip
+  const blockingTaskTitles = React.useMemo(() => {
+     if (!isBlocked || !task.dependencies) return '';
+     const titles = task.dependencies
+        .map(id => {
+            const t = allTasks.find(at => at.id === id);
+            if (t && t.status !== 'Done') return t.title;
+            return null;
+        })
+        .filter(Boolean)
+        .join(', ');
+     return titles;
+  }, [isBlocked, task.dependencies, allTasks]);
 
   // --- STEP 71: Pastel Priority Themes ---
   const getPriorityStyles = (priority: string) => {
@@ -97,20 +125,63 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
 
   return (
     <div 
-      draggable={!isReadOnly}
-      onDragStart={(e) => !isReadOnly && onDragStart(e, task.id)}
+      draggable={!isReadOnly && !isBlocked} // Prevent dragging if blocked? Maybe debatable, but good for enforcing flow
+      onDragStart={(e) => !isReadOnly && !isBlocked && onDragStart(e, task.id)}
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
         p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-all duration-300 group relative select-none flex flex-col justify-between min-h-[120px]
-        ${theme.container}
+        ${isBlocked 
+            ? 'bg-stripes-gray border-slate-300 dark:border-slate-600 opacity-90 border-l-slate-500' 
+            : theme.container}
         ${statusIndicatorClass}
-        ${isDragging ? 'opacity-60 rotate-2 scale-95 shadow-xl cursor-grabbing' : 'hover:shadow-md hover:-translate-y-1 cursor-pointer'}
+        ${isDragging ? 'opacity-60 rotate-2 scale-95 shadow-xl cursor-grabbing' : 'hover:shadow-md hover:-translate-y-1 cursor-pointer hover:z-10'}
         ${isReadOnly ? 'cursor-default' : ''}
       `}
+      title={isBlocked ? `Blocked by: ${blockingTaskTitles}` : ''}
     >
+      {/* Blocked Overlay / Icon with Tooltip */}
+      {isBlocked && (
+          <div className="absolute -top-2 -right-2 z-30 group/blocked">
+              <div className="bg-white dark:bg-slate-800 rounded-full p-1.5 shadow-md border border-red-200 dark:border-red-900 cursor-help transition-transform hover:scale-110 hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <Ban size={16} className="text-red-500" />
+              </div>
+              
+              {/* Detailed Tooltip */}
+              <div className="absolute right-0 top-8 w-64 p-3 bg-white dark:bg-slate-800 border border-red-100 dark:border-red-900/50 rounded-xl shadow-xl opacity-0 invisible group-hover/blocked:opacity-100 group-hover/blocked:visible transition-all duration-200 z-50 pointer-events-none translate-y-2 group-hover/blocked:translate-y-0 text-left">
+                  <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+                      <Ban size={14} className="text-red-500" />
+                      <span className="text-xs font-bold text-red-600 dark:text-red-400">
+                          Blocked by {task.dependencies?.filter(id => allTasks.find(t => t.id === id && t.status !== 'Done')).length} task(s)
+                      </span>
+                  </div>
+                  <ul className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                      {task.dependencies?.map(depId => {
+                          const parent = allTasks.find(t => t.id === depId);
+                          if (parent && parent.status !== 'Done') {
+                               return (
+                                  <li key={depId} className="flex items-start gap-2 text-xs">
+                                      <div className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${
+                                          parent.status === 'In Progress' ? 'bg-blue-500' : 'bg-slate-400'
+                                      }`}></div>
+                                      <div>
+                                          <p className="font-semibold text-slate-700 dark:text-slate-200 line-clamp-2">{parent.title}</p>
+                                          <p className="text-[10px] text-slate-500 dark:text-slate-400">{parent.status} • {parent.assignee}</p>
+                                      </div>
+                                  </li>
+                               );
+                          }
+                          return null;
+                      })}
+                  </ul>
+                   {/* Arrow (pointing up to the icon) */}
+                   <div className="absolute top-[-5px] right-3 w-2.5 h-2.5 bg-white dark:bg-slate-800 border-t border-l border-red-100 dark:border-red-900/50 transform rotate-45"></div>
+              </div>
+          </div>
+      )}
+
       {/* Content Wrapper */}
-      <div>
+      <div className={isBlocked ? 'opacity-60 grayscale-[0.5]' : ''}>
         {/* Row 1: Title & Priority (Top Aligned, Bold) */}
         <div className="flex justify-between items-start gap-2 mb-2">
             <h4 className={`flex-1 font-bold text-base leading-snug text-left line-clamp-3 ${theme.title}`}>
@@ -170,7 +241,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       </div>
 
       {/* Row 3: Footer (Meta Data) */}
-      <div className={`flex items-center justify-between pt-3 border-t border-black/5 dark:border-white/5 mt-auto ${theme.meta}`}>
+      <div className={`flex items-center justify-between pt-3 border-t border-black/5 dark:border-white/5 mt-auto ${theme.meta} ${isBlocked ? 'opacity-60' : ''}`}>
         <div className="flex items-center gap-2">
           {/* Assignee Avatar */}
           <div className="w-6 h-6 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold shadow-sm ring-1 ring-black/10 dark:ring-white/10 overflow-hidden text-slate-600 dark:text-slate-300">
@@ -215,6 +286,16 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
            </div>
         </div>
       </div>
+      <style>{`
+        .bg-stripes-gray {
+            background-color: #f3f4f6;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, #e5e7eb 10px, #e5e7eb 20px);
+        }
+        .dark .bg-stripes-gray {
+            background-color: #1e293b;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, #334155 10px, #334155 20px);
+        }
+      `}</style>
     </div>
   );
 };
@@ -229,6 +310,7 @@ interface KanbanColumnProps {
   onDragEnd: () => void;
   onDropTask: (taskId: string, newStatus: TaskStatus) => void;
   isReadOnly?: boolean;
+  allTasks?: Task[];
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({ 
@@ -240,25 +322,94 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onDragStart, 
   onDragEnd,
   onDropTask,
-  isReadOnly
+  isReadOnly,
+  allTasks = []
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
-  // Updated Color Styles for Tinted Columns
-  const getColorStyles = (color: string) => {
-     const map: Record<string, any> = {
-         slate: { bg: 'bg-slate-50/80 dark:bg-slate-900/30', border: 'border-slate-200 dark:border-slate-800', text: 'text-slate-700 dark:text-slate-200' },
-         blue: { bg: 'bg-blue-50/50 dark:bg-blue-900/10', border: 'border-blue-200 dark:border-blue-800/50', text: 'text-blue-700 dark:text-blue-200' },
-         emerald: { bg: 'bg-emerald-50/50 dark:bg-emerald-900/10', border: 'border-emerald-200 dark:border-emerald-800/50', text: 'text-emerald-700 dark:text-emerald-200' },
-         indigo: { bg: 'bg-indigo-50/50 dark:bg-indigo-900/10', border: 'border-indigo-200 dark:border-indigo-800/50', text: 'text-indigo-700 dark:text-indigo-200' },
-         purple: { bg: 'bg-purple-50/50 dark:bg-purple-900/10', border: 'border-purple-200 dark:border-purple-800/50', text: 'text-purple-700 dark:text-purple-200' },
-         rose: { bg: 'bg-rose-50/50 dark:bg-rose-900/10', border: 'border-rose-200 dark:border-rose-800/50', text: 'text-rose-700 dark:text-rose-200' },
-         amber: { bg: 'bg-amber-50/50 dark:bg-amber-900/10', border: 'border-amber-200 dark:border-amber-800/50', text: 'text-amber-700 dark:text-amber-200' },
-     };
-     return map[color] || map['slate'];
+  // --- Helper: Theme Generator ---
+  const getColumnTheme = (title: string, assignedColor?: string) => {
+    const t = title.toLowerCase();
+    let mode = 'slate'; // default
+
+    // Logic to determine theme based on Title first, fallback to assigned color
+    if (t.includes('done') || t.includes('complete') || t.includes('closed')) mode = 'emerald';
+    else if (t.includes('progress') || t.includes('active') || t.includes('doing')) mode = 'blue';
+    else if (t.includes('review') || t.includes('qa') || t.includes('test')) mode = 'purple';
+    else if (t.includes('hold') || t.includes('block') || t.includes('wait')) mode = 'rose';
+    else if (assignedColor && assignedColor !== 'slate') mode = assignedColor; // Explicit override
+    else if (t.includes('todo') || t.includes('to do') || t.includes('open') || t.includes('backlog')) mode = 'slate';
+    else mode = 'cyan'; // Default for custom/unknown columns
+
+    // Styles Map
+    switch (mode) {
+        case 'blue':
+        case 'indigo':
+            return {
+                container: 'border-blue-500 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-900/10',
+                header: 'text-blue-900 dark:text-blue-100',
+                badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+                addButton: 'hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-400 hover:text-blue-600',
+                ring: 'ring-blue-400/50'
+            };
+        case 'emerald':
+        case 'green':
+            return {
+                container: 'border-emerald-500 dark:border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10',
+                header: 'text-emerald-900 dark:text-emerald-100',
+                badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+                addButton: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-400 hover:text-emerald-600',
+                ring: 'ring-emerald-400/50'
+            };
+        case 'purple':
+        case 'violet':
+            return {
+                container: 'border-purple-500 dark:border-purple-500 bg-purple-50/50 dark:bg-purple-900/10',
+                header: 'text-purple-900 dark:text-purple-100',
+                badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+                addButton: 'hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-400 hover:text-purple-600',
+                ring: 'ring-purple-400/50'
+            };
+        case 'rose':
+        case 'red':
+            return {
+                container: 'border-rose-500 dark:border-rose-500 bg-rose-50/50 dark:bg-rose-900/10',
+                header: 'text-rose-900 dark:text-rose-100',
+                badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+                addButton: 'hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-400 hover:text-rose-600',
+                ring: 'ring-rose-400/50'
+            };
+        case 'amber':
+        case 'orange':
+             return {
+                container: 'border-amber-500 dark:border-amber-500 bg-amber-50/50 dark:bg-amber-900/10',
+                header: 'text-amber-900 dark:text-amber-100',
+                badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+                addButton: 'hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-400 hover:text-amber-600',
+                ring: 'ring-amber-400/50'
+            };
+        case 'cyan':
+        case 'teal':
+            return {
+                container: 'border-cyan-500 dark:border-cyan-500 bg-cyan-50/50 dark:bg-cyan-900/10',
+                header: 'text-cyan-900 dark:text-cyan-100',
+                badge: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
+                addButton: 'hover:bg-cyan-100 dark:hover:bg-cyan-900/30 text-cyan-400 hover:text-cyan-600',
+                ring: 'ring-cyan-400/50'
+            };
+        case 'slate':
+        default:
+            return {
+                container: 'border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/30',
+                header: 'text-slate-700 dark:text-slate-300',
+                badge: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+                addButton: 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600',
+                ring: 'ring-slate-400/50'
+            };
+    }
   };
 
-  const styles = getColorStyles(column.color);
+  const theme = getColumnTheme(column.title, column.color);
 
   const handleDragOver = (e: React.DragEvent) => {
       if (isReadOnly) return;
@@ -291,15 +442,15 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        flex-1 min-w-[320px] rounded-2xl p-4 flex flex-col h-full transition-all duration-300 border-t-4
-        ${styles.bg} ${styles.border}
-        ${isDragOver ? 'bg-opacity-100 ring-2 ring-indigo-400/50 shadow-xl scale-[1.01]' : 'border border-slate-100 dark:border-slate-800'}
+        flex-1 min-w-[320px] rounded-2xl p-4 flex flex-col h-full transition-all duration-300 border-t-4 border-x border-b border-x-transparent border-b-transparent
+        ${theme.container}
+        ${isDragOver ? `bg-opacity-100 ring-2 ${theme.ring} shadow-xl scale-[1.01]` : ''}
       `}
     >
       <div className="flex items-center justify-between mb-5 px-1">
         <div className="flex items-center gap-2">
-          <h3 className={`font-bold text-lg tracking-tight ${styles.text}`}>{column.title}</h3>
-          <span className="bg-white dark:bg-slate-800 px-2.5 py-0.5 rounded-full text-xs font-bold text-slate-500 dark:text-slate-400 shadow-sm border border-slate-100 dark:border-slate-700">
+          <h3 className={`font-bold text-lg tracking-tight ${theme.header}`}>{column.title}</h3>
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm ${theme.badge}`}>
             {tasks.length}
           </span>
         </div>
@@ -307,7 +458,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
            {!isReadOnly && (
              <button 
                onClick={onAddTask}
-               className={`p-1.5 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors text-slate-400 hover:text-indigo-600`}
+               className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
              >
                <Plus size={18} />
              </button>
@@ -325,14 +476,15 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             onClick={() => onTaskClick(task)}
             isDragging={draggedTaskId === task.id}
             isReadOnly={isReadOnly}
+            allTasks={allTasks}
           />
         ))}
         {tasks.length === 0 && (
           <div className={`
             h-32 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 transition-all
-            ${isDragOver ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700/50'}
+            ${isDragOver ? 'border-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-300/50 dark:border-slate-700/50'}
           `}>
-            <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-800 shadow-sm flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-white/50 dark:bg-slate-800/50 shadow-sm flex items-center justify-center">
               <Plus size={20} className="text-slate-300 dark:text-slate-600" />
             </div>
             <span className="text-sm font-medium text-slate-400 dark:text-slate-500">
@@ -347,7 +499,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
 const HIDDEN_COLUMNS_KEY = 'promanage_hidden_columns_v1';
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, onDropTask, onTaskClick, onAddColumn, isReadOnly = false }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, onDropTask, onTaskClick, onAddColumn, isReadOnly = false, allTasks = [] }) => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
@@ -499,6 +651,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
                 onDragEnd={handleDragEnd}
                 onDropTask={onDropTask}
                 isReadOnly={isReadOnly}
+                allTasks={allTasks}
                 />
             );
           })}

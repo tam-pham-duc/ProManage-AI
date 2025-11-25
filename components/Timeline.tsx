@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { Task } from '../types';
-import { User, Calendar, AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Clock } from 'lucide-react';
+import { User, Calendar, AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Clock, Link } from 'lucide-react';
 
 interface TimelineProps {
   tasks: Task[];
@@ -39,11 +39,12 @@ interface TimelineTaskCardProps {
   isDueToday: boolean;
   status: string;
   priority: string;
+  hasDependencies?: boolean;
   onClick?: (task: Task) => void;
 }
 
 const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({ 
-    task, left, width, top, isOverdue, isDueToday, status, priority, onClick 
+    task, left, width, top, isOverdue, isDueToday, status, priority, hasDependencies, onClick 
 }) => {
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -58,22 +59,22 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
   const dueDateStr = new Date(task.dueTs).toLocaleDateString('en-US');
   const ariaLabel = `Task: ${task.title}, Status: ${status}, Priority: ${priority}, From ${startDateStr} to ${dueDateStr}`;
 
-  // Style Construction
-  let bgClass = 'bg-slate-200 border-slate-300 text-slate-700 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-300';
-  if (status === 'Done') bgClass = 'bg-emerald-100 border-emerald-200 text-emerald-800 dark:bg-emerald-900/40 dark:border-emerald-800 dark:text-emerald-300';
-  else if (status === 'In Progress') bgClass = 'bg-blue-100 border-blue-200 text-blue-800 dark:bg-blue-900/40 dark:border-blue-800 dark:text-blue-300';
+  // Style Construction - Default Z-10 to ensure it sits below sticky sidebar (Z-40)
+  let bgClass = 'z-10 bg-slate-200 border-slate-300 text-slate-700 dark:bg-slate-700 dark:border-slate-600 dark:text-slate-300';
+  if (status === 'Done') bgClass = 'z-10 bg-emerald-100 border-emerald-200 text-emerald-800 dark:bg-emerald-900/40 dark:border-emerald-800 dark:text-emerald-300';
+  else if (status === 'In Progress') bgClass = 'z-10 bg-blue-100 border-blue-200 text-blue-800 dark:bg-blue-900/40 dark:border-blue-800 dark:text-blue-300';
   
   // Priority Override if not Done
   if (priority === 'High' && status !== 'Done') {
-      bgClass = 'bg-rose-100 border-rose-200 text-rose-800 dark:bg-rose-900/40 dark:border-rose-800 dark:text-rose-300';
+      bgClass = 'z-10 bg-rose-100 border-rose-200 text-rose-800 dark:bg-rose-900/40 dark:border-rose-800 dark:text-rose-300';
   }
 
-  // Due Today Override (High Visibility but not Panic)
+  // Due Today Override (High Visibility but not Panic) - Z-20
   if (isDueToday && status !== 'Done') {
       bgClass = 'bg-amber-50 border-amber-400 text-amber-800 dark:bg-amber-900/40 dark:border-amber-500 dark:text-amber-200 ring-1 ring-amber-400 z-20';
   }
 
-  // Overdue Override (Highest Z-Index z-30)
+  // Overdue Override (Highest Z-Index for tasks z-30, but still below Sidebar z-40)
   if (isOverdue && status !== 'Done') {
       bgClass = 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-300 ring-1 ring-red-500 z-30 shadow-sm';
   }
@@ -110,6 +111,10 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
           ) : null}
           
           <span className="truncate font-bold drop-shadow-sm">{task.title}</span>
+          
+          {hasDependencies && (
+              <Link size={10} className="shrink-0 opacity-60" />
+          )}
       </div>
       
       {/* Hover Details (Z-50 to float above everything) */}
@@ -117,6 +122,7 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
           <p className="font-bold text-sm">{task.title}</p>
           <p className="text-slate-300">{status} • {priority}</p>
           <p className="text-slate-400">{startDateStr} - {dueDateStr}</p>
+          {hasDependencies && <p className="text-slate-300 flex items-center gap-1 mt-1"><Link size={10}/> Has Dependencies</p>}
           {isDueToday && <p className="text-amber-400 font-bold mt-1">Due Today</p>}
           {isOverdue && <p className="text-red-400 font-bold mt-1">Overdue</p>}
       </div>
@@ -162,10 +168,10 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
     // Row Container: Relative + z-10 establishes a stacking context for the row
     <div className="flex border-b border-slate-100 dark:border-slate-700/50 relative z-10 group/row" role="row">
         {/* Sticky Left Column: Assignee Info */}
-        {/* z-30 ensures it sits above the tasks (z-10/z-20) within this row context */}
+        {/* z-40 ensures it sits above the tasks (z-10/z-20/z-30) within this row context */}
         {/* Solid background required to cover tasks sliding underneath */}
         <div 
-            className="sticky left-0 z-30 w-64 shrink-0 bg-slate-50 dark:bg-slate-750 border-r border-slate-200 dark:border-slate-700 p-4 flex items-center gap-3 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)] transition-colors group-hover/row:bg-white dark:group-hover/row:bg-slate-800 focus:outline-none focus:bg-white dark:focus:bg-slate-800" 
+            className="sticky left-0 z-40 w-64 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 p-4 flex items-center gap-3 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)] transition-colors focus:outline-none" 
             role="rowheader"
             tabIndex={0}
             aria-label={`${group.assignee}, ${group.tasks.length} tasks`}
@@ -196,6 +202,8 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
                     }
 
                     const coords = getTaskCoords(task, laneIdx);
+                    const hasDependencies = !!(task.dependencies && task.dependencies.length > 0);
+
                     return (
                         <TimelineTaskCard 
                           key={task.id} 
@@ -207,6 +215,7 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
                           isDueToday={coords.isDueToday}
                           status={task.status}
                           priority={task.priority}
+                          hasDependencies={hasDependencies}
                           onClick={onTaskClick} 
                         />
                     );
@@ -528,11 +537,11 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
          <div className="min-w-fit">
             
             {/* --- 1. HEADER ROW --- */}
-            {/* z-40 ensures the Date Header floats above all task content (z-10/z-20) and rows (z-10) */}
-            <div className="flex sticky top-0 z-40 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm" role="row">
+            {/* z-30 ensures the Date Header floats above task content but plays nice with stacking context */}
+            <div className="flex sticky top-0 z-30 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shadow-sm" role="row">
                
                {/* Sticky Corner: Team Member Label */}
-               {/* z-50 ensures this top-left corner floats above everything, including the sticky left column (z-30) */}
+               {/* z-50 ensures this top-left corner floats above everything, including the sticky left column (z-40) */}
                <div className="sticky left-0 z-50 w-64 shrink-0 bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 flex items-center px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]" role="columnheader">
                    Team Member
                </div>

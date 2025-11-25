@@ -4,8 +4,6 @@ import { db } from '../firebase';
 import { TaskPriority, ActivityLog, ActivityType } from '../types';
 
 // Helper Data Generators
-const VERBS = ["Install", "Inspect", "Repair", "Pour", "Draft", "Survey", "Excavate", "Paint", "Wire", "Frame", "Level", "Demolish", "Weld", "Seal", "Reinforce"];
-const NOUNS = ["Foundation", "HVAC System", "Roofing", "Drywall", "Electrical Panel", "Plumbing", "Windows", "Flooring", "Insulation", "Landscaping", "Steel Beams", "Concrete Slab", "Ventilation", "Support Columns"];
 const USERS = [
     { name: 'Sarah W.', initials: 'SW', avatar: '' },
     { name: 'Mike R.', initials: 'MR', avatar: '' },
@@ -27,22 +25,6 @@ const getRandomTimestamp = (startOffsetHours: number) => {
     date.setHours(date.getHours() - Math.floor(Math.random() * startOffsetHours));
     return date.toISOString();
 };
-
-const getRandomStatus = (bias?: 'future' | 'active' | 'urgent'): string => {
-    const statuses = ['To Do', 'To Do', 'In Progress', 'In Progress', 'Done'];
-    if (bias === 'future') return Math.random() > 0.85 ? 'In Progress' : 'To Do';
-    if (bias === 'active') return getRandomItem(['To Do', 'In Progress', 'Done']);
-    if (bias === 'urgent') return Math.random() > 0.6 ? 'In Progress' : 'To Do';
-    return getRandomItem(statuses);
-};
-
-const getRandomPriority = (bias?: 'urgent' | 'low'): TaskPriority => {
-    if (bias === 'urgent') return Math.random() > 0.3 ? 'High' : 'Medium';
-    if (bias === 'low') return Math.random() > 0.7 ? 'Medium' : 'Low';
-    return getRandomItem(['High', 'Medium', 'Low']);
-};
-
-const generateTitle = () => `${getRandomItem(VERBS)} ${getRandomItem(NOUNS)}`;
 
 export const clearDevData = async (userId: string) => {
     const batch = writeBatch(db);
@@ -70,156 +52,147 @@ export const clearDevData = async (userId: string) => {
 export const generateDemoData = async (userId: string) => {
     const batch = writeBatch(db);
 
-    // Define Scenarios
-    const scenarios = [
-        {
-            name: 'Luxury Villa - Riverside',
-            client: 'Rivera Holdings',
-            address: '450 Palm Blvd',
-            type: 'complex',
-            taskCount: 20,
-            dateBias: { start: -30, end: 30 }
-        },
-        {
-            name: 'Emergency Repair - Downtown',
-            client: 'City Metro Services',
-            address: '880 Main St',
-            type: 'urgent',
-            taskCount: 15,
-            dateBias: { start: -5, end: 10 }
-        },
-        {
-            name: 'Q4 Planning - New City',
-            client: 'Urban Future Grp',
-            address: '101 Innovation Way',
-            type: 'future',
-            taskCount: 15,
-            dateBias: { start: 10, end: 60 }
-        }
-    ];
+    // --- 1. Create "Structural Engineering" Project (Complex Dependencies) ---
+    const complexProjectRef = doc(collection(db, 'projects'));
+    batch.set(complexProjectRef, {
+        ownerId: userId,
+        name: 'Skyline Tower - Phase 1',
+        clientName: 'Apex Developers',
+        address: '200 Innovation Blvd',
+        status: 'Active',
+        createdAt: new Date().toISOString(),
+        members: [
+            { uid: userId, email: 'demo@user.com', displayName: 'You', role: 'admin' },
+            { uid: 'u1', email: 'sarah@demo.com', displayName: 'Sarah W.', role: 'editor' }
+        ],
+        memberUIDs: [userId, 'u1']
+    });
 
-    // Generate Data
-    for (const scenario of scenarios) {
-        // Create Project
-        const projectRef = doc(collection(db, 'projects'));
-        batch.set(projectRef, {
+    // Create IDs for dependency chaining
+    const taskFoundationRef = doc(collection(db, 'tasks'));
+    const taskWallsRef = doc(collection(db, 'tasks'));
+    const taskRoofRef = doc(collection(db, 'tasks'));
+    const taskInteriorRef = doc(collection(db, 'tasks'));
+    const taskDeletedRef = doc(collection(db, 'tasks'));
+
+    // Task A: Foundation (In Progress)
+    batch.set(taskFoundationRef, {
+        ownerId: userId,
+        projectId: complexProjectRef.id,
+        title: "Pour Concrete Foundation",
+        status: "In Progress",
+        priority: "High",
+        startDate: getRandomDate(-5, -2),
+        dueDate: getRandomDate(2, 5),
+        assignee: "Sarah W.",
+        assigneeId: "u1",
+        estimatedCost: 25000,
+        actualCost: 10000,
+        description: "<p>Coordinate with concrete supplier for <b>Grade 40 mix</b>.</p><ul><li>Check rebar spacing</li><li>Verify formwork integrity</li><li>Schedule pump truck</li></ul>",
+        subtasks: [
+            { id: "st1", title: "Excavation", completed: true },
+            { id: "st2", title: "Rebar Installation", completed: true },
+            { id: "st3", title: "Pouring", completed: false }
+        ],
+        comments: [],
+        activityLog: [{ id: "log1", action: "started task", timestamp: getRandomTimestamp(24), userName: "Sarah W.", type: "status_change" }],
+        attachments: [],
+        tags: [{ id: "t1", name: "Structural", colorClass: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300" }],
+        createdAt: serverTimestamp()
+    });
+
+    // Task B: Walls (Blocked by Foundation)
+    batch.set(taskWallsRef, {
+        ownerId: userId,
+        projectId: complexProjectRef.id,
+        title: "Erect Steel Frame & Walls",
+        status: "To Do",
+        priority: "Medium",
+        startDate: getRandomDate(6, 8),
+        dueDate: getRandomDate(15, 20),
+        assignee: "Unassigned",
+        assigneeId: "UN",
+        estimatedCost: 45000,
+        actualCost: 0,
+        description: "<p>Begin steel erection sequence as per <i>Sheet S-201</i>.</p><p><b>Note:</b> Ensure anchor bolts are cured before starting.</p>",
+        dependencies: [taskFoundationRef.id], // Dependency Link
+        subtasks: [],
+        comments: [],
+        activityLog: [],
+        attachments: [],
+        tags: [{ id: "t1", name: "Structural", colorClass: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300" }],
+        createdAt: serverTimestamp()
+    });
+
+    // Task C: Roof (Blocked by Walls)
+    batch.set(taskRoofRef, {
+        ownerId: userId,
+        projectId: complexProjectRef.id,
+        title: "Install Roof Decking",
+        status: "To Do",
+        priority: "Low",
+        startDate: getRandomDate(21, 22),
+        dueDate: getRandomDate(25, 30),
+        assignee: "Mike R.",
+        assigneeId: "u2",
+        estimatedCost: 15000,
+        actualCost: 0,
+        description: "Install corrugated metal decking and weatherproofing layer.",
+        dependencies: [taskWallsRef.id], // Dependency Link
+        subtasks: [],
+        comments: [],
+        activityLog: [],
+        attachments: [],
+        tags: [],
+        createdAt: serverTimestamp()
+    });
+
+    // Task D: Soft Deleted Example
+    batch.set(taskDeletedRef, {
+        ownerId: userId,
+        projectId: complexProjectRef.id,
+        title: "Legacy Blueprints (Archived)",
+        status: "Done",
+        priority: "Low",
+        startDate: getRandomDate(-30, -20),
+        dueDate: getRandomDate(-10, -5),
+        assignee: "Unassigned",
+        description: "Old version of plans. Deleted to avoid confusion.",
+        isDeleted: true, // Soft Delete Flag
+        deletedAt: new Date().toISOString(),
+        createdAt: serverTimestamp()
+    });
+
+
+    // --- 2. Create "Urgent Repairs" Project (Simple List) ---
+    const urgentProjectRef = doc(collection(db, 'projects'));
+    batch.set(urgentProjectRef, {
+        ownerId: userId,
+        name: 'Downtown Emergency Repairs',
+        clientName: 'City Metro',
+        address: '880 Main St',
+        status: 'Active',
+        createdAt: getRandomTimestamp(48), // Recent
+        members: [{ uid: userId, email: 'demo@user.com', displayName: 'You', role: 'admin' }],
+        memberUIDs: [userId]
+    });
+
+    for (let i = 0; i < 5; i++) {
+        const tRef = doc(collection(db, 'tasks'));
+        batch.set(tRef, {
             ownerId: userId,
-            name: scenario.name,
-            clientName: scenario.client,
-            address: scenario.address,
-            status: 'Active',
-            createdAt: new Date().toISOString(),
-            members: [
-                { uid: userId, email: 'demo@user.com', displayName: 'You', role: 'admin' },
-                { uid: 'u1', email: 'sarah@demo.com', displayName: 'Sarah W.', role: 'editor' },
-                { uid: 'u2', email: 'mike@demo.com', displayName: 'Mike R.', role: 'viewer' }
-            ],
-            memberUIDs: [userId, 'u1', 'u2']
+            projectId: urgentProjectRef.id,
+            title: `Emergency Repair Unit ${i + 101}`,
+            status: Math.random() > 0.5 ? 'In Progress' : 'To Do',
+            priority: 'High',
+            startDate: getRandomDate(-1, 0),
+            dueDate: getRandomDate(1, 3),
+            assignee: "Unassigned",
+            estimatedCost: 500,
+            description: "Standard emergency response ticket.",
+            tags: [{ id: 'urg', name: 'Urgent', colorClass: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' }],
+            createdAt: serverTimestamp()
         });
-
-        // Create Tasks
-        for (let i = 0; i < scenario.taskCount; i++) {
-            const taskRef = doc(collection(db, 'tasks'));
-            
-            // Basic Task Data
-            let status = getRandomStatus(scenario.type as any);
-            let priority = getRandomPriority(scenario.type as any);
-            
-            let startDate = getRandomDate(scenario.dateBias.start, scenario.dateBias.end - 5);
-            let dueDate = getRandomDate(scenario.dateBias.start + 5, scenario.dateBias.end);
-            let estimatedCost = Math.floor(Math.random() * 5000) + 500;
-            let actualCost = status === 'Done' ? estimatedCost + (Math.random() * 1000 - 500) : 0;
-            
-            let title = generateTitle();
-            let description = `Standard task generated for **${scenario.name}**.\n\nEnsure all safety protocols are followed.`;
-            let subtasks: any[] = [];
-            let comments: any[] = [];
-            let tags: any[] = [];
-            let assignee = getRandomItem(['Sarah W.', 'Mike R.', 'Alex J.', 'Unassigned']);
-            let assigneeId = 'UN';
-            let assigneeAvatar = '';
-
-            if (assignee !== 'Unassigned') {
-                // Mock IDs
-                if (assignee === 'Sarah W.') { assigneeId = 'u1'; }
-                if (assignee === 'Mike R.') { assigneeId = 'u2'; }
-            }
-
-            // --- EDGE CASES INJECTION ---
-            let activityLogs: ActivityLog[] = [];
-            const createdUser = getRandomItem(USERS);
-            
-            activityLogs.push({ 
-                id: `log-${i}-create`, 
-                action: 'created this task', 
-                timestamp: getRandomTimestamp(120), // ISO string
-                userName: createdUser.name,
-                type: 'create'
-            });
-
-            // Case 1: Overdue Task
-            if (scenario.type === 'complex' && i === 0) {
-                title = "CRITICAL: Foundation Inspection (Overdue)";
-                status = "In Progress";
-                priority = "High";
-                dueDate = getRandomDate(-10, -2); // Past date
-                tags.push({ id: 't-urgent', name: 'Urgent', colorClass: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' });
-                
-                activityLogs.push({
-                    id: `log-${i}-alert`,
-                    action: 'marked as urgent',
-                    details: 'Priority raised to High due to delays',
-                    timestamp: getRandomTimestamp(5),
-                    userName: 'System',
-                    type: 'alert'
-                });
-            }
-
-            // Case 2: Discussion Heavy
-            if (scenario.type === 'complex' && i === 2) {
-                title = "Client Design Review";
-                comments = [
-                    { id: 'c1', user: 'Sarah W.', text: 'Client wants to change the facade material to brick.', timestamp: getRandomTimestamp(48) },
-                    { id: 'c2', user: 'Mike R.', text: 'That will increase the budget by approx $2k.', timestamp: getRandomTimestamp(24) },
-                ];
-            }
-
-            // Add random status changes
-            if (Math.random() > 0.7) {
-                const u = getRandomItem(USERS);
-                const oldStatus = status === 'Done' ? 'In Progress' : 'To Do';
-                activityLogs.push({
-                     id: `log-${i}-update`,
-                     action: 'changed status',
-                     details: `From ${oldStatus} -> ${status}`,
-                     timestamp: getRandomTimestamp(10),
-                     userName: u.name,
-                     type: 'status_change'
-                });
-            }
-
-            batch.set(taskRef, {
-                ownerId: userId,
-                projectId: projectRef.id,
-                title: title,
-                status: status,
-                priority: priority,
-                startDate: startDate,
-                dueDate: dueDate,
-                assignee: assignee,
-                assigneeId: assigneeId,
-                assigneeAvatar: assigneeAvatar,
-                estimatedCost: estimatedCost,
-                actualCost: actualCost,
-                description: description,
-                subtasks: subtasks,
-                comments: comments,
-                activityLog: activityLogs,
-                attachments: [],
-                tags: tags,
-                createdAt: serverTimestamp()
-            });
-        }
     }
     
     await batch.commit();

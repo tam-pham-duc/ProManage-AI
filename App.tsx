@@ -1,11 +1,12 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Menu, Search, Loader2, Settings, Trash2, Edit3, ChevronDown, Copy, PanelLeft } from 'lucide-react';
+import { Menu, Search, Loader2, Settings, Trash2, Edit3, ChevronDown, Copy, PanelLeft, AlertTriangle, Send } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import KanbanBoard from './components/KanbanBoard';
 import Timeline from './components/Timeline';
 import CalendarView from './components/CalendarView';
+import ProjectMapView from './components/ProjectMapView';
 import ImageGenerator from './components/ImageGenerator';
 import TaskModal from './components/TaskModal';
 import ProjectModal from './components/ProjectModal';
@@ -13,7 +14,6 @@ import FilterBar from './components/FilterBar';
 import SettingsView from './components/SettingsView';
 import AuthScreen from './components/AuthScreen';
 import ProjectHub from './components/ProjectHub';
-import DevToolbar from './components/DevToolbar';
 import BackgroundLayer from './components/BackgroundLayer';
 import ReminderModal from './components/ReminderModal';
 import NotificationCenter from './components/NotificationCenter';
@@ -22,7 +22,7 @@ import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColu
 
 // Firebase Imports
 import { auth, db } from './firebase';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseUser, signOut, sendEmailVerification } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, writeBatch, or } from 'firebase/firestore';
 
 const THEME_KEY = 'promanage_theme_v1';
@@ -71,7 +71,7 @@ const sanitizeFirestoreData = (data: any): any => {
   return data;
 };
 
-const ProManageApp: React.FC = () => {
+const App: React.FC = () => {
   const { notify } = useNotification();
   
   // --- Auth State ---
@@ -177,8 +177,18 @@ const ProManageApp: React.FC = () => {
 
   // --- Firebase Auth Listener ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
+        // Session Expiration Logic (Custom Persistence)
+        const expiry = localStorage.getItem('session_expiry');
+        if (expiry && Date.now() > parseInt(expiry)) {
+            signOut(auth).then(() => {
+                localStorage.removeItem('session_expiry');
+                notify('warning', 'Session expired. Please login again.');
+                return;
+            });
+        }
+
         const userRef = doc(db, 'users', firebaseUser.uid);
         const unsubUser = onSnapshot(userRef, (docSnap) => {
            if (docSnap.exists()) {
@@ -323,12 +333,17 @@ const ProManageApp: React.FC = () => {
 
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
-  const handleLogout = () => {
-    setActiveTab('dashboard'); 
-    setSelectedProjectId(null);
-    sessionStorage.removeItem('promanage_reminder_shown'); 
-    localStorage.removeItem(SNOOZE_KEY);
-    notify('info', 'Logged out successfully');
+  const handleLogout = async () => {
+    try {
+        await signOut(auth);
+        setActiveTab('dashboard'); 
+        setSelectedProjectId(null);
+        sessionStorage.removeItem('promanage_reminder_shown'); 
+        localStorage.removeItem(SNOOZE_KEY);
+        notify('info', 'Logged out successfully');
+    } catch (error) {
+        console.error("Logout failed", error);
+    }
   };
 
   const handleSelectProject = (projectId: string | null) => {
@@ -350,6 +365,21 @@ const ProManageApp: React.FC = () => {
         setFilterPriority('All');
         setSearchQuery('');
     }
+  };
+
+  const handleResendVerification = async () => {
+      if (auth.currentUser && !auth.currentUser.emailVerified) {
+          try {
+              await sendEmailVerification(auth.currentUser);
+              notify('success', 'Verification email sent!');
+          } catch (e: any) {
+              if (e.code === 'auth/too-many-requests') {
+                  notify('warning', 'Please wait before requesting another email.');
+              } else {
+                  notify('error', 'Failed to send verification email.');
+              }
+          }
+      }
   };
 
   // --- Project CRUD Handlers ---
@@ -421,53 +451,74 @@ const ProManageApp: React.FC = () => {
   };
 
   const handleDeleteProject = async (projectIdToDelete?: string) => {
-      // Use the passed ID or fall back to the selected project
       const id = projectIdToDelete || selectedProjectId;
       if (!id) return;
 
-      const project = projects.find(p => p.id === id);
+      const projectToDelete = projects.find(p => p.id === id);
       
-      if (!project) return;
+      if (!projectToDelete) return;
       
-      // Only Owner can delete
-      if (project.ownerId !== currentUser?.id) {
+      if (projectToDelete.ownerId !== currentUser?.id) {
           notify('warning', "Only the project owner can delete this project.");
           return;
       }
 
-      // Secure Confirmation
       const isConfirmed = window.confirm("This will delete the project and ALL its tasks. This cannot be undone.");
       if (!isConfirmed) return;
 
       try {
-          const batch = writeBatch(db);
-          
-          // 1. Delete Project Document
-          const projectRef = doc(db, 'projects', project.id);
-          batch.delete(projectRef);
-          
-          // 2. Delete All Associated Tasks
-          const tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', project.id));
+          // Chunked Deletion for reliability (Firestore Batch limit is 500)
+          // 1. Get all tasks first
+          const tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', projectToDelete.id));
           const tasksSnap = await getDocs(tasksQuery);
-          tasksSnap.forEach(doc => batch.delete(doc.ref));
           
-          // Commit Batch
-          await batch.commit();
+          const CHUNK_SIZE = 400; // Safe margin below 500
+          const chunks = [];
+          let currentBatch = writeBatch(db);
+          let opCount = 0;
           
-          // 3. Cleanup State & Redirect
-          if (selectedProjectId === project.id) {
-            setSelectedProjectId(null);
-            setActiveTab('projects'); // Return to Hub
+          // Add Project Delete to first batch
+          currentBatch.delete(doc(db, 'projects', projectToDelete.id));
+          opCount++;
+
+          tasksSnap.docs.forEach((taskDoc) => {
+             if (opCount >= CHUNK_SIZE) {
+                 chunks.push(currentBatch);
+                 currentBatch = writeBatch(db);
+                 opCount = 0;
+             }
+             currentBatch.delete(taskDoc.ref);
+             opCount++;
+          });
+          
+          // Push final batch
+          chunks.push(currentBatch);
+
+          // Execute all batches
+          for (const batch of chunks) {
+              await batch.commit();
           }
           
+          // 3. Cleanup State & Redirect
+          // Crucial: Clear selection BEFORE updating tabs/modals to prevent rendering errors
+          if (selectedProjectId === projectToDelete.id) {
+            setSelectedProjectId(null);
+          }
+          
+          // Update UI state
           setIsProjectModalOpen(false);
           setIsProjectSettingsOpen(false);
           setProjectToEdit(null);
           
+          // Redirect if needed
+          if (selectedProjectId === projectToDelete.id) {
+              setActiveTab('projects');
+          }
+          
           notify('success', "Project and all associated data deleted.");
       } catch (e) {
           console.error("Error deleting project:", e);
-          notify('error', "Failed to delete project");
+          notify('error', "Failed to delete project. Please try again.");
       }
   };
 
@@ -617,8 +668,11 @@ const ProManageApp: React.FC = () => {
                 }],
                 attachments: taskData.attachments || [],
                 tags: taskData.tags || [],
+                dependencies: taskData.dependencies || [],
                 estimatedCost: taskData.estimatedCost || 0,
                 actualCost: taskData.actualCost || 0,
+                estimatedHours: taskData.estimatedHours || 0,
+                estimatedDays: taskData.estimatedDays || 0,
                 description: taskData.description || '',
                 createdAt: serverTimestamp()
             };
@@ -784,6 +838,7 @@ const ProManageApp: React.FC = () => {
               onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} 
               onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn}
               isReadOnly={userRole === 'guest'}
+              allTasks={tasks}
             />}
         </div>
       );
@@ -797,6 +852,18 @@ const ProManageApp: React.FC = () => {
              />
              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : 
              <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />}
+        </div>
+      );
+      case 'map': return (
+        <div className="flex flex-col h-full">
+             <FilterBar 
+               searchQuery={searchQuery} setSearchQuery={setSearchQuery} 
+               filterPriority={filterPriority} setFilterPriority={setFilterPriority} 
+               filterStatus={filterStatus} setFilterStatus={setFilterStatus} 
+               onReset={resetFilters} columns={columns} 
+             />
+             {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : 
+             <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} />}
         </div>
       );
       case 'calendar': return (
@@ -857,8 +924,6 @@ const ProManageApp: React.FC = () => {
     <div className={isDarkMode ? 'dark' : ''}>
       <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-300 relative">
         
-        {currentUser.email === 'admin@dev.com' && <DevToolbar currentUser={currentUser} />}
-
         <Sidebar 
           activeTab={activeTab} setActiveTab={setActiveTab}
           isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen}
@@ -871,6 +936,22 @@ const ProManageApp: React.FC = () => {
         />
         <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
           <BackgroundLayer activeTab={activeTab} isDarkMode={isDarkMode} />
+
+          {/* Email Verification Banner */}
+          {auth.currentUser && !auth.currentUser.emailVerified && (
+             <div className="bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 px-4 py-2 text-xs md:text-sm font-bold flex items-center justify-between shadow-sm relative z-50">
+                <div className="flex items-center gap-2">
+                    <AlertTriangle size={16} />
+                    <span>Your email is not verified. Please check your inbox.</span>
+                </div>
+                <button 
+                  onClick={handleResendVerification}
+                  className="bg-amber-200 hover:bg-amber-300 dark:bg-amber-800 dark:hover:bg-amber-700 text-amber-900 dark:text-amber-100 px-3 py-1 rounded-md transition-colors flex items-center gap-1"
+                >
+                   <Send size={12} /> Resend Link
+                </button>
+             </div>
+          )}
 
           <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 flex items-center justify-between sticky top-0 z-40 h-16 relative">
              <div className="flex items-center gap-3">
@@ -955,6 +1036,8 @@ const ProManageApp: React.FC = () => {
         isReadOnly={modalPermissions.isReadOnly}
         canEdit={modalPermissions.canEdit}
         canDelete={modalPermissions.canDelete}
+        allTasks={tasks}
+        onTaskSelect={openEditTaskModal}
       />
 
       <ProjectModal
@@ -973,12 +1056,12 @@ const ProManageApp: React.FC = () => {
   );
 };
 
-const App = () => {
+const MainApp = () => {
   return (
     <NotificationProvider>
-      <ProManageApp />
+      <App />
     </NotificationProvider>
   )
 }
 
-export default App;
+export default MainApp;

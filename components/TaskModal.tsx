@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2 } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember } from '../types';
 import RichTextEditor from './RichTextEditor';
 
@@ -21,6 +21,12 @@ interface TaskModalProps {
   isReadOnly?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  
+  // Dependency Data
+  allTasks?: Task[];
+  
+  // Navigation
+  onTaskSelect?: (task: Task) => void;
 }
 
 const TaskModal: React.FC<TaskModalProps> = ({ 
@@ -37,9 +43,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
   initialDate,
   isReadOnly = false,
   canEdit = true,
-  canDelete = true
+  canDelete = true,
+  allTasks = [],
+  onTaskSelect
 }) => {
-  const [activeTab, setActiveTab] = useState<'details' | 'discussion'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'flow'>('details');
   
   // Form State
   const [title, setTitle] = useState('');
@@ -57,6 +65,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
   
   const [estimatedCost, setEstimatedCost] = useState('');
   const [actualCost, setActualCost] = useState('');
+  const [estimatedHours, setEstimatedHours] = useState('');
+  const [estimatedDays, setEstimatedDays] = useState('');
   
   // Subtask State
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
@@ -83,9 +93,33 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [tagInput, setTagInput] = useState('');
   const [showTagDropdown, setShowTagDropdown] = useState(false);
 
+  // Dependencies State
+  const [dependencies, setDependencies] = useState<string[]>([]);
+  const [showDependencyDropdown, setShowDependencyDropdown] = useState(false);
+
   const activeMembers = useMemo(() => {
       return projectMembers.filter(m => (m.status === 'active' || !m.status) && m.uid !== null);
   }, [projectMembers]);
+
+  // Potential Dependencies: All tasks except current one (to avoid self-loop)
+  const potentialDependencies = useMemo(() => {
+     return allTasks.filter(t => t.id !== task?.id);
+  }, [allTasks, task]);
+
+  // --- Derived Flow Data ---
+  const upstreamTasks = useMemo(() => {
+     if (!task || !task.dependencies) return [];
+     return task.dependencies.map(id => allTasks.find(t => t.id === id)).filter(Boolean) as Task[];
+  }, [task, allTasks]);
+
+  const downstreamTasks = useMemo(() => {
+      if (!task) return [];
+      return allTasks.filter(t => t.dependencies?.includes(task.id));
+  }, [task, allTasks]);
+
+  const isFlowBlocked = useMemo(() => {
+      return upstreamTasks.some(t => t.status !== 'Done');
+  }, [upstreamTasks]);
 
   useEffect(() => {
     if (isOpen) {
@@ -115,8 +149,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
         setActivityLog(task.activityLog || []);
         setAttachments(task.attachments || []);
         setTags(task.tags || []);
+        setDependencies(task.dependencies || []);
         setEstimatedCost(task.estimatedCost?.toString() || '');
         setActualCost(task.actualCost?.toString() || '');
+        setEstimatedHours(task.estimatedHours?.toString() || '');
+        setEstimatedDays(task.estimatedDays?.toString() || '');
       } else {
         setTitle('');
         setDescription('');
@@ -134,8 +171,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
         setActivityLog([]);
         setAttachments([]);
         setTags([]);
+        setDependencies([]);
         setEstimatedCost('');
         setActualCost('');
+        setEstimatedHours('');
+        setEstimatedDays('');
       }
       setNewSubtaskTitle('');
       setNewComment('');
@@ -147,6 +187,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setMentionQuery('');
       setMentionHighlightIndex(0);
       setActiveTab('details');
+      setShowDependencyDropdown(false);
     }
   }, [isOpen, task, columns, projectMembers, initialDate]);
 
@@ -223,11 +264,18 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setTags(tags.filter(t => t.id !== tagId));
   };
 
+  const handleToggleDependency = (depTaskId: string) => {
+     if (isReadOnly) return;
+     if (dependencies.includes(depTaskId)) {
+         setDependencies(prev => prev.filter(id => id !== depTaskId));
+     } else {
+         setDependencies(prev => [...prev, depTaskId]);
+     }
+  };
+
   const handleSendComment = () => {
     if (!newComment.trim()) return;
     // Comments allowed even in read-only (usually) - but for strict Guest mode, maybe not?
-    // Requirement says: Guest = All false (Read-only mode). 
-    // Assuming Guests can't comment either if "All false".
     if (isReadOnly) return; 
     
     setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toLocaleString() }]);
@@ -312,8 +360,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
       assigneeId: assigneeId || 'UN',
       assigneeAvatar: assigneeAvatar,
       subtasks, comments, activityLog, attachments, tags,
+      dependencies,
       estimatedCost: parseFloat(estimatedCost) || 0, 
       actualCost: parseFloat(actualCost) || 0,
+      estimatedHours: parseFloat(estimatedHours) || 0,
+      estimatedDays: parseFloat(estimatedDays) || 0,
       reminderDays: reminderDays
     });
   };
@@ -347,10 +398,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
         <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6">
           <button onClick={() => setActiveTab('details')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Details</button>
           <button onClick={() => setActiveTab('discussion')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Discussion <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length}</span></button>
+          {task && (
+              <button onClick={() => setActiveTab('flow')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'flow' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
+                  Task Flow <GitBranch size={14} className={activeTab === 'flow' ? 'text-indigo-500' : ''} />
+              </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-white dark:bg-slate-800">
-          <form id="taskForm" onSubmit={handleSubmit} className="space-y-7">
+          <form id="taskForm" onSubmit={handleSubmit} className="space-y-7 h-full">
             {activeTab === 'details' && (
               <>
                 <div>
@@ -430,6 +486,74 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         </select>
                     </div>
                 </div>
+                
+                {/* Task Dependencies */}
+                <div className="relative">
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <LinkIcon size={12} /> Dependencies / Prerequisites
+                    </label>
+                    
+                    <div className="flex flex-wrap gap-2 mb-2">
+                       {dependencies.map(depId => {
+                           const parentTask = allTasks.find(t => t.id === depId);
+                           const isCompleted = parentTask?.status === 'Done';
+                           return (
+                               <span 
+                                  key={depId} 
+                                  className={`px-2 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 border ${isCompleted ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'}`}
+                                >
+                                   {parentTask ? parentTask.title : 'Unknown Task'}
+                                   {!isReadOnly && (
+                                     <button type="button" onClick={() => handleToggleDependency(depId)} className="hover:bg-black/10 rounded-full p-0.5">
+                                       <X size={12} />
+                                     </button>
+                                   )}
+                               </span>
+                           );
+                       })}
+                    </div>
+
+                    {!isReadOnly && (
+                       <div className="relative">
+                          <button 
+                              type="button" 
+                              onClick={() => setShowDependencyDropdown(!showDependencyDropdown)}
+                              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                          >
+                             <Plus size={12} /> Add Dependency
+                          </button>
+                          
+                          {showDependencyDropdown && (
+                             <>
+                                <div className="fixed inset-0 z-30" onClick={() => setShowDependencyDropdown(false)}></div>
+                                <div className="absolute z-40 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-60 overflow-y-auto custom-scrollbar">
+                                   <div className="p-2 text-xs text-slate-400 font-medium border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50">Select tasks that must be completed before this one:</div>
+                                   {potentialDependencies.map(pt => {
+                                       const isSelected = dependencies.includes(pt.id);
+                                       return (
+                                          <button 
+                                             key={pt.id}
+                                             type="button"
+                                             onClick={() => handleToggleDependency(pt.id)}
+                                             className={`w-full text-left px-4 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-between ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+                                          >
+                                             <div className="flex flex-col min-w-0">
+                                                <span className={`font-medium truncate ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-700 dark:text-slate-300'}`}>{pt.title}</span>
+                                                <span className="text-[10px] text-slate-500">{pt.status}</span>
+                                             </div>
+                                             {isSelected && <Check size={14} className="text-indigo-600" />}
+                                          </button>
+                                       );
+                                   })}
+                                   {potentialDependencies.length === 0 && (
+                                       <div className="p-4 text-center text-sm text-slate-400">No other tasks available.</div>
+                                   )}
+                                </div>
+                             </>
+                          )}
+                       </div>
+                    )}
+                </div>
 
                 {/* Reminder Settings */}
                 <div>
@@ -476,6 +600,21 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         )}
                     </div>
                   )}
+                </div>
+
+                {/* Time Estimation */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1"><Clock size={12} /> Time Estimation</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                     <div className="relative">
+                        <input type="number" min="0" step="0.5" readOnly={isReadOnly} value={estimatedHours} onChange={(e) => setEstimatedHours(e.target.value)} className={inputBaseClass} placeholder="0" />
+                         <span className="absolute right-4 top-3.5 text-slate-400 text-xs font-bold pointer-events-none">HRS</span>
+                     </div>
+                     <div className="relative">
+                        <input type="number" min="0" step="0.5" readOnly={isReadOnly} value={estimatedDays} onChange={(e) => setEstimatedDays(e.target.value)} className={inputBaseClass} placeholder="0" />
+                        <span className="absolute right-4 top-3.5 text-slate-400 text-xs font-bold pointer-events-none">DAYS</span>
+                     </div>
+                  </div>
                 </div>
 
                 {/* Financials */}
@@ -576,7 +715,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                           <div className={`flex flex-col ${item.user === currentUser ? 'items-end' : 'items-start'} max-w-[85%]`}>
                              <div className="flex items-center gap-2 mb-1 px-1">
                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{item.user}</span>
-                               <span className="text-[10px] text-slate-400">{item.timestamp}</span>
+                               <span className="text-xs text-slate-400">{item.timestamp}</span>
                              </div>
                              <div 
                                className={`p-3.5 rounded-2xl text-sm font-medium leading-relaxed shadow-sm ${item.user === currentUser ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-none'}`}
@@ -655,6 +794,136 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                 )}
               </div>
+            )}
+
+            {activeTab === 'flow' && (
+                <div className="flex flex-col h-full min-h-[500px] overflow-y-auto custom-scrollbar p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl relative">
+                    
+                    {/* Empty State */}
+                    {upstreamTasks.length === 0 && downstreamTasks.length === 0 && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-8 opacity-60">
+                            <div className="bg-emerald-100 dark:bg-emerald-900/30 p-6 rounded-full mb-4">
+                                <Palmtree size={48} className="text-emerald-600 dark:text-emerald-400" />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300">Independent Island! 🏝️</h3>
+                            <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-sm">
+                                This task has no dependencies or blockers. It's free to be worked on at any time!
+                            </p>
+                        </div>
+                    )}
+
+                    {(upstreamTasks.length > 0 || downstreamTasks.length > 0) && (
+                        <div className="flex flex-col items-center gap-6 relative z-10 w-full max-w-3xl mx-auto py-8">
+                            
+                            {/* UPSTREAM SECTION */}
+                            {upstreamTasks.length > 0 && (
+                                <div className="w-full flex flex-col items-center gap-4">
+                                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                        Waiting For...
+                                    </div>
+                                    <div className="flex flex-wrap justify-center gap-4">
+                                        {upstreamTasks.map(up => (
+                                            <div 
+                                                key={up.id}
+                                                onClick={() => onTaskSelect && onTaskSelect(up)}
+                                                className={`
+                                                    group relative w-48 p-3 rounded-xl border-2 transition-all cursor-pointer hover:-translate-y-1 hover:shadow-md bg-white dark:bg-slate-800
+                                                    ${up.status === 'Done' 
+                                                        ? 'border-emerald-200 dark:border-emerald-900/50 hover:border-emerald-400' 
+                                                        : 'border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                                                    }
+                                                `}
+                                            >
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${up.status === 'Done' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
+                                                        {up.status}
+                                                    </span>
+                                                    {up.status === 'Done' && <CheckCircle2 size={12} className="text-emerald-500" />}
+                                                </div>
+                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-2 leading-snug">
+                                                    {up.title}
+                                                </p>
+                                                
+                                                {/* Connecting Line Down (Pseudo) */}
+                                                <div className="absolute top-full left-1/2 w-0.5 h-6 bg-slate-300 dark:bg-slate-600 -translate-x-1/2 -z-10"></div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* CONNECTOR 1 (Upstream -> Current) */}
+                            {upstreamTasks.length > 0 && (
+                                <div className="flex flex-col items-center -my-2 z-10">
+                                    <div className={`
+                                        w-8 h-8 rounded-full flex items-center justify-center border-2 shadow-sm relative z-20
+                                        ${isFlowBlocked 
+                                            ? 'bg-rose-50 border-rose-200 text-rose-500 dark:bg-rose-900/20 dark:border-rose-800' 
+                                            : 'bg-emerald-50 border-emerald-200 text-emerald-500 dark:bg-emerald-900/20 dark:border-emerald-800'
+                                        }
+                                    `}>
+                                        {isFlowBlocked ? <Lock size={14} /> : <Zap size={14} />}
+                                    </div>
+                                    <div className={`w-0.5 h-6 ${isFlowBlocked ? 'bg-slate-300 dark:bg-slate-600 border-l border-dashed border-slate-400' : 'bg-emerald-400 dark:bg-emerald-600'}`}></div>
+                                </div>
+                            )}
+
+                            {/* CURRENT TASK (HERO) */}
+                            <div className="w-full max-w-sm p-5 bg-white dark:bg-slate-800 rounded-2xl border-2 border-indigo-500 shadow-xl relative z-10 animate-fade-in ring-4 ring-indigo-500/10">
+                                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-500 text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                                    Current Task
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-900 dark:text-white text-center mb-2">{title}</h3>
+                                <div className="flex justify-center gap-2">
+                                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-md">{status}</span>
+                                    <span className="text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-md">{priority} Priority</span>
+                                </div>
+                            </div>
+
+                            {/* CONNECTOR 2 (Current -> Downstream) */}
+                            {downstreamTasks.length > 0 && (
+                                <div className="flex flex-col items-center -my-2 z-10">
+                                    <div className="w-0.5 h-6 bg-slate-300 dark:bg-slate-600"></div>
+                                    <div className="w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 text-slate-400 shadow-sm relative z-20">
+                                        <Unlock size={14} />
+                                    </div>
+                                    <div className="w-0.5 h-6 bg-slate-300 dark:bg-slate-600"></div>
+                                </div>
+                            )}
+
+                            {/* DOWNSTREAM SECTION */}
+                            {downstreamTasks.length > 0 && (
+                                <div className="w-full flex flex-col items-center gap-4">
+                                     <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                        Unlocks Next...
+                                    </div>
+                                    <div className="flex flex-wrap justify-center gap-4">
+                                        {downstreamTasks.map(down => (
+                                            <div 
+                                                key={down.id}
+                                                onClick={() => onTaskSelect && onTaskSelect(down)}
+                                                className="group relative w-48 p-3 bg-white dark:bg-slate-800 rounded-xl border-2 border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:-translate-y-1 hover:shadow-md transition-all cursor-pointer"
+                                            >
+                                                {/* Line Up (Pseudo) */}
+                                                <div className="absolute bottom-full left-1/2 w-0.5 h-6 bg-slate-300 dark:bg-slate-600 -translate-x-1/2 -z-10"></div>
+
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400">
+                                                        {down.status}
+                                                    </span>
+                                                    <ArrowDown size={12} className="text-slate-400" />
+                                                </div>
+                                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-2 leading-snug">
+                                                    {down.title}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
             )}
           </form>
         </div>
