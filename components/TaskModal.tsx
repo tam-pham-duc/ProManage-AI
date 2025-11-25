@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
@@ -56,6 +56,65 @@ const formatMessageTime = (timestampStr: string) => {
     } catch (e) {
         return timestampStr;
     }
+};
+
+// --- Mini Task Card Component for Flow View ---
+const MiniTaskCard: React.FC<{ task: Task; type: 'upstream' | 'downstream'; onClick?: () => void }> = ({ task, type, onClick }) => {
+    const isCompleted = task.status === 'Done';
+    
+    let borderClass = 'border-slate-200 dark:border-slate-700';
+    let bgClass = 'bg-white dark:bg-slate-800';
+    let icon = <Clock size={14} className="text-slate-400" />;
+    let statusColor = 'text-slate-500';
+
+    if (type === 'upstream') {
+        if (!isCompleted) {
+            borderClass = 'border-red-300 dark:border-red-800';
+            bgClass = 'bg-red-50 dark:bg-red-900/20';
+            icon = <AlertCircle size={14} className="text-red-500" />;
+            statusColor = 'text-red-600 dark:text-red-400';
+        } else {
+            borderClass = 'border-emerald-300 dark:border-emerald-800';
+            bgClass = 'bg-emerald-50 dark:bg-emerald-900/20';
+            icon = <CheckCircle2 size={14} className="text-emerald-500" />;
+            statusColor = 'text-emerald-600 dark:text-emerald-400';
+        }
+    } else {
+        // Downstream
+        if (isCompleted) {
+             icon = <CheckCircle2 size={14} className="text-emerald-500" />;
+        } else {
+             icon = <Lock size={14} className="text-slate-400" />;
+        }
+    }
+
+    return (
+        <div 
+            onClick={onClick}
+            className={`
+                p-3 rounded-xl border shadow-sm w-full cursor-pointer hover:shadow-md transition-all group relative overflow-hidden
+                ${borderClass} ${bgClass}
+            `}
+        >
+            <div className="flex justify-between items-start mb-1">
+                <h5 className="font-bold text-xs text-slate-800 dark:text-slate-200 line-clamp-2 leading-snug pr-4">{task.title}</h5>
+                {icon}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+                <div className="w-5 h-5 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-600">
+                    {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full rounded-full object-cover" /> : task.assignee.charAt(0)}
+                </div>
+                <span className={`text-[10px] font-semibold ${statusColor}`}>
+                    {task.status}
+                </span>
+            </div>
+            {type === 'upstream' && !isCompleted && (
+                <div className="absolute right-0 bottom-0 p-1">
+                    <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+                </div>
+            )}
+        </div>
+    );
 };
 
 const TaskModal: React.FC<TaskModalProps> = ({ 
@@ -179,14 +238,43 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }
   }, [activeTab, comments, activityLog]);
 
+  // --- FIX 1: Reactive State Synchronization ---
+  // Watch for changes in the `task` prop (even if ID is same) and update local state
+  useEffect(() => {
+    if (isOpen && task) {
+        // Critical Fields Synchronization
+        setStatus(prevStatus => task.status !== prevStatus ? task.status : prevStatus);
+        setPriority(prev => task.priority !== prev ? task.priority : prev);
+        setStartDate(prev => task.startDate !== prev ? task.startDate : prev);
+        setDueDate(prev => task.dueDate !== prev ? task.dueDate : prev);
+        
+        // Sync Assignee if changed externally
+        if (task.assigneeId !== assigneeId) {
+            setAssignee(task.assignee);
+            setAssigneeId(task.assigneeId || '');
+            setAssigneeAvatar(task.assigneeAvatar || '');
+        }
+
+        setSubtasks(task.subtasks || []);
+        setDependencies(task.dependencies || []);
+        setTags(task.tags || []);
+        
+        setEstimatedCost(task.estimatedCost?.toString() || '');
+        setActualCost(task.actualCost?.toString() || '');
+        setEstimatedHours(task.estimatedHours?.toString() || '');
+        setEstimatedDays(task.estimatedDays?.toString() || '');
+    }
+  }, [task, isOpen]);
+
+  // --- Initialization Logic (Switching Tasks) ---
   useEffect(() => {
     if (isOpen) {
-      // Check if we need to reset form state
       const isNewTask = !task;
       const isDifferentTask = task?.id !== prevTaskIdRef.current;
 
       if (isNewTask || isDifferentTask) {
           if (task) {
+            // Load Initial Data
             setTitle(task.title);
             setDescription(task.description || '');
             setStatus(task.status);
@@ -199,6 +287,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAssigneeId(task.assigneeId || '');
             setAssigneeAvatar(task.assigneeAvatar || '');
             
+            // Logic to auto-fix missing assigneeID from old data
             if (!task.assigneeId && task.assignee && task.assignee !== 'UN' && projectMembers.length > 0) {
               const found = projectMembers.find(m => m.displayName === task.assignee);
               if (found && found.uid) {
@@ -213,10 +302,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAttachments(task.attachments || []);
             setTags(task.tags || []);
             setDependencies(task.dependencies || []);
-            setEstimatedCost(task.estimatedCost?.toString() || '');
-            setActualCost(task.actualCost?.toString() || '');
-            setEstimatedHours(task.estimatedHours?.toString() || '');
-            setEstimatedDays(task.estimatedDays?.toString() || '');
           } else {
             // Default values for New Task
             setTitle('');
@@ -242,7 +327,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setEstimatedDays('');
           }
           
-          // Reset UI toggles
           setNewSubtaskTitle('');
           setNewComment('');
           setNewFileName('');
@@ -256,7 +340,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
           setShowDependencyDropdown(false);
           setEditingLog(null);
 
-          // Update Ref
           prevTaskIdRef.current = task?.id;
       }
     }
@@ -271,7 +354,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Helpers...
   const parseMarkdown = (text: string) => {
     if (!text) return '<p class="text-slate-500 italic text-sm">No content.</p>';
     let html = text
@@ -416,12 +498,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }
   };
 
-  // Mention Logic
   const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (isReadOnly) return;
     const val = e.target.value;
     setNewComment(val);
-    // Adjust height automatically
     e.target.style.height = 'auto';
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
 
@@ -525,7 +605,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
         {editingLog && (
             <div 
               className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-sm"
-              onClick={(e) => e.stopPropagation()} // Prevent clicking background from closing parent
+              onClick={(e) => e.stopPropagation()} 
             >
                 <div 
                   className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl p-6 w-80 border border-slate-200 dark:border-slate-700 animate-fade-in"
@@ -584,7 +664,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">ID: {task?.id || 'Draft'}</p>
               </div>
               
-              {/* Timer Control in Header */}
               {task && !isReadOnly && (
                   <button
                     onClick={() => isTracking ? stopTimer() : startTimer(task)}
@@ -1005,63 +1084,100 @@ const TaskModal: React.FC<TaskModalProps> = ({
             )}
 
             {activeTab === 'flow' && task && (
-                <div className="h-full flex flex-col">
-                    <div className="p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-700 mb-4">
-                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 flex items-center gap-2"><AlertOctagon size={16} /> Flow Status</h3>
-                        <div className="flex items-center gap-4">
-                            <div className={`px-3 py-1 rounded-full text-xs font-bold border ${isFlowBlocked ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400' : 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
-                                {isFlowBlocked ? 'Blocked' : 'Ready'}
-                            </div>
-                            <span className="text-xs text-slate-500">
-                                {isFlowBlocked ? `Waiting for ${upstreamTasks.filter(t => t.status !== 'Done').length} tasks` : 'All prerequisites completed'}
-                            </span>
+                <div className="h-full flex flex-col relative overflow-hidden">
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-5">
+                        <GitBranch size={200} />
+                    </div>
+                    
+                    {/* Header Status */}
+                    <div className="flex justify-between items-center mb-6 z-10">
+                         <h3 className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                            <GitBranch size={18} className="text-indigo-500" />
+                            Dependency Tree
+                         </h3>
+                         <div className={`px-3 py-1 rounded-full text-xs font-bold border ${isFlowBlocked ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400' : 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400'}`}>
+                            {isFlowBlocked ? 'Blocked by Prerequisites' : 'Ready to Start'}
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
-                        {/* Upstream */}
-                        <div className="flex flex-col min-h-0">
-                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <ArrowDown size={14} className="rotate-180" /> Prerequisites
-                            </h4>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 p-2 space-y-2">
-                                {upstreamTasks.length === 0 && <div className="text-center text-xs text-slate-400 py-4">No prerequisites</div>}
-                                {upstreamTasks.map(t => (
-                                    <div key={t.id} onClick={() => onTaskSelect && onTaskSelect(t)} className={`p-3 rounded-lg border cursor-pointer hover:shadow-md transition-all ${t.status === 'Done' ? 'bg-emerald-50/50 border-emerald-200 dark:bg-emerald-900/10 dark:border-emerald-800' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>
-                                        <div className="flex justify-between items-start">
-                                            <span className="text-sm font-bold text-slate-800 dark:text-slate-200 line-clamp-1">{t.title}</span>
-                                            {t.status === 'Done' ? <CheckCircle2 size={14} className="text-emerald-500" /> : <Clock size={14} className="text-amber-500" />}
-                                        </div>
-                                        <div className="mt-1 flex justify-between items-center text-[10px] text-slate-500">
-                                            <span>{t.assignee}</span>
-                                            <span className="font-mono">{t.status}</span>
-                                        </div>
+                    {/* Tree Visualizer */}
+                    <div className="flex-1 flex items-center justify-center gap-4 overflow-x-auto custom-scrollbar p-4 z-10">
+                        
+                        {/* Column 1: Prerequisites */}
+                        <div className="flex flex-col gap-4 items-center min-w-[200px]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Prerequisites</span>
+                            {upstreamTasks.length === 0 ? (
+                                <div className="p-4 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-24 h-24 flex items-center justify-center text-center">
+                                    Start Point
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-3 w-full">
+                                    {upstreamTasks.map(t => (
+                                        <MiniTaskCard 
+                                            key={t.id} 
+                                            task={t} 
+                                            type="upstream" 
+                                            onClick={() => onTaskSelect && onTaskSelect(t)} 
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Connector Arrow */}
+                        <div className="text-slate-300 dark:text-slate-600">
+                            <ArrowRight size={24} strokeWidth={3} />
+                        </div>
+
+                        {/* Column 2: Current Task */}
+                        <div className="flex flex-col gap-4 items-center min-w-[240px]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500">Current Focus</span>
+                            <div className="w-full p-5 rounded-xl border-2 border-indigo-500 bg-white dark:bg-slate-800 shadow-xl relative group">
+                                <div className="absolute -top-3 -right-3 bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm">
+                                    {task.status}
+                                </div>
+                                <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 line-clamp-2 text-center">{task.title}</h4>
+                                
+                                <div className="flex justify-center items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                    <User size={12} /> <span>{task.assignee}</span>
+                                </div>
+                                
+                                {isFlowBlocked && (
+                                    <div className="mt-3 text-center">
+                                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-[10px] font-bold">
+                                            <AlertOctagon size={10} /> BLOCKED
+                                        </span>
                                     </div>
-                                ))}
+                                )}
                             </div>
                         </div>
 
-                        {/* Downstream */}
-                        <div className="flex flex-col min-h-0">
-                            <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <ArrowDown size={14} /> Blocking
-                            </h4>
-                            <div className="flex-1 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50/50 dark:bg-slate-900/50 p-2 space-y-2">
-                                {downstreamTasks.length === 0 && <div className="text-center text-xs text-slate-400 py-4">Not blocking any tasks</div>}
-                                {downstreamTasks.map(t => (
-                                    <div key={t.id} onClick={() => onTaskSelect && onTaskSelect(t)} className="p-3 rounded-lg border bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-md transition-all hover:border-indigo-300 dark:hover:border-indigo-700">
-                                        <div className="flex justify-between items-start">
-                                            <span className="text-sm font-bold text-slate-800 dark:text-slate-200 line-clamp-1">{t.title}</span>
-                                            <Lock size={14} className="text-slate-400" />
-                                        </div>
-                                        <div className="mt-1 flex justify-between items-center text-[10px] text-slate-500">
-                                            <span>{t.assignee}</span>
-                                            <span className="font-mono">{t.status}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                        {/* Connector Arrow */}
+                        <div className="text-slate-300 dark:text-slate-600">
+                            <ArrowRight size={24} strokeWidth={3} />
                         </div>
+
+                        {/* Column 3: Blocking */}
+                        <div className="flex flex-col gap-4 items-center min-w-[200px]">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Blocking</span>
+                            {downstreamTasks.length === 0 ? (
+                                <div className="p-4 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 text-slate-400 text-xs font-bold bg-slate-50 dark:bg-slate-800/50 w-24 h-24 flex items-center justify-center text-center">
+                                    End Point
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-3 w-full">
+                                    {downstreamTasks.map(t => (
+                                        <MiniTaskCard 
+                                            key={t.id} 
+                                            task={t} 
+                                            type="downstream" 
+                                            onClick={() => onTaskSelect && onTaskSelect(t)} 
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
                     </div>
                 </div>
             )}

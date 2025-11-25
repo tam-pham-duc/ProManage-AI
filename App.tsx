@@ -321,6 +321,8 @@ const App: React.FC = () => {
   }, [currentUser?.id, selectedProjectId]);
 
   // --- Sync editingTask with Tasks (Fix for Real-time updates in Modal) ---
+  // This useEffect ensures that if the underlying `tasks` array is updated (e.g., via snapshot or local optimistic update),
+  // the `editingTask` passed to the modal is also refreshed.
   useEffect(() => {
     if (editingTask && isTaskModalOpen) {
       const updated = tasks.find(t => t.id === editingTask.id);
@@ -592,14 +594,17 @@ const App: React.FC = () => {
   const handleSaveTask = async (taskData: Partial<Task>) => { 
       if (!currentUser) return;
       if (editingTask) {
-          // update logic
+          // Optimistic Update for smoother UX
+          setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...taskData } : t));
+          
+          // Firestore Update
           try {
              const taskRef = doc(db, 'tasks', editingTask.id);
              await updateDoc(taskRef, { ...taskData, updatedAt: serverTimestamp() });
              notify('success', "Task updated");
           } catch (e) { notify('error', 'Update failed'); }
       } else {
-          // create logic
+          // create logic (Cannot do optimistic update easily without a temp ID that Firestore accepts, relying on listener is safer for creation)
           try {
              if(!selectedProjectId) return;
              await addDoc(collection(db, 'tasks'), { ...taskData, projectId: selectedProjectId, ownerId: currentUser.id, createdAt: serverTimestamp() });
@@ -633,6 +638,9 @@ const App: React.FC = () => {
       if (!window.confirm("Move task to Trash?")) return;
 
       try {
+          // Optimistic Removal
+          setTasks(prev => prev.filter(t => t.id !== taskId));
+
           // 3. Operation: Soft Delete (updateDoc)
           const taskRef = doc(db, 'tasks', taskId);
           await updateDoc(taskRef, { 
@@ -653,9 +661,13 @@ const App: React.FC = () => {
 
   const handleDropTask = async (taskId: string, newStatus: TaskStatus) => { 
       try {
+          // Optimistic Update: Update local state immediately
+          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+          
           await updateDoc(doc(db, 'tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
       } catch (e) { console.error(e); }
   };
+  
   const handleAddColumn = async (title: string, color: string) => { 
       if(!currentUser) return;
       const newCols = [...columns, {id: Date.now().toString(), title, color}];
