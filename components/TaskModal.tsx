@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
@@ -489,7 +489,40 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const completedCount = subtasks.filter(st => st.completed).length;
   const progressPercentage = subtasks.length > 0 ? Math.round((completedCount / subtasks.length) * 100) : 0;
   const filteredAvailableTags = availableTags.filter(at => at.name.toLowerCase().includes(tagInput.toLowerCase()) && !tags.find(t => t.id === at.id));
-  const streamItems = [...comments.map(c => ({ ...c, type: 'comment' })), ...activityLog.map(l => ({ ...l, type: 'log' }))].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  
+  // --- Enhanced Activity Log Logic ---
+  const getLogIcon = (type: string) => {
+    switch (type) {
+      case 'create': return <Plus size={14} />;
+      case 'update': return <Pencil size={14} />;
+      case 'status_change':
+      case 'move': return <MoveRight size={14} />;
+      case 'priority_change': 
+      case 'alert': return <AlertTriangle size={14} />;
+      case 'attachment': return <Paperclip size={14} />;
+      case 'assign': return <UserPlus size={14} />;
+      case 'comment': return <MessageSquare size={14} />;
+      default: return <History size={14} />;
+    }
+  };
+
+  const getLogColor = (type: string) => {
+      switch (type) {
+          case 'create': return 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400';
+          case 'alert':
+          case 'priority_change': return 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-400';
+          case 'status_change':
+          case 'move': return 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400';
+          case 'attachment': return 'bg-amber-100 text-amber-600 dark:bg-amber-900/50 dark:text-amber-400';
+          case 'assign': return 'bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400';
+          default: return 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
+      }
+  };
+
+  const streamItems = [
+    ...comments.map(c => ({ ...c, source: 'comment', type: 'comment', timestamp: c.timestamp })),
+    ...activityLog.map(l => ({ ...l, source: 'log', timestamp: l.timestamp }))
+  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
 
@@ -911,16 +944,16 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         </div>
                     )}
                     {streamItems.map((item: any) => (
-                        <div key={item.id} className={`flex gap-3 ${item.type === 'log' ? 'opacity-70' : ''}`}>
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${item.type === 'log' ? 'bg-slate-100 dark:bg-slate-800 text-slate-500' : 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400'}`}>
-                                {item.type === 'log' ? <History size={14} /> : (item.user ? item.user.charAt(0).toUpperCase() : 'U')}
+                        <div key={item.id} className={`flex gap-3 ${item.source === 'log' ? 'opacity-70' : ''}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${item.source === 'log' ? getLogColor(item.type) : 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400'}`}>
+                                {item.source === 'log' ? getLogIcon(item.type) : (item.user ? item.user.charAt(0).toUpperCase() : 'U')}
                             </div>
                             <div className="flex-1">
                                 <div className="flex items-baseline justify-between">
-                                    <p className="text-sm font-bold text-slate-900 dark:text-white">{item.type === 'log' ? 'System' : item.user} <span className="font-normal text-slate-500 dark:text-slate-400 ml-2 text-xs">{item.timestamp}</span></p>
+                                    <p className="text-sm font-bold text-slate-900 dark:text-white">{item.source === 'log' ? 'System' : item.user} <span className="font-normal text-slate-500 dark:text-slate-400 ml-2 text-xs">{item.timestamp}</span></p>
                                 </div>
-                                <div className={`text-sm mt-1 ${item.type === 'log' ? 'text-slate-500 italic' : 'text-slate-700 dark:text-slate-300'}`}>
-                                    {item.type === 'log' ? `${item.userName || 'User'} ${item.action}` : <span dangerouslySetInnerHTML={{ __html: parseMarkdown(item.text) }} />}
+                                <div className={`text-sm mt-1 ${item.source === 'log' ? 'text-slate-500 italic' : 'text-slate-700 dark:text-slate-300'}`}>
+                                    {item.source === 'log' ? `${item.userName || 'User'} ${item.action}` : <span dangerouslySetInnerHTML={{ __html: parseMarkdown(item.text) }} />}
                                 </div>
                             </div>
                         </div>
