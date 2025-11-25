@@ -731,15 +731,44 @@ const App: React.FC = () => {
       }
   };
 
-  const handleDropTask = async (taskId: string, newStatus: TaskStatus) => { 
+  const handleDropTask = async (taskId: string, newStatus: TaskStatus) => {
+      // 1. Safety Check
+      if (!taskId || !newStatus) return;
+      
+      const taskIndex = tasks.findIndex(t => t.id === taskId);
+      if (taskIndex === -1) return;
+      
+      const task = tasks[taskIndex];
+      if (task.status === newStatus) return; // No change
+
+      // 2. Snapshot for Rollback
+      const originalTasks = [...tasks];
+
+      // 3. Optimistic Update (Strict Immutable)
       try {
-          const task = tasks.find(t => t.id === taskId);
-          setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+          const updatedTask = { 
+              ...task, 
+              status: newStatus,
+              updatedAt: new Date().toISOString() // Safe local date
+          };
           
-          await updateDoc(doc(db, 'tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
+          const newTasks = [...tasks];
+          newTasks[taskIndex] = updatedTask;
           
-          if (currentUser && selectedProjectId && task) {
-              await logProjectActivity(
+          // Update state immediately
+          setTasks(newTasks);
+
+          // 4. Async Operations
+          const taskRef = doc(db, 'tasks', taskId);
+          
+          await updateDoc(taskRef, { 
+              status: newStatus, 
+              updatedAt: serverTimestamp() 
+          });
+
+          // 5. Isolated Logging (Non-blocking)
+          if (currentUser && selectedProjectId) {
+              logProjectActivity(
                   selectedProjectId,
                   taskId,
                   task.title,
@@ -747,9 +776,16 @@ const App: React.FC = () => {
                   currentUser,
                   `Moved to ${newStatus}`,
                   'move'
-              );
+              ).catch(err => console.warn("Activity log failed silently:", err));
           }
-      } catch (e) { console.error(e); }
+
+      } catch (e) {
+          console.error("Drag update failed:", e);
+          
+          // 6. Rollback on Error
+          setTasks(originalTasks);
+          notify('error', 'Failed to update task status. Reverting changes.');
+      }
   };
   
   const handleAddColumn = async (title: string, color: string) => { 
