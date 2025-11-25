@@ -34,10 +34,9 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
   const [clientName, setClientName] = useState('');
   const [address, setAddress] = useState('');
 
-  // Members State
-  const [members, setMembers] = useState<ProjectMember[]>([]);
+  // Members State (Local Buffer)
+  const [localMembers, setLocalMembers] = useState<ProjectMember[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [isInviting, setIsInviting] = useState(false);
   
   // Save State
   const [isSaving, setIsSaving] = useState(false);
@@ -60,7 +59,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         setName(project.name);
         setClientName(project.clientName);
         setAddress(project.address);
-        setMembers(project.members || []);
+        setLocalMembers(project.members || []);
       } else {
         // CREATE MODE: Reset Data
         setName('');
@@ -68,7 +67,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         setAddress('');
         // Add current user as Admin by default
         if (currentUser) {
-          setMembers([{
+          setLocalMembers([{
             uid: currentUser.uid,
             email: currentUser.email,
             displayName: currentUser.displayName,
@@ -77,19 +76,53 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             avatar: currentUser.displayName.charAt(0).toUpperCase()
           }]);
         } else {
-          setMembers([]);
+          setLocalMembers([]);
         }
       }
     }
     return () => { isMounted.current = false; };
-  }, [isOpen, project, currentUser]);
+  }, [isOpen, project]); // Depend on isOpen and project reference
 
   if (!isOpen) return null;
 
+  // --- Background User Resolver ---
+  const resolveMemberDetails = async (email: string) => {
+      try {
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('email', '==', email));
+          const querySnapshot = await getDocs(q);
+
+          if (!querySnapshot.empty) {
+              const userDoc = querySnapshot.docs[0];
+              const userData = userDoc.data();
+              
+              // Update the specific member in local state if they exist
+              if (isMounted.current) {
+                  setLocalMembers(prev => prev.map(m => {
+                      if (m.email.toLowerCase() === email.toLowerCase()) {
+                          return {
+                              ...m,
+                              uid: userDoc.id,
+                              displayName: userData.username || userData.email.split('@')[0],
+                              avatar: userData.avatar || userData.username?.charAt(0).toUpperCase(),
+                              status: 'active'
+                          };
+                      }
+                      return m;
+                  }));
+              }
+          }
+      } catch (error) {
+          console.error("Error resolving user:", error);
+      }
+  };
+
   // --- Handlers ---
 
-  const handleInviteUser = async () => {
+  const handleInviteUser = (e: React.MouseEvent | React.KeyboardEvent) => {
+    e.preventDefault(); // Prevent form submission
     const email = inviteEmail.trim();
+    
     if (!email) return;
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -98,65 +131,40 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         return;
     }
 
-    if (members.some(m => m.email.toLowerCase() === email.toLowerCase())) {
+    if (localMembers.some(m => m.email.toLowerCase() === email.toLowerCase())) {
       notify('info', "User is already a member or invited.");
+      setInviteEmail('');
       return;
     }
 
-    setIsInviting(true);
-    try {
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('email', '==', email));
-      const querySnapshot = await getDocs(q);
+    // 1. Optimistic Add
+    const newMember: ProjectMember = {
+        uid: null,
+        email: email,
+        displayName: email.split('@')[0],
+        role: 'member',
+        status: 'pending', // Default to pending until resolved
+        avatar: undefined
+    };
 
-      let newMember: ProjectMember;
-
-      if (!querySnapshot.empty) {
-        const userDoc = querySnapshot.docs[0];
-        const userData = userDoc.data();
-        newMember = {
-          uid: userDoc.id,
-          email: userData.email,
-          displayName: userData.username || email.split('@')[0],
-          role: 'member',
-          status: 'active',
-          avatar: userData.avatar || userData.username?.charAt(0).toUpperCase()
-        };
-        notify('success', `Added ${newMember.displayName} to list`);
-      } else {
-        newMember = {
-            uid: null,
-            email: email,
-            displayName: email.split('@')[0],
-            role: 'member',
-            status: 'pending',
-            avatar: undefined
-        };
-        notify('info', `Invitation staged for ${email}`);
-      }
-      
-      setMembers([...members, newMember]);
-      setInviteEmail('');
-      
-    } catch (error) {
-      console.error("Error finding user:", error);
-      notify('error', "Error searching for user.");
-    } finally {
-      if (isMounted.current) setIsInviting(false);
-    }
+    setLocalMembers(prev => [...prev, newMember]);
+    setInviteEmail('');
+    
+    // 2. Trigger Background Check
+    resolveMemberDetails(email);
   };
 
   const handleRemoveMember = (email: string) => {
     // Prevent removing self if active admin in Edit Mode, or generic safety in Create Mode
-    if (currentUser && email === currentUser.email && members.length === 1) {
+    if (currentUser && email === currentUser.email && localMembers.length === 1) {
          notify('warning', "You cannot remove yourself as the only member.");
          return;
     }
-    setMembers(members.filter(m => m.email !== email));
+    setLocalMembers(prev => prev.filter(m => m.email !== email));
   };
 
   const handleRoleChange = (email: string, newRole: ProjectRole) => {
-      setMembers(members.map(m => m.email === email ? { ...m, role: newRole } : m));
+      setLocalMembers(prev => prev.map(m => m.email === email ? { ...m, role: newRole } : m));
   };
 
   // Wizard Navigation
@@ -184,13 +192,13 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
     setIsSaving(true);
 
     try {
-        const memberUIDs = members.map(m => m.uid).filter((uid): uid is string => uid !== null);
+        const memberUIDs = localMembers.map(m => m.uid).filter((uid): uid is string => uid !== null);
         
         const projectPayload = {
           name,
           clientName: clientName || 'Internal',
           address: address || 'Remote',
-          members,
+          members: localMembers,
           memberUIDs
         };
 
@@ -198,6 +206,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
             // Edit Existing
             const projectRef = doc(db, 'projects', project.id);
             await updateDoc(projectRef, projectPayload);
+            notify('success', "Project updated successfully.");
             setTimeout(() => {
                 if (isMounted.current) {
                     setIsSaving(false);
@@ -288,25 +297,24 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
                     onChange={(e) => setInviteEmail(e.target.value)}
                     placeholder="Enter email to invite..."
                     className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm text-slate-900 dark:text-white"
-                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleInviteUser())}
+                    onKeyDown={(e) => e.key === 'Enter' && handleInviteUser(e)}
                 />
             </div>
             <button 
-                type="button"
+                type="button" // IMPORTANT: Prevent submit
                 onClick={handleInviteUser}
-                disabled={!inviteEmail.trim() || isInviting}
+                disabled={!inviteEmail.trim()}
                 className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-                {isInviting && <Loader2 size={14} className="animate-spin" />}
                 Add
             </button>
         </div>
         )}
 
         <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-1">
-            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky top-0 bg-white dark:bg-slate-800 py-2">Team Members ({members.length})</h3>
+            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider sticky top-0 bg-white dark:bg-slate-800 py-2">Team Members ({localMembers.length})</h3>
             
-            {members.map(member => {
+            {localMembers.map(member => {
                 const isPending = member.status === 'pending';
                 const isMe = currentUser && member.uid === currentUser.uid;
                 
@@ -413,7 +421,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
                     Details
                 </button>
                 <button onClick={() => setActiveTab('members')} className={`py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'members' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
-                    Members <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300">{members.length}</span>
+                    Members <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300">{localMembers.length}</span>
                 </button>
             </div>
         )}
