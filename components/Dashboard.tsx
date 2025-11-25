@@ -25,8 +25,10 @@ import {
   FileSpreadsheet,
   X
 } from 'lucide-react';
-import { MetricCardProps, Task, Project, Tab, KanbanColumn } from '../types';
+import { MetricCardProps, Task, Project, Tab, KanbanColumn, ActivityLog } from '../types';
 import WelcomeBanner from './WelcomeBanner';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface DashboardProps {
   tasks: Task[];
@@ -41,15 +43,22 @@ interface DashboardProps {
 }
 
 // --- Helper: Smart Time Formatting ---
-const formatSmartTime = (timestampStr: string) => {
+const formatSmartTime = (timestampStr: string | any) => {
     try {
-        const date = new Date(timestampStr);
+        // Handle Firestore Timestamp if passed directly (though interface implies ISO string or similar)
+        let date: Date;
+        if (timestampStr && typeof timestampStr.toDate === 'function') {
+            date = timestampStr.toDate();
+        } else {
+            date = new Date(timestampStr);
+        }
+
         const now = new Date();
         const diffMs = now.getTime() - date.getTime();
         const diffHours = diffMs / (1000 * 60 * 60);
         
         // Invalid Date Check
-        if (isNaN(date.getTime())) return timestampStr;
+        if (isNaN(date.getTime())) return 'Just now';
 
         if (diffHours < 24) {
             if (diffHours < 1) {
@@ -63,7 +72,7 @@ const formatSmartTime = (timestampStr: string) => {
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         }
     } catch (e) {
-        return timestampStr;
+        return 'Just now';
     }
 };
 
@@ -362,6 +371,7 @@ const PrintHeader: React.FC<{ projectName: string; clientName: string; userName:
 
 const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [], currentProject, onAddTask, onTaskClick, onNavigate, onStatusChange, userName }) => {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [activities, setActivities] = useState<any[]>([]); // New real-time state
 
   // CSV Export Logic
   const handleExportCSV = () => {
@@ -468,70 +478,47 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
   }, [tasks, columns, stats]);
 
 
-  // --- Activity Feed Aggregation ---
-  const activityTimeline = useMemo(() => {
-    const allActivities: any[] = [];
+  // --- Activity Feed Real-time Listener ---
+  useEffect(() => {
+      if (!currentProject) {
+          setActivities([]);
+          return;
+      }
 
-    tasks.forEach(task => {
-        const projectName = projects.find(p => p.id === task.projectId)?.name || 'Unknown Project';
+      const q = query(
+          collection(db, 'projects', currentProject.id, 'activities'),
+          orderBy('timestamp', 'desc'),
+          limit(20)
+      );
 
-        // 1. Map Activity Logs
-        (task.activityLog || []).forEach(log => {
-            allActivities.push({
-                id: log.id,
-                type: log.type || 'generic',
-                action: log.action,
-                user: log.userName || 'System',
-                timestamp: log.timestamp,
-                details: log.details,
-                taskTitle: task.title,
-                projectName: projectName,
-                taskId: task.id,
-                task: task
-            });
-        });
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+          const fetchedActivities = snapshot.docs.map(doc => {
+              const data = doc.data();
+              // Convert Firestore Timestamp to serializable format immediately
+              let timestamp = new Date().toISOString();
+              if (data.timestamp && typeof data.timestamp.toDate === 'function') {
+                  timestamp = data.timestamp.toDate().toISOString();
+              } else if (typeof data.timestamp === 'string') {
+                  timestamp = data.timestamp;
+              }
 
-        // 2. Map Comments
-        (task.comments || []).forEach(comment => {
-            allActivities.push({
-                id: comment.id,
-                type: 'comment',
-                action: 'commented on',
-                user: comment.user,
-                timestamp: comment.timestamp,
-                details: comment.text,
-                taskTitle: task.title,
-                projectName: projectName,
-                taskId: task.id,
-                task: task
-            });
-        });
+              return {
+                  id: doc.id,
+                  ...data,
+                  timestamp,
+                  // Map fields to match previous UI expectation
+                  user: data.userName || 'System',
+                  taskTitle: data.taskTitle || '',
+                  projectName: currentProject.name,
+                  // Ensure task exists in current list for click handling, though we might not find it if deleted
+                  task: tasks.find(t => t.id === data.taskId) 
+              };
+          });
+          setActivities(fetchedActivities);
+      });
 
-        // 3. Map Attachments
-        (task.attachments || []).forEach(att => {
-             if(att.uploadedAt) {
-                 allActivities.push({
-                     id: att.id,
-                     type: 'attachment',
-                     action: 'uploaded file',
-                     user: 'User', 
-                     timestamp: att.uploadedAt,
-                     details: att.fileName,
-                     taskTitle: task.title,
-                     projectName: projectName,
-                     taskId: task.id,
-                     task: task
-                 });
-             }
-        });
-    });
-
-    return allActivities.sort((a, b) => {
-        const dateA = new Date(a.timestamp).getTime();
-        const dateB = new Date(b.timestamp).getTime();
-        return dateB - dateA;
-    }).slice(0, 20); 
-  }, [tasks, projects]);
+      return () => unsubscribe();
+  }, [currentProject, tasks]); // Re-run if project changes, tasks dep allows linking task object
 
 
   if (tasks.length === 0) {
@@ -758,7 +745,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
             
             <div className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar print:max-h-none print:overflow-visible">
             <div className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-700 space-y-8">
-                {activityTimeline.map((item) => {
+                {activities.map((item) => {
                     let Icon = Clock;
                     let iconBg = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400';
                     let borderColor = 'border-slate-100 dark:border-slate-700';
@@ -791,8 +778,8 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
                     return (
                         <div 
                             key={item.id} 
-                            onClick={() => onTaskClick && onTaskClick(item.task)}
-                            className="relative pl-6 group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 p-2 -ml-2 rounded-lg transition-colors print:break-inside-avoid"
+                            onClick={() => item.task && onTaskClick && onTaskClick(item.task)}
+                            className={`relative pl-6 group hover:bg-slate-50 dark:hover:bg-slate-800/50 p-2 -ml-2 rounded-lg transition-colors print:break-inside-avoid ${item.task ? 'cursor-pointer' : ''}`}
                         >
                         {/* Node Icon */}
                         <div className={`absolute -left-[25px] top-2 w-8 h-8 rounded-full border-4 border-white dark:border-slate-800 flex items-center justify-center shadow-sm z-10 ${iconBg} print:border-slate-200`}>
@@ -845,7 +832,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
                 })}
             </div>
             
-            {activityTimeline.length === 0 && (
+            {activities.length === 0 && (
                 <div className="text-center py-12 text-slate-400">
                     <Clock size={48} className="mx-auto mb-3 opacity-20" />
                     <p>No recent activity.</p>

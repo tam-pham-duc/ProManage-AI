@@ -25,7 +25,8 @@ import ActiveTimerBar from './components/ActiveTimerBar';
 import PageTransition from './components/PageTransition';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
-import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole } from './types';
+import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType } from './types';
+import { logProjectActivity } from './services/activityService';
 
 // Firebase Imports
 import { auth, db } from './firebase';
@@ -321,8 +322,6 @@ const App: React.FC = () => {
   }, [currentUser?.id, selectedProjectId]);
 
   // --- Sync editingTask with Tasks (Fix for Real-time updates in Modal) ---
-  // This useEffect ensures that if the underlying `tasks` array is updated (e.g., via snapshot or local optimistic update),
-  // the `editingTask` passed to the modal is also refreshed.
   useEffect(() => {
     if (editingTask && isTaskModalOpen) {
       const updated = tasks.find(t => t.id === editingTask.id);
@@ -366,18 +365,6 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [tasks]); 
 
-  // --- Automated Trash Cleanup Logic ---
-  useEffect(() => {
-    const cleanupExpiredTrash = async () => {
-        if (!currentUser) return;
-        // Run once per session to save reads
-        if (sessionStorage.getItem('promanage_cleanup_done')) return;
-
-        // ... cleanup logic omitted for brevity ...
-    };
-    cleanupExpiredTrash();
-  }, [currentUser]);
-
   // --- Persistence Effects ---
   useEffect(() => { localStorage.setItem(THEME_KEY, JSON.stringify(isDarkMode)); }, [isDarkMode]);
   useEffect(() => { localStorage.setItem(SETTINGS_KEY, JSON.stringify(userSettings)); }, [userSettings]);
@@ -411,7 +398,6 @@ const App: React.FC = () => {
   };
 
   const handleGlobalTaskSelect = (task: Task) => {
-      // If task belongs to another project, switch to it
       if (task.projectId && task.projectId !== selectedProjectId) {
           setSelectedProjectId(task.projectId);
           notify('info', `Switched to project for task: ${task.title}`);
@@ -451,7 +437,6 @@ const App: React.FC = () => {
       }
   };
 
-  // --- Project CRUD Handlers ---
   const handleCreateProject = async (projectData: Partial<Project>) => {
       if (!currentUser) return;
       try {
@@ -478,6 +463,18 @@ const App: React.FC = () => {
               memberUIDs: memberUIDs,
               createdAt: serverTimestamp()
           });
+          
+          // Log Project Creation
+          await logProjectActivity(
+              docRef.id, 
+              'project-init', 
+              projectData.name || 'New Project', 
+              'created project', 
+              currentUser, 
+              'Initialized new project workspace', 
+              'create'
+          );
+
           setIsProjectModalOpen(false);
           handleSelectProject(docRef.id);
           notify('success', `Project "${projectData.name}" created!`);
@@ -505,6 +502,20 @@ const App: React.FC = () => {
               members: updatedMembers,
               memberUIDs: memberUIDs
           });
+          
+          // Log Update
+          if (currentUser) {
+              await logProjectActivity(
+                  projectToEdit.id,
+                  'project-update',
+                  projectData.name || projectToEdit.name,
+                  'updated project',
+                  currentUser,
+                  'Updated project settings',
+                  'update'
+              );
+          }
+
           setIsProjectModalOpen(false);
           setProjectToEdit(null);
           notify('success', "Project updated successfully");
@@ -514,7 +525,6 @@ const App: React.FC = () => {
       }
   };
 
-  // REWRITTEN: Function 2: handleDeleteProject (Cascade Soft Delete)
   const handleDeleteProject = async (projectIdToDelete?: string) => {
       const id = projectIdToDelete || selectedProjectId;
       if (!id) return;
@@ -522,31 +532,24 @@ const App: React.FC = () => {
       const projectToDelete = projects.find(p => p.id === id);
       if (!projectToDelete) return;
       
-      // 1. Permission Check (Admin/Owner)
       if (!currentUser || projectToDelete.ownerId !== currentUser.id) {
           notify('warning', "Only the project owner can delete this project.");
           return;
       }
 
-      // 2. Confirm
       if (!window.confirm("Move Project and ALL tasks to Trash?")) return;
 
       try {
-          // 3. Operation: WriteBatch
           const batch = writeBatch(db);
-          
-          // Step A: Query tasks
           const tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', id));
           const tasksSnap = await getDocs(tasksQuery);
 
-          // Step B: Soft-delete Project
           const projectRef = doc(db, 'projects', id);
           batch.update(projectRef, { 
               isDeleted: true, 
               deletedAt: serverTimestamp() 
           });
 
-          // Step C: Soft-delete Tasks
           tasksSnap.docs.forEach((taskDoc) => {
              batch.update(taskDoc.ref, { 
                  isDeleted: true, 
@@ -555,15 +558,12 @@ const App: React.FC = () => {
              });
           });
 
-          // Step D: Commit
           await batch.commit();
           
-          // 4. Redirect
           if (selectedProjectId === id) {
               setSelectedProjectId(null);
           }
           
-          // UI Cleanup
           setIsProjectModalOpen(false);
           setIsProjectSettingsOpen(false);
           setProjectToEdit(null);
@@ -575,7 +575,6 @@ const App: React.FC = () => {
       }
   };
 
-  // --- Render Content Logic ---
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
@@ -592,22 +591,62 @@ const App: React.FC = () => {
   };
 
   const handleSaveTask = async (taskData: Partial<Task>) => { 
-      if (!currentUser) return;
+      if (!currentUser || !selectedProjectId) return;
+      
       if (editingTask) {
-          // Optimistic Update for smoother UX
+          // Optimistic Update
           setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...taskData } : t));
           
-          // Firestore Update
           try {
              const taskRef = doc(db, 'tasks', editingTask.id);
              await updateDoc(taskRef, { ...taskData, updatedAt: serverTimestamp() });
+             
+             // Activity Logging for specific changes
+             const changes: string[] = [];
+             let type: ActivityType = 'update';
+             
+             if (taskData.status && taskData.status !== editingTask.status) {
+                 changes.push(`Moved to ${taskData.status}`);
+                 type = 'status_change';
+             }
+             if (taskData.priority && taskData.priority !== editingTask.priority) {
+                 changes.push(`Priority to ${taskData.priority}`);
+                 type = 'priority_change';
+             }
+             if (taskData.assignee && taskData.assignee !== editingTask.assignee) {
+                 changes.push(`Assigned to ${taskData.assignee}`);
+                 type = 'assign';
+             }
+
+             if (changes.length > 0) {
+                 await logProjectActivity(
+                     selectedProjectId,
+                     editingTask.id,
+                     taskData.title || editingTask.title,
+                     'updated task',
+                     currentUser,
+                     changes.join(', '),
+                     type
+                 );
+             }
+
              notify('success', "Task updated");
           } catch (e) { notify('error', 'Update failed'); }
       } else {
-          // create logic (Cannot do optimistic update easily without a temp ID that Firestore accepts, relying on listener is safer for creation)
           try {
-             if(!selectedProjectId) return;
-             await addDoc(collection(db, 'tasks'), { ...taskData, projectId: selectedProjectId, ownerId: currentUser.id, createdAt: serverTimestamp() });
+             const newDocRef = await addDoc(collection(db, 'tasks'), { ...taskData, projectId: selectedProjectId, ownerId: currentUser.id, createdAt: serverTimestamp() });
+             
+             // Log Creation
+             await logProjectActivity(
+                 selectedProjectId,
+                 newDocRef.id,
+                 taskData.title || 'New Task',
+                 'created task',
+                 currentUser,
+                 'Added to board',
+                 'create'
+             );
+
              notify('success', 'Task created');
           } catch (e) { notify('error', 'Create failed'); }
       }
@@ -615,33 +654,44 @@ const App: React.FC = () => {
       setEditingTask(undefined);
   };
 
-  // REWRITTEN: Function 1: handleDeleteTask (Soft Delete)
+  // Handler for Comments from TaskModal
+  const handleTaskComment = async (taskId: string, text: string) => {
+      if (!currentUser || !selectedProjectId) return;
+      
+      // The comment is already saved to the task document inside TaskModal's internal state/save
+      // Here we just log the activity
+      const task = tasks.find(t => t.id === taskId);
+      if (task) {
+          await logProjectActivity(
+              selectedProjectId,
+              taskId,
+              task.title,
+              'commented',
+              currentUser,
+              text,
+              'comment'
+          );
+      }
+  };
+
   const handleDeleteTask = async (taskId: string) => { 
-      // Resolve Task
       const taskToDelete = tasks.find(t => t.id === taskId) || (editingTask?.id === taskId ? editingTask : undefined);
       
-      if (!taskToDelete) {
-          console.error("Task not found for deletion:", taskId);
-          return;
-      }
+      if (!taskToDelete) return;
 
-      // 1. Permission Check
       const isOwner = currentUser && taskToDelete.ownerId === currentUser.id;
       const isAdmin = userRole === 'admin'; 
       
       if (!isOwner && !isAdmin) {
-          notify('error', "Permission denied. You must be the owner or admin.");
+          notify('error', "Permission denied.");
           return;
       }
 
-      // 2. Confirm
       if (!window.confirm("Move task to Trash?")) return;
 
       try {
-          // Optimistic Removal
           setTasks(prev => prev.filter(t => t.id !== taskId));
 
-          // 3. Operation: Soft Delete (updateDoc)
           const taskRef = doc(db, 'tasks', taskId);
           await updateDoc(taskRef, { 
               isDeleted: true, 
@@ -649,7 +699,19 @@ const App: React.FC = () => {
               originalProjectId: taskToDelete.projectId 
           });
           
-          // 4. UI Update
+          // Log Deletion
+          if (selectedProjectId) {
+              await logProjectActivity(
+                  selectedProjectId,
+                  taskId,
+                  taskToDelete.title,
+                  'deleted task',
+                  currentUser!,
+                  'Moved to trash',
+                  'update'
+              );
+          }
+
           setIsTaskModalOpen(false);
           setEditingTask(undefined);
           notify('success', 'Task moved to Trash');
@@ -661,10 +723,22 @@ const App: React.FC = () => {
 
   const handleDropTask = async (taskId: string, newStatus: TaskStatus) => { 
       try {
-          // Optimistic Update: Update local state immediately
+          const task = tasks.find(t => t.id === taskId);
           setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
           
           await updateDoc(doc(db, 'tasks', taskId), { status: newStatus, updatedAt: serverTimestamp() });
+          
+          if (currentUser && selectedProjectId && task) {
+              await logProjectActivity(
+                  selectedProjectId,
+                  taskId,
+                  task.title,
+                  'moved task',
+                  currentUser,
+                  `Moved to ${newStatus}`,
+                  'move'
+              );
+          }
       } catch (e) { console.error(e); }
   };
   
@@ -859,6 +933,7 @@ const App: React.FC = () => {
         columns={columns} projectMembers={currentProject?.members || []} initialDate={initialTaskDate}
         isReadOnly={modalPermissions.isReadOnly} canEdit={modalPermissions.canEdit} canDelete={modalPermissions.canDelete}
         allTasks={tasks} onTaskSelect={openEditTaskModal}
+        onTaskComment={handleTaskComment}
       />
 
       <ProjectModal

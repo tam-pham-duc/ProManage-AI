@@ -32,6 +32,9 @@ interface TaskModalProps {
   
   // Navigation
   onTaskSelect?: (task: Task) => void;
+  
+  // Events
+  onTaskComment?: (taskId: string, text: string) => void;
 }
 
 const toDateTimeLocal = (timestamp: number) => {
@@ -368,7 +371,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
   canEdit = true,
   canDelete = true,
   allTasks = [],
-  onTaskSelect
+  onTaskSelect,
+  onTaskComment
 }) => {
   const { notify } = useNotification();
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
@@ -664,9 +668,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
     if (!newComment.trim()) return;
     if (isReadOnly) return; 
     
-    setComments([...comments, { id: Date.now().toString(), user: currentUser, text: newComment, timestamp: new Date().toISOString() }]);
+    const commentText = newComment;
+    setComments([...comments, { id: Date.now().toString(), user: currentUser, text: commentText, timestamp: new Date().toISOString() }]);
     setNewComment('');
     setShowMentionList(false);
+
+    // Trigger external log if props provided
+    if (onTaskComment && task) {
+        onTaskComment(task.id, commentText);
+    }
   };
 
   const handleDeleteLog = async (logId: string) => {
