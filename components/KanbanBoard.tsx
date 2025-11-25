@@ -4,7 +4,6 @@ import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHor
 import { motion } from 'framer-motion';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
-import Avatar from './Avatar';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -300,7 +299,13 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       <div className={`flex items-center justify-between pt-3 border-t border-black/5 dark:border-white/5 mt-auto ${theme.meta} ${isBlocked ? 'opacity-60' : ''}`}>
         <div className="flex items-center gap-2">
           {/* Assignee Avatar */}
-          <Avatar src={task.assigneeAvatar} name={task.assignee} className="w-6 h-6" />
+          <div className="w-6 h-6 rounded-full bg-white dark:bg-slate-700 flex items-center justify-center text-[10px] font-bold shadow-sm ring-1 ring-black/10 dark:ring-white/10 overflow-hidden text-slate-600 dark:text-slate-300">
+            {task.assigneeAvatar && task.assigneeAvatar.startsWith('http') ? (
+              <img src={task.assigneeAvatar} alt={task.assignee} className="w-full h-full object-cover" />
+            ) : (
+              task.assignee === 'Unassigned' || task.assignee === 'UN' ? 'UN' : task.assignee.substring(0, 2).toUpperCase()
+            )}
+          </div>
           
           {/* Meta Icons */}
           {(attachmentCount > 0 || commentCount > 0) && (

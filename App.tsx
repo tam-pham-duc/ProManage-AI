@@ -833,7 +833,7 @@ const App: React.FC = () => {
           activeTab={activeTab} setActiveTab={setActiveTab}
           isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen}
           onAddTask={() => openNewTaskModal()} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}
-          userName={userSettings.userName} userTitle={userSettings.userTitle} userAvatar={currentUser.avatar}
+          userName={userSettings.userName} userTitle={userSettings.userTitle}
           projects={projects} selectedProjectId={selectedProjectId} onSelectProject={handleSelectProject}
           onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }}
           isDesktopOpen={isSidebarOpen}

@@ -8,7 +8,6 @@ import { db } from '../firebase';
 import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { saveTaskAsTemplate, getTemplates } from '../services/templateService';
-import Avatar from './Avatar';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -128,7 +127,9 @@ const MiniTaskCard: React.FC<{
 
             <div className="flex items-center justify-between mt-auto">
                 <div className="flex items-center gap-1.5">
-                    <Avatar src={task.assigneeAvatar} name={task.assignee} className="w-5 h-5" />
+                    <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden border border-white dark:border-slate-600">
+                        {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full object-cover" /> : task.assignee.charAt(0)}
+                    </div>
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[80px]">{task.assignee}</span>
                 </div>
                 {task.priority === 'High' && !isCompleted && (
@@ -1023,7 +1024,13 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                 <div key={item.id} className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
                                     <div className={`flex max-w-[85%] ${isMe ? 'flex-row-reverse' : 'flex-row'} items-end gap-2`}>
                                         {!isMe && (
-                                            <Avatar src={avatarUrl} name={item.user || item.userName} className="w-8 h-8 mb-1" />
+                                            <div className="shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-xs font-bold shadow-sm mb-1 overflow-hidden">
+                                                {avatarUrl ? (
+                                                    <img src={avatarUrl} alt={item.user} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    (item.user || item.userName || 'U').charAt(0).toUpperCase()
+                                                )}
+                                            </div>
                                         )}
                                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                                             {!isMe && (<span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 ml-1 mb-1">{item.user}</span>)}
