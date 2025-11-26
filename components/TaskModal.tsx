@@ -1039,6 +1039,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
   };
 
   const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
+  
+  // Add CSS class for date inputs to ensure icons are visible in both modes
+  const dateInputClass = `${inputBaseClass} [color-scheme:light] dark:[color-scheme:dark]`;
+
   const filteredAvailableTags = availableTags.filter(at => at.name.toLowerCase().includes(tagInput.toLowerCase()) && !tags.find(t => t.id === at.id));
 
   if (!isOpen) return null;
@@ -1055,11 +1059,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <div className="space-y-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Start Time</label>
-                            <input type="datetime-local" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            <input type="datetime-local" value={editStartTime} onChange={(e) => setEditStartTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none [color-scheme:light] dark:[color-scheme:dark]" />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">End Time</label>
-                            <input type="datetime-local" value={editEndTime} onChange={(e) => setEditEndTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                            <input type="datetime-local" value={editEndTime} onChange={(e) => setEditEndTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none [color-scheme:light] dark:[color-scheme:dark]" />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Notes</label>
@@ -1271,11 +1275,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Calendar size={12} /> Start Date</label>
-                        <input type="date" required readOnly={isReadOnly} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputBaseClass} />
+                        <input type="date" required readOnly={isReadOnly} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={dateInputClass} />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertCircle size={12} /> Due Date</label>
-                        <input type="date" required readOnly={isReadOnly} value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputBaseClass} />
+                        <input type="date" required readOnly={isReadOnly} value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={dateInputClass} />
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><User size={12} /> Assignee</label>
@@ -1614,8 +1618,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         <div className="pt-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 -mx-6 px-6 -mb-6 pb-6">
                             <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Add Manual Entry</h4>
                             <div className="grid grid-cols-2 gap-3 mb-3">
-                                <input type="datetime-local" value={manualStartTime} onChange={(e) => setManualStartTime(e.target.value)} className={inputBaseClass} />
-                                <input type="datetime-local" value={manualEndTime} onChange={(e) => setManualEndTime(e.target.value)} className={inputBaseClass} />
+                                <input type="datetime-local" value={manualStartTime} onChange={(e) => setManualStartTime(e.target.value)} className={`${inputBaseClass} [color-scheme:light] dark:[color-scheme:dark]`} />
+                                <input type="datetime-local" value={manualEndTime} onChange={(e) => setManualEndTime(e.target.value)} className={`${inputBaseClass} [color-scheme:light] dark:[color-scheme:dark]`} />
                             </div>
                             <div className="flex gap-3">
                                 <input type="text" value={manualNotes} onChange={(e) => setManualNotes(e.target.value)} placeholder="Notes (optional)" className={`${inputBaseClass} flex-1`} />
