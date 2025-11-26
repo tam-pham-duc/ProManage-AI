@@ -50,9 +50,6 @@ const SmartConnector: React.FC<{ connection: Connection; isHighlighted: boolean;
     const isFlowing = isHighlighted && !isBlocked;
     
     // Line Style
-    // Blocked: Dashed
-    // Flowing: Dashed (for animation movement) but looks like moving ants
-    // Static Unlocked: Solid
     const strokeDasharray = isBlocked ? "6, 4" : (isFlowing ? "8, 4" : "none");
     const animationClass = isFlowing ? "animate-dash-flow" : "";
 
@@ -79,23 +76,25 @@ const SmartConnector: React.FC<{ connection: Connection; isHighlighted: boolean;
                 className={`transition-all duration-500 ${animationClass}`}
             />
             
-            {/* Connector Icon Badge */}
-            <foreignObject x={midX - 12} y={midY - 12} width="24" height="24">
-                <div 
-                    className={`
-                        w-6 h-6 rounded-full flex items-center justify-center border shadow-sm z-10 transition-transform duration-300
-                        ${isHighlighted ? 'scale-125' : 'scale-100'} 
-                        ${isBlocked 
-                            ? 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-900 shadow-red-100 dark:shadow-none' 
-                            : 'bg-emerald-50 dark:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800 shadow-emerald-100 dark:shadow-none'
-                        }
-                    `}
-                >
-                    {isBlocked ? (
-                        <Lock size={10} className="text-red-500" />
-                    ) : (
-                        <Check size={10} className="text-emerald-600 dark:text-emerald-400" />
-                    )}
+            {/* Connector Icon Badge - Bounding Box Increased to 40x40 to prevent clipping on scale */}
+            <foreignObject x={midX - 20} y={midY - 20} width="40" height="40">
+                <div className="w-full h-full flex items-center justify-center">
+                    <div 
+                        className={`
+                            w-6 h-6 rounded-full flex items-center justify-center border shadow-sm z-10 transition-all duration-300
+                            ${isHighlighted ? 'scale-110 shadow-md' : 'scale-100'} 
+                            ${isBlocked 
+                                ? 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-900' 
+                                : 'bg-white dark:bg-slate-800 border-emerald-200 dark:border-emerald-800'
+                            }
+                        `}
+                    >
+                        {isBlocked ? (
+                            <Lock size={12} className="text-red-500" />
+                        ) : (
+                            <Check size={12} className="text-emerald-500" />
+                        )}
+                    </div>
                 </div>
             </foreignObject>
         </g>

@@ -97,10 +97,12 @@ const SmartConnector: React.FC<{
             )}
             <path d={pathD} fill="none" stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} className={`transition-all duration-500 ${animationClass}`} />
             
-            {/* Icon */}
-            <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
-                <div className={`w-5 h-5 rounded-full flex items-center justify-center border shadow-sm z-10 transition-transform duration-300 ${isHighlighted ? 'scale-125' : ''} ${isBlocked ? 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-900' : 'bg-emerald-50 dark:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800'}`}>
-                    {isBlocked ? <Lock size={10} className="text-red-500" /> : <Check size={10} className="text-emerald-600 dark:text-emerald-400" />}
+            {/* Connector Icon Badge - Prevent Clipping */}
+            <foreignObject x={midX - 20} y={midY - 20} width="40" height="40">
+                <div className="w-full h-full flex items-center justify-center">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center border shadow-sm z-10 transition-all duration-300 ${isHighlighted ? 'scale-110 shadow-md' : 'scale-100'} ${isBlocked ? 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-900' : 'bg-white dark:bg-slate-800 border-emerald-200 dark:border-emerald-800'}`}>
+                        {isBlocked ? <Lock size={12} className="text-red-500" /> : <Check size={12} className="text-emerald-500" />}
+                    </div>
                 </div>
             </foreignObject>
         </g>
@@ -1146,13 +1148,95 @@ const TaskModal: React.FC<TaskModalProps> = ({
             </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6 overflow-x-auto custom-scrollbar">
-          <button onClick={() => setActiveTab('details')} className={`py-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Details</button>
-          <button onClick={() => setActiveTab('discussion')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Discussion <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length}</span></button>
-          {task && (<button onClick={() => setActiveTab('activity')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'activity' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Activity</button>)}
-          {task && (<button onClick={() => setActiveTab('flow')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'flow' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Task Flow <GitBranch size={14} className={activeTab === 'flow' ? 'text-indigo-500' : ''} /></button>)}
-          {task && (<button onClick={() => setActiveTab('timeLogs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'timeLogs' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Time Logs <History size={14} className={activeTab === 'timeLogs' ? 'text-indigo-500' : ''} /></button>)}
+        {/* Tabs - Refactored for Vertical Alignment & Scrolling */}
+        <div className="flex items-center gap-6 px-6 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-x-auto hide-scrollbar shrink-0">
+            {/* Details Tab */}
+            <button
+                onClick={() => setActiveTab('details')}
+                className={`relative flex items-center gap-2 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                    activeTab === 'details' 
+                    ? 'text-indigo-600 dark:text-indigo-400' 
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+            >
+                Details
+                {activeTab === 'details' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />
+                )}
+            </button>
+
+            {/* Discussion Tab */}
+            <button
+                onClick={() => setActiveTab('discussion')}
+                className={`relative flex items-center gap-2 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                    activeTab === 'discussion'
+                    ? 'text-indigo-600 dark:text-indigo-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+            >
+                Discussion
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                    activeTab === 'discussion' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' 
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                }`}>
+                    {comments.length}
+                </span>
+                {activeTab === 'discussion' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />
+                )}
+            </button>
+
+            {/* Activity Tab */}
+            <button
+                onClick={() => setActiveTab('activity')}
+                className={`relative flex items-center gap-2 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                    activeTab === 'activity'
+                    ? 'text-indigo-600 dark:text-indigo-400'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+            >
+                Activity
+                {activeTab === 'activity' && (
+                    <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />
+                )}
+            </button>
+
+            {/* Flow Tab */}
+            {task && (
+                <button
+                    onClick={() => setActiveTab('flow')}
+                    className={`relative flex items-center gap-2 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                        activeTab === 'flow'
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                >
+                    <GitBranch size={16} />
+                    Task Flow
+                    {activeTab === 'flow' && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />
+                    )}
+                </button>
+            )}
+
+            {/* Time Logs Tab */}
+            {task && (
+                <button
+                    onClick={() => setActiveTab('timeLogs')}
+                    className={`relative flex items-center gap-2 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                        activeTab === 'timeLogs'
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                >
+                    <History size={16} />
+                    Time Logs
+                    {activeTab === 'timeLogs' && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />
+                    )}
+                </button>
+            )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-white dark:bg-slate-800">
