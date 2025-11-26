@@ -9,6 +9,7 @@ import { doc, updateDoc, arrayUnion, onSnapshot, query, collection, where, getDo
 import { useNotification } from '../context/NotificationContext';
 import { saveTaskAsTemplate, getTemplates } from '../services/templateService';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
+import { useCelebration } from '../hooks/useCelebration';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -413,6 +414,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   onTaskComment
 }) => {
   const { notify } = useNotification();
+  const { triggerCelebration } = useCelebration();
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
   const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'activity' | 'flow' | 'timeLogs'>('details');
   
@@ -1020,6 +1022,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
     if (!title.trim()) {
         notify('error', 'Task Title is required.');
         return;
+    }
+
+    // Celebration Logic: If task status changed TO "Done"
+    if (status === 'Done' && task && task.status !== 'Done') {
+        triggerCelebration();
     }
 
     onSubmit({

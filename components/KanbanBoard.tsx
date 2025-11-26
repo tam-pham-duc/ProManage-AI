@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
+import { useCelebration } from '../hooks/useCelebration';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -47,14 +48,23 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
   
   const isActive = activeTimer?.taskId === task.id;
 
-  // --- Flash Effect State ---
+  // --- Flash & Completion Animation State ---
   const prevStatusRef = useRef(task.status);
   const [isJustDropped, setIsJustDropped] = useState(false);
+  const [isSuccessAnim, setIsSuccessAnim] = useState(false);
 
   useEffect(() => {
       if (prevStatusRef.current !== task.status) {
+          // Just dropped feedback
           setIsJustDropped(true);
           const timer = setTimeout(() => setIsJustDropped(false), 1000); // 1s flash
+          
+          // Success Pop Animation if moved TO Done
+          if (task.status === 'Done' && prevStatusRef.current !== 'Done') {
+              setIsSuccessAnim(true);
+              setTimeout(() => setIsSuccessAnim(false), 600);
+          }
+
           prevStatusRef.current = task.status;
           return () => clearTimeout(timer);
       }
@@ -167,11 +177,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       }
   };
 
-  // Fix for ghost card: Use class based opacity instead of inline styles for cleaner reset
-  // Added hover scale and elevation for interactive feedback
   const dragClass = isDragging 
     ? 'opacity-50 cursor-grabbing' 
     : 'opacity-100 cursor-pointer hover:shadow-lg hover:z-20 hover:scale-[1.02]';
+
+  const successClass = isSuccessAnim ? 'animate-success-pop ring-2 ring-emerald-500 shadow-emerald-200 z-30' : '';
 
   return (
     <motion.div 
@@ -191,8 +201,9 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
             ? 'bg-stripes-gray border-slate-300 dark:border-slate-600 opacity-90 border-l-slate-500' 
             : theme.container}
         ${statusIndicatorClass}
+        ${successClass}
         ${isReadOnly ? 'cursor-default' : ''}
-        ${isJustDropped ? 'ring-2 ring-yellow-400 ring-offset-2 shadow-[0_0_15px_rgba(250,204,21,0.5)] z-20' : ''}
+        ${isJustDropped && !isSuccessAnim ? 'ring-2 ring-yellow-400 ring-offset-2 shadow-[0_0_15px_rgba(250,204,21,0.5)] z-20' : ''}
       `}
       title={isBlocked ? `Blocked by: ${blockingTaskTitles}` : ''}
     >
@@ -677,6 +688,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     allTasks = [], 
     onDeleteTask 
 }) => {
+  const { triggerCelebration } = useCelebration();
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
@@ -722,6 +734,18 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const handleDragEnd = () => {
       setDraggedTaskId(null);
+  };
+
+  // Wrapped drop handler to trigger celebration
+  const handleDropTaskWrapper = (taskId: string, newStatus: string) => {
+      if (newStatus === 'Done') {
+          const task = tasks.find(t => t.id === taskId);
+          // Only celebrate if it wasn't already Done
+          if (task && task.status !== 'Done') {
+              triggerCelebration();
+          }
+      }
+      onDropTask(taskId, newStatus);
   };
 
   const handleAddSubmit = () => {
@@ -838,7 +862,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 draggedTaskId={draggedTaskId}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
-                onDropTask={onDropTask}
+                onDropTask={handleDropTaskWrapper}
                 isReadOnly={isReadOnly}
                 allTasks={allTasks}
                 onDeleteTask={onDeleteTask}

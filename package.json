@@ -14,7 +14,8 @@
     "react": "^19.2.0",
     "lucide-react": "^0.554.0",
     "framer-motion": "^11.0.8",
-    "firebase": "^12.6.0"
+    "firebase": "^12.6.0",
+    "canvas-confetti": "1.9.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
