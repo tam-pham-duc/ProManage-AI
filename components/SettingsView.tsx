@@ -209,10 +209,18 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   const [newStatusLabel, setNewStatusLabel] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('slate-1');
 
-  // Initialize/Reset State when Modal Opens
+  // --- INITIALIZATION EFFECTS (Split to prevent bugs) ---
+
+  // 1. Tab State Management (Only reset when opening)
   useEffect(() => {
     if (isOpen) {
-      setActiveTab('general'); // Default tab
+      setActiveTab('general');
+    }
+  }, [isOpen]);
+
+  // 2. User Data Sync
+  useEffect(() => {
+    if (isOpen) {
       setProfileName(userSettings.userName);
       setProfileTitle(userSettings.userTitle);
       if (auth.currentUser?.photoURL) {
@@ -221,34 +229,36 @@ const SettingsView: React.FC<SettingsViewProps> = ({
       if (auth.currentUser?.email === SUPER_ADMIN_EMAIL) {
           setIsAdmin(true);
       }
-      
-      // Project Data
-      if (project) {
-          setProjectName(project.name);
-          setProjectClient(project.clientName);
-          setProjectAddress(project.address);
-      }
-
-      // Fetch Project Statuses
-      const user = auth.currentUser;
-      if (user) {
-          const userRef = doc(db, 'users', user.uid);
-          getDocs(collection(db, 'users')).then(() => { 
-              // Simple read via onSnapshot handles real-time, but for settings initial load is enough or subscription in effect
-          });
-          
-          const unsubscribe = onSnapshot(userRef, (docSnap) => {
-              if (docSnap.exists()) {
-                  const data = docSnap.data();
-                  if (data.projectStatuses && Array.isArray(data.projectStatuses)) {
-                      setProjectStatuses(data.projectStatuses);
-                  }
-              }
-          });
-          return () => unsubscribe();
-      }
     }
-  }, [isOpen, userSettings, project]);
+  }, [isOpen, userSettings]);
+
+  // 3. Project Data Sync
+  useEffect(() => {
+    if (isOpen && project) {
+        setProjectName(project.name);
+        setProjectClient(project.clientName);
+        setProjectAddress(project.address);
+    }
+  }, [isOpen, project]);
+
+  // 4. Statuses Sync
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const user = auth.currentUser;
+    if (user) {
+        const userRef = doc(db, 'users', user.uid);
+        const unsubscribe = onSnapshot(userRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.projectStatuses && Array.isArray(data.projectStatuses)) {
+                    setProjectStatuses(data.projectStatuses);
+                }
+            }
+        });
+        return () => unsubscribe();
+    }
+  }, [isOpen]);
 
   // Fetch Templates Effect
   useEffect(() => {
