@@ -81,7 +81,7 @@ const IssueModal: React.FC<IssueModalProps> = ({
         relatedTaskId: relatedTaskId || null,
       };
 
-      if (issue) {
+      if (issue && issue.id) {
         // Update
         const ref = doc(db, 'projects', projectId, 'issues', issue.id);
         // Only update resolvedAt if changing to Resolved status
@@ -110,14 +110,14 @@ const IssueModal: React.FC<IssueModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
+    <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
       <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 dark:border-slate-700 flex flex-col max-h-[90vh]">
         
         {/* Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-red-50/50 dark:bg-red-900/10">
           <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <AlertTriangle size={20} className="text-red-500" />
-            {issue ? 'Edit Issue' : 'Report Issue'}
+            {issue && issue.id ? 'Edit Issue' : 'Report Issue'}
           </h2>
           <button onClick={onClose} className="text-slate-500 hover:text-slate-700 dark:hover:text-white transition-colors">
             <X size={24} />

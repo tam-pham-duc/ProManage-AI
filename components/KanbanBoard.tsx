@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban, Play, Square, Timer, Trash2, Edit2, Palette } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban, Play, Square, Timer, Trash2, Edit2, Palette, Bug } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
+import { Task, TaskStatus, KanbanColumn as IKanbanColumn, Issue } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 import { useCelebration } from '../hooks/useCelebration';
@@ -20,6 +20,7 @@ interface KanbanBoardProps {
   isReadOnly?: boolean;
   allTasks?: Task[];
   onDeleteTask?: (taskId: string) => void;
+  issues?: Issue[];
 }
 
 interface TaskCardProps {
@@ -31,9 +32,10 @@ interface TaskCardProps {
   isReadOnly?: boolean;
   allTasks?: Task[];
   onDelete?: (taskId: string) => void;
+  openIssueCount?: number;
 }
 
-const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [], onDelete }) => {
+const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [], onDelete, openIssueCount = 0 }) => {
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
   
   const isActive = activeTimer?.taskId === task.id;
@@ -260,6 +262,15 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
             </h4>
             
             <div className="flex items-center gap-2 shrink-0">
+                {openIssueCount > 0 && (
+                    <div className="relative group/issue" title={`${openIssueCount} open issues`}>
+                        <div className="bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-md flex items-center gap-1 border border-red-200 dark:border-red-800">
+                            <Bug size={12} />
+                            <span className="text-[10px] font-bold">{openIssueCount}</span>
+                        </div>
+                    </div>
+                )}
+
                 {deadlineStatus === 'overdue' && (
                     <AlertCircle size={16} className="text-red-500 animate-pulse" title="Overdue!" />
                 )}
@@ -393,6 +404,7 @@ interface KanbanColumnProps {
   onDeleteTask?: (taskId: string) => void;
   onEditColumn?: (columnId: string, title: string, color: string) => void;
   onDeleteColumn?: (columnId: string) => void;
+  issues?: Issue[];
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({ 
@@ -408,7 +420,8 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   allTasks = [],
   onDeleteTask,
   onEditColumn,
-  onDeleteColumn
+  onDeleteColumn,
+  issues = []
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -675,19 +688,23 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
         </div>
 
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3 custom-scrollbar">
-        {tasks.map(task => (
-          <TaskCard 
-            key={task.id} 
-            task={task} 
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onClick={() => onTaskClick(task)}
-            isDragging={draggedTaskId === task.id}
-            isReadOnly={isReadOnly}
-            allTasks={allTasks}
-            onDelete={onDeleteTask}
-          />
-        ))}
+        {tasks.map(task => {
+            const taskIssues = issues.filter(i => i.relatedTaskId === task.id && i.status !== 'Resolved' && i.status !== "Won't Fix");
+            return (
+                <TaskCard 
+                    key={task.id} 
+                    task={task} 
+                    onDragStart={onDragStart}
+                    onDragEnd={onDragEnd}
+                    onClick={() => onTaskClick(task)}
+                    isDragging={draggedTaskId === task.id}
+                    isReadOnly={isReadOnly}
+                    allTasks={allTasks}
+                    onDelete={onDeleteTask}
+                    openIssueCount={taskIssues.length}
+                />
+            );
+        })}
         {tasks.length === 0 && (
           <div className={`
             h-32 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 transition-all
@@ -719,7 +736,8 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     onDeleteColumn,
     isReadOnly = false, 
     allTasks = [], 
-    onDeleteTask 
+    onDeleteTask,
+    issues = []
 }) => {
   const { triggerCelebration } = useCelebration();
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
@@ -900,6 +918,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 onDeleteTask={onDeleteTask}
                 onEditColumn={onEditColumn}
                 onDeleteColumn={onDeleteColumn}
+                issues={issues}
                 />
             );
           })}

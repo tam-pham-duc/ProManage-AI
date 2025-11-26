@@ -1007,7 +1007,7 @@ const App: React.FC = () => {
             <Section id="kanban">
                 <div className="flex flex-col h-full min-h-[800px]">
                     <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-                    <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} onDeleteTask={handleDeleteTask} />
+                    <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} onDeleteTask={handleDeleteTask} issues={issues} />
                 </div>
             </Section>
 
@@ -1048,6 +1048,7 @@ const App: React.FC = () => {
                         projectMembers={currentProject?.members || []}
                         currentUserId={currentUser?.id || ''}
                         isReadOnly={userRole === 'guest'}
+                        onTaskClick={handleGlobalTaskSelect}
                     />
                 </div>
             </Section>
@@ -1193,6 +1194,7 @@ const App: React.FC = () => {
         isReadOnly={modalPermissions.isReadOnly} canEdit={modalPermissions.canEdit} canDelete={modalPermissions.canDelete}
         allTasks={tasks} onTaskSelect={openEditTaskModal}
         onTaskComment={handleTaskComment}
+        issues={issues}
       />
 
       <ProjectModal

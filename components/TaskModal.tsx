@@ -1,7 +1,7 @@
 
-import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown, ListChecks, MoreVertical, Activity, Bold, Italic, Underline, Strikethrough, Palette, Highlighter } from 'lucide-react';
-import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, Tag as TagIcon, FileText, Bell, Lock, Check, Clock, GitBranch, Play, Square, History, Pencil, Save as SaveIcon, LayoutTemplate, Loader2, ChevronDown, ListChecks, Bold, Italic, Underline, Strikethrough, Palette, Highlighter, Bug } from 'lucide-react';
+import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog, Issue } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 import { db } from '../firebase';
@@ -10,6 +10,7 @@ import { useNotification } from '../context/NotificationContext';
 import { saveTaskAsTemplate, getTemplates } from '../services/templateService';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 import { useCelebration } from '../hooks/useCelebration';
+import IssueModal from './IssueModal';
 
 interface TaskModalProps {
   isOpen: boolean;
@@ -38,6 +39,9 @@ interface TaskModalProps {
   
   // Events
   onTaskComment?: (taskId: string, text: string) => void;
+
+  // Issues Integration
+  issues?: Issue[];
 }
 
 const toDateTimeLocal = (timestamp: number) => {
@@ -411,12 +415,13 @@ const TaskModal: React.FC<TaskModalProps> = ({
   canDelete = true,
   allTasks = [],
   onTaskSelect,
-  onTaskComment
+  onTaskComment,
+  issues = []
 }) => {
   const { notify } = useNotification();
   const { triggerCelebration } = useCelebration();
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
-  const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'activity' | 'flow' | 'timeLogs'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'activity' | 'flow' | 'timeLogs' | 'issues'>('details');
   
   // Timer state for UI updates
   const [now, setNow] = useState(Date.now());
@@ -504,6 +509,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [timeLogs, setTimeLogs] = useState<TimeLog[]>([]);
   const [totalTimeSeconds, setTotalTimeSeconds] = useState(0);
 
+  // Issue Modal State
+  const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
+  const [editingIssue, setEditingIssue] = useState<Issue | undefined>(undefined);
+
   const prevTaskIdRef = useRef<string | undefined>(undefined);
 
   const activeMembers = useMemo(() => {
@@ -566,6 +575,14 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   const isTracking = task && activeTimer?.taskId === task.id;
 
+  // Filter issues for this task
+  const taskIssues = useMemo(() => {
+      if (!task) return [];
+      return issues.filter(i => i.relatedTaskId === task.id);
+  }, [issues, task]);
+
+  const openIssueCount = taskIssues.filter(i => i.status !== 'Resolved' && i.status !== "Won't Fix").length;
+
   // Reset Edit State
   useEffect(() => {
     if (!isOpen) {
@@ -579,6 +596,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setEditingCommentId(null);
       setEditingSubtaskId(null);
       setEditingSubtaskText('');
+      setIsIssueModalOpen(false);
+      setEditingIssue(undefined);
     }
   }, [isOpen]);
 
@@ -706,6 +725,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
           setEditingCommentId(null);
           setEditingSubtaskId(null);
           setEditingSubtaskText('');
+          setIsIssueModalOpen(false);
+          setEditingIssue(undefined);
 
           prevTaskIdRef.current = task?.id;
           
@@ -1061,6 +1082,32 @@ const TaskModal: React.FC<TaskModalProps> = ({
     });
   };
 
+  // Issue Handling
+  const handleOpenIssueModal = () => {
+      if (!task) {
+          notify('warning', "Please create and save the task before adding issues.");
+          return;
+      }
+      setEditingIssue({
+          id: '',
+          projectId: task.projectId || '',
+          title: '',
+          description: '',
+          status: 'Open',
+          severity: 'Medium',
+          reporterId: currentUserId || '',
+          assigneeId: assigneeId === 'UN' ? undefined : assigneeId,
+          relatedTaskId: task.id, // Auto-fill
+          createdAt: null
+      } as Issue);
+      setIsIssueModalOpen(true);
+  };
+
+  const handleEditIssue = (issue: Issue) => {
+      setEditingIssue(issue);
+      setIsIssueModalOpen(true);
+  };
+
   const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
   
   // Add CSS class for date inputs to ensure icons are visible in both modes, plus invert fallback
@@ -1183,6 +1230,28 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />
                 )}
             </button>
+
+            {/* Issues Tab */}
+            {task && (
+                <button
+                    onClick={() => setActiveTab('issues')}
+                    className={`relative flex items-center gap-2 py-4 text-sm font-medium whitespace-nowrap transition-colors ${
+                        activeTab === 'issues'
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                >
+                    Issues
+                    {openIssueCount > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300">
+                            {openIssueCount}
+                        </span>
+                    )}
+                    {activeTab === 'issues' && (
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />
+                    )}
+                </button>
+            )}
 
             {/* Discussion Tab */}
             <button
@@ -1435,6 +1504,63 @@ const TaskModal: React.FC<TaskModalProps> = ({
               </>
             )}
 
+            {/* ISSUES TAB */}
+            {activeTab === 'issues' && (
+                <div className="h-full flex flex-col min-h-[400px]">
+                    <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center gap-2">
+                            <Bug size={18} className="text-red-500" />
+                            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">Related Issues</h3>
+                        </div>
+                        {!isReadOnly && (
+                            <button 
+                                type="button" 
+                                onClick={handleOpenIssueModal}
+                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+                            >
+                                <Plus size={12} /> Report Issue
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-2 custom-scrollbar pr-1">
+                        {taskIssues.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center h-40 text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+                                <Bug size={24} className="mb-2 opacity-50" />
+                                <p className="text-xs">No issues reported for this task.</p>
+                            </div>
+                        ) : (
+                            taskIssues.map(issue => (
+                                <div 
+                                    key={issue.id} 
+                                    onClick={() => handleEditIssue(issue)}
+                                    className="p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-red-300 dark:hover:border-red-800 cursor-pointer transition-colors group"
+                                >
+                                    <div className="flex justify-between items-start mb-1">
+                                        <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 line-clamp-1 group-hover:text-red-500 transition-colors">{issue.title}</h4>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${issue.status === 'Resolved' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'}`}>
+                                            {issue.status}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center mt-2">
+                                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                                            issue.severity === 'Critical' ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-900' : 
+                                            issue.severity === 'High' ? 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:border-orange-900' : 
+                                            'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-900'
+                                        }`}>
+                                            {issue.severity}
+                                        </span>
+                                        <span className="text-[10px] text-slate-400">
+                                            {issue.reporterName ? `by ${issue.reporterName}` : ''}
+                                        </span>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* DISCUSSION TAB (Chat Only) */}
             {activeTab === 'discussion' && (
                 <div className="h-full flex flex-col min-h-[400px]">
@@ -1581,7 +1707,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 <div className="h-full overflow-y-auto custom-scrollbar pr-2">
                     {realtimeActivities.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
-                            <Activity size={32} className="mb-2" />
+                            <History size={32} className="mb-2" />
                             <p className="text-sm">No activity logged yet.</p>
                         </div>
                     ) : (
@@ -1738,6 +1864,19 @@ const TaskModal: React.FC<TaskModalProps> = ({
         </div>
 
       </div>
+
+      {/* Nested Issue Modal */}
+      {task && (
+          <IssueModal 
+            isOpen={isIssueModalOpen}
+            onClose={() => setIsIssueModalOpen(false)}
+            issue={editingIssue}
+            projectId={task.projectId}
+            currentUserId={currentUserId || ''}
+            projectMembers={projectMembers || []}
+            tasks={allTasks || []}
+          />
+      )}
     </div>
   );
 };
