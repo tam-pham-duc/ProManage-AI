@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, PieChart, Clock, Users, Briefcase, Download, Calendar, ChevronDown, User, Layers, FileText, Search, Activity, BarChart3, Zap } from 'lucide-react';
+import { Loader2, PieChart, Clock, Users, Briefcase, Download, Calendar, ChevronDown, User, Layers, FileText, Search, Activity, BarChart3, Zap, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
 import { db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Task, TimeLog, Project } from '../types';
@@ -11,7 +11,7 @@ interface TimeReportsViewProps {
   projects?: Project[];
 }
 
-// Flattened Log Interface for Reporting
+// Flattened Log Interface
 interface FlatTimeLog {
   logId: string;
   date: Date;
@@ -42,6 +42,7 @@ interface FilterOption {
   label: string;
 }
 
+type ReportType = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
 type GroupByType = 'none' | 'project' | 'user';
 
 interface HeatmapCell {
@@ -57,45 +58,100 @@ interface WorkloadItem {
     color: string;
 }
 
-// Helper to safely parse various date formats
-const parseLogDate = (val: any): Date | null => {
-    if (!val) return null;
-    if (val instanceof Date) return val;
-    if (typeof val === 'number') return new Date(val);
-    if (typeof val === 'string') return new Date(val);
-    if (typeof val === 'object' && 'seconds' in val) return new Date(val.seconds * 1000);
-    if (typeof val === 'object' && typeof val.toDate === 'function') return val.toDate();
-    return null;
+// --- HELPER: Date Logic Engine ---
+
+const getStartOfWeek = (date: Date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is sunday
+    return new Date(d.setDate(diff));
 };
 
-// Helper: Generate Productivity Heatmap Data
-const generateHeatmapData = (logs: FlatTimeLog[], startStr: string, endStr: string): HeatmapCell[] => {
-    if (!startStr || !endStr) return [];
-    
-    // Parse as Local Time to match day boundaries
-    let start = new Date(startStr + 'T00:00:00');
-    let end = new Date(endStr + 'T23:59:59');
-    
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+const getRangeFromAnchor = (type: ReportType, anchor: Date, custom: {start: string, end: string}) => {
+    const start = new Date(anchor);
+    const end = new Date(anchor);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
 
-    // Cap visual range to last 60 days to prevent UI overflow
+    switch (type) {
+        case 'daily':
+            // Already set to start/end of anchor day
+            break;
+        case 'weekly':
+            const monday = getStartOfWeek(anchor);
+            start.setTime(monday.getTime());
+            start.setHours(0, 0, 0, 0);
+            
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            end.setTime(sunday.getTime());
+            end.setHours(23, 59, 59, 999);
+            break;
+        case 'monthly':
+            start.setDate(1);
+            end.setMonth(end.getMonth() + 1);
+            end.setDate(0); // Last day of month
+            break;
+        case 'quarterly':
+            const currentMonth = anchor.getMonth();
+            const qStartMonth = Math.floor(currentMonth / 3) * 3;
+            start.setMonth(qStartMonth);
+            start.setDate(1);
+            
+            end.setMonth(qStartMonth + 3);
+            end.setDate(0);
+            break;
+        case 'yearly':
+            start.setMonth(0, 1);
+            end.setMonth(11, 31);
+            break;
+        case 'custom':
+            if (custom.start) {
+                const s = new Date(custom.start);
+                s.setHours(0,0,0,0); // Local time start
+                // Adjust for timezone offset if input value is UTC-based string
+                const offsetS = s.getTimezoneOffset() * 60000;
+                start.setTime(s.getTime() + offsetS);
+            }
+            if (custom.end) {
+                const e = new Date(custom.end);
+                e.setHours(23,59,59,999);
+                const offsetE = e.getTimezoneOffset() * 60000;
+                end.setTime(e.getTime() + offsetE);
+            }
+            break;
+    }
+    return { start, end };
+};
+
+const formatRangeDisplay = (type: ReportType, start: Date, end: Date) => {
+    if (type === 'daily') return start.toLocaleDateString(undefined, { weekday: 'short', month: 'long', day: 'numeric', year: 'numeric' });
+    if (type === 'weekly') return `${start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    if (type === 'monthly') return start.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    if (type === 'quarterly') return `Q${Math.floor(start.getMonth() / 3) + 1} ${start.getFullYear()}`;
+    if (type === 'yearly') return start.getFullYear().toString();
+    return 'Custom Range';
+};
+
+// --- HELPER: Analytics Generators ---
+
+const generateHeatmapData = (logs: FlatTimeLog[], start: Date, end: Date): HeatmapCell[] => {
+    // Cap visual range to last 60 days if range is huge, or use full range if reasonable
     const diffTime = end.getTime() - start.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    if (diffDays > 60) {
-        start = new Date(end);
-        start.setDate(end.getDate() - 60);
-        start.setHours(0,0,0,0);
+    let renderStart = new Date(start);
+    if (diffDays > 90) {
+        // If viewing a year, show heatmap for active data or just last 3 months? 
+        // Let's allow full range but CSS grid might get tight. 
+        // For 'Yearly' mode, the heatmap is usually too dense. Let's stick to "Timeline" logic:
+        // Map logs to days.
     }
 
-    // Aggregate hours per local date
     const dailyMap: Record<string, number> = {};
     logs.forEach(l => {
-        // Use local YYYY-MM-DD key
-        const k = l.date.toLocaleDateString('en-CA'); 
-        // Add hours (if date is within the render window)
-        // Note: logs are already filtered by the broader range, but we check against the capped start
-        if (l.date >= start) {
+        if (l.date >= start && l.date <= end) {
+            const k = l.date.toLocaleDateString('en-CA'); // YYYY-MM-DD
             dailyMap[k] = (dailyMap[k] || 0) + (l.time.duration / 3600);
         }
     });
@@ -103,98 +159,67 @@ const generateHeatmapData = (logs: FlatTimeLog[], startStr: string, endStr: stri
     const data: HeatmapCell[] = [];
     const curr = new Date(start);
     
-    // Iterate day by day
+    // Limit heatmap items to ~60 to fit UI nicely, or handle scrolling.
+    // Strategy: If range > 60 days, just show days WITH data + gaps, or just the last 60 days of the range.
+    // Let's show the *entire* selected range for accuracy, but CSS will handle overflow.
+    
     while (curr <= end) {
         const dKey = curr.toLocaleDateString('en-CA');
         const val = dailyMap[dKey] || 0;
         
         let intensity = 0;
-        if (val > 0) intensity = 1;   // < 2h
-        if (val >= 2) intensity = 2;  // 2-4h
-        if (val >= 4) intensity = 3;  // 4-8h
-        if (val >= 8) intensity = 4;  // 8+h
+        if (val > 0) intensity = 1;
+        if (val >= 2) intensity = 2;
+        if (val >= 4) intensity = 3;
+        if (val >= 8) intensity = 4;
 
-        data.push({
-            date: dKey,
-            hours: val,
-            intensity
-        });
+        data.push({ date: dKey, hours: val, intensity });
         curr.setDate(curr.getDate() + 1);
     }
     return data;
 };
 
-// Helper: Calculate Peak Activity Hours
 const calculatePeakHours = (logs: FlatTimeLog[]) => {
     const hours = new Array(24).fill(0);
-    
     logs.forEach(log => {
-        // Use local time hour
         const h = new Date(log.time.start).getHours();
-        if (h >= 0 && h < 24) {
-            hours[h]++;
-        }
+        if (h >= 0 && h < 24) hours[h]++;
     });
-
     const maxCount = Math.max(...hours);
     const peakHourIdx = hours.indexOf(maxCount);
-    
-    // Format label (e.g., 14:00)
     const peakLabel = maxCount > 0 
         ? new Date(new Date().setHours(peakHourIdx, 0)).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) 
         : 'N/A';
-
     return { hoursData: hours, maxCount, peakHourIdx, peakLabel };
 };
 
-// Helper: Calculate Workload Distribution
 const calculateWorkloadDistribution = (logs: FlatTimeLog[]): WorkloadItem[] => {
     const projCounts: Record<string, number> = {};
     let totalDuration = 0;
-
     logs.forEach(log => {
-        const name = log.project.name || 'Unknown Project';
+        const name = log.project.name;
         projCounts[name] = (projCounts[name] || 0) + log.time.duration;
         totalDuration += log.time.duration;
     });
-
     if (totalDuration === 0) return [];
 
-    const sortedProjects = Object.entries(projCounts)
-        .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
-
-    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+    const sorted = Object.entries(projCounts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+    const colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'];
     const result: WorkloadItem[] = [];
-
-    // Logic: Top 4 + Others
-    const topLimit = 4;
     
-    sortedProjects.forEach((p, index) => {
-        if (index < topLimit) {
-            result.push({
-                name: p.name,
-                value: p.value,
-                percentage: (p.value / totalDuration) * 100,
-                color: colors[index % colors.length]
-            });
+    sorted.forEach((p, index) => {
+        if (index < 5) {
+            result.push({ name: p.name, value: p.value, percentage: (p.value / totalDuration) * 100, color: colors[index % colors.length] });
         } else {
-            // Aggregate into 'Others'
-            const othersIndex = result.findIndex(r => r.name === 'Others');
-            if (othersIndex >= 0) {
-                result[othersIndex].value += p.value;
-                result[othersIndex].percentage = (result[othersIndex].value / totalDuration) * 100;
+            const others = result.find(r => r.name === 'Others');
+            if (others) {
+                others.value += p.value;
+                others.percentage = (others.value / totalDuration) * 100;
             } else {
-                result.push({
-                    name: 'Others',
-                    value: p.value,
-                    percentage: (p.value / totalDuration) * 100,
-                    color: '#94a3b8' // Slate-400
-                });
+                result.push({ name: 'Others', value: p.value, percentage: (p.value / totalDuration) * 100, color: '#94a3b8' });
             }
         }
     });
-
     return result;
 };
 
@@ -202,27 +227,23 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
   const [loading, setLoading] = useState(true);
   const [globalTimeLogs, setGlobalTimeLogs] = useState<FlatTimeLog[]>([]);
   
-  // Filter Options State
+  // --- 1. Metadata State (Populated First) ---
   const [projectOptions, setProjectOptions] = useState<FilterOption[]>([]);
   const [userOptions, setUserOptions] = useState<FilterOption[]>([]);
-  
-  // Lookup Maps
   const [metadata, setMetadata] = useState<{
       users: Record<string, { name: string; email: string; avatar?: string }>;
       projects: Record<string, string>;
   }>({ users: {}, projects: {} });
 
-  // Active Filters
-  const [customStartDate, setCustomStartDate] = useState<string>(() => {
-      const d = new Date();
-      // Default to 1st of current month
-      return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
-  });
-  const [customEndDate, setCustomEndDate] = useState<string>(() => {
-      const d = new Date();
-      return d.toISOString().split('T')[0];
+  // --- 2. Date Navigation State ---
+  const [reportType, setReportType] = useState<ReportType>('monthly');
+  const [anchorDate, setAnchorDate] = useState<Date>(new Date()); // The reference point (e.g. Today)
+  const [customRange, setCustomRange] = useState<{ start: string; end: string }>({
+      start: new Date().toISOString().split('T')[0],
+      end: new Date().toISOString().split('T')[0]
   });
 
+  // --- 3. Filter State ---
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterUser, setFilterUser] = useState<string>('all');
   const [groupBy, setGroupBy] = useState<GroupByType>('none');
@@ -230,205 +251,165 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
   const isProjectMode = !!projectId;
   const currentProjectName = isProjectMode ? (projects.find(p => p.id === projectId)?.name || metadata.projects[projectId!] || 'Current Project') : null;
 
-  // --- Effect 1: Fetch Metadata (Users & Projects) ---
+  // --- Calculated Range ---
+  const { start: rangeStart, end: rangeEnd } = useMemo(() => 
+      getRangeFromAnchor(reportType, anchorDate, customRange), 
+  [reportType, anchorDate, customRange]);
+
+  // --- Effect: Fetch Metadata ---
   useEffect(() => {
       const fetchMetadata = async () => {
           try {
-              // 1. Fetch Users
+              // Users
               const usersSnap = await getDocs(collection(db, 'users'));
               const usersMap: Record<string, any> = {};
               const uOptions = usersSnap.docs.map(doc => {
                   const d = doc.data();
-                  const info = { 
-                      name: d.username || d.displayName || d.email || 'Unknown User',
-                      email: d.email || '',
-                      avatar: d.avatar
-                  };
+                  const info = { name: d.username || d.displayName || d.email, email: d.email, avatar: d.avatar };
                   usersMap[doc.id] = info;
                   return { id: doc.id, label: info.name };
               });
-              setUserOptions(uOptions);
+              setUserOptions([{ id: 'all', label: 'All Employees' }, ...uOptions]);
 
-              // 2. Fetch Projects
+              // Projects
               const projectMap: Record<string, string> = {};
               let pOptions: FilterOption[] = [];
               
               if (isProjectMode && projectId) {
-                  // Single Project Mode
                   const found = projects.find(p => p.id === projectId);
-                  if (found) {
-                      pOptions = [{ id: found.id, label: found.name }];
-                      projectMap[found.id] = found.name;
-                  } else {
-                      // Fallback fetch if not in props
-                      const pDoc = await getDocs(query(collection(db, 'projects'), where('__name__', '==', projectId)));
-                      if (!pDoc.empty) {
-                          const d = pDoc.docs[0].data();
-                          pOptions = [{ id: pDoc.docs[0].id, label: d.name }];
-                          projectMap[pDoc.docs[0].id] = d.name;
-                      }
-                  }
+                  if (found) projectMap[found.id] = found.name;
+                  pOptions = [{ id: projectId, label: found?.name || 'Current Project' }];
                   setFilterProject(projectId);
               } else {
-                  // Global Mode
-                  if (projects.length > 0) {
-                      projects.forEach(p => {
-                          pOptions.push({ id: p.id, label: p.name });
-                          projectMap[p.id] = p.name;
-                      });
-                  } else {
-                      const q = query(collection(db, 'projects'), where('isDeleted', '==', false));
-                      const snap = await getDocs(q);
-                      snap.docs.forEach(d => {
-                          const name = d.data().name;
-                          pOptions.push({ id: d.id, label: name });
-                          projectMap[d.id] = name;
-                      });
-                  }
+                  // In global mode, use passed projects prop or fetch all
+                  const source = projects.length > 0 ? projects : (await getDocs(query(collection(db, 'projects'), where('isDeleted', '==', false)))).docs.map(d => ({id: d.id, ...d.data()} as Project));
+                  source.forEach(p => {
+                      pOptions.push({ id: p.id, label: p.name });
+                      projectMap[p.id] = p.name;
+                  });
               }
-              setProjectOptions(pOptions);
+              
+              setProjectOptions([{ id: 'all', label: 'All Projects' }, ...pOptions]);
               setMetadata({ users: usersMap, projects: projectMap });
 
           } catch (e) {
-              console.error("Error fetching metadata:", e);
+              console.error("Metadata fetch failed", e);
           }
       };
-
       fetchMetadata();
   }, [projectId, projects, isProjectMode]);
 
-  // --- Effect 2: Fetch & Aggregate Logs ---
+  // --- Effect: Fetch Logs (After Metadata) ---
   useEffect(() => {
-    if (Object.keys(metadata.users).length === 0 && Object.keys(metadata.projects).length === 0) return;
+      if (Object.keys(metadata.users).length === 0 && Object.keys(metadata.projects).length === 0) return;
 
-    const fetchReportData = async () => {
-      setLoading(true);
-      try {
-        let tasksQuery;
-        
-        if (isProjectMode && projectId) {
-             tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', projectId));
-        } else if (filterProject !== 'all') {
-             tasksQuery = query(collection(db, 'tasks'), where('projectId', '==', filterProject));
-        } else {
-             tasksQuery = query(collection(db, 'tasks'));
-        }
-        
-        const tasksSnap = await getDocs(tasksQuery);
-        const validTaskDocs = tasksSnap.docs.filter(d => !d.data().isDeleted);
+      const fetchLogs = async () => {
+          setLoading(true);
+          try {
+              let q = query(collection(db, 'tasks'));
+              // Server-side filter optimization if single project
+              if (isProjectMode && projectId) {
+                  q = query(collection(db, 'tasks'), where('projectId', '==', projectId));
+              }
 
-        const flattenedData: FlatTimeLog[] = [];
+              const snap = await getDocs(q);
+              const rawLogs: FlatTimeLog[] = [];
 
-        validTaskDocs.forEach(doc => {
-            const task = doc.data() as Task;
-            const logs = task.timeLogs;
+              snap.docs.forEach(taskDoc => {
+                  const task = taskDoc.data();
+                  if (task.isDeleted) return;
+                  if (filterProject !== 'all' && !isProjectMode && task.projectId !== filterProject) return;
 
-            if (Array.isArray(logs) && logs.length > 0) {
-                logs.forEach((log: TimeLog) => {
-                    const startDate = parseLogDate(log.startTime);
-                    const endDate = parseLogDate(log.endTime);
+                  if (task.timeLogs && Array.isArray(task.timeLogs)) {
+                      task.timeLogs.forEach((l: any) => {
+                          // Safe Date Parsing
+                          let d: Date | null = null;
+                          if (l.startTime?.seconds) d = new Date(l.startTime.seconds * 1000);
+                          else if (typeof l.startTime === 'number') d = new Date(l.startTime);
+                          
+                          if (d) {
+                              const user = metadata.users[l.userId] || { name: 'Unknown', email: '', avatar: undefined };
+                              const project = { id: task.projectId, name: metadata.projects[task.projectId] || 'Unknown Project' };
+                              
+                              // Calculate duration if missing
+                              let dur = l.durationSeconds;
+                              if (!dur) {
+                                  const endT = l.endTime?.seconds ? l.endTime.seconds * 1000 : l.endTime;
+                                  dur = Math.floor((endT - d.getTime()) / 1000);
+                              }
 
-                    if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-                        return;
-                    }
+                              rawLogs.push({
+                                  logId: l.id,
+                                  date: d,
+                                  user: { id: l.userId, name: user.name, email: user.email, avatar: user.avatar },
+                                  project,
+                                  task: { id: taskDoc.id, title: task.title },
+                                  time: { start: d.getTime(), end: l.endTime?.seconds ? l.endTime.seconds * 1000 : l.endTime, duration: dur },
+                                  notes: l.notes
+                              });
+                          }
+                      });
+                  }
+              });
+              
+              rawLogs.sort((a, b) => b.time.start - a.time.start);
+              setGlobalTimeLogs(rawLogs);
 
-                    let duration = log.durationSeconds;
-                    if (!duration || duration <= 0) {
-                        duration = Math.floor((endDate.getTime() - startDate.getTime()) / 1000);
-                    }
+          } catch (e) {
+              console.error(e);
+          } finally {
+              setLoading(false);
+          }
+      };
+      fetchLogs();
+  }, [metadata, filterProject, projectId, isProjectMode]);
 
-                    const userId = log.userId;
-                    const projId = task.projectId || 'unknown';
-                    
-                    const userInfo = metadata.users[userId] || { name: 'Unknown User', email: '', avatar: undefined };
-                    const projName = metadata.projects[projId] || 'Unknown Project';
-
-                    flattenedData.push({
-                        logId: log.id || Math.random().toString(36),
-                        date: startDate,
-                        user: {
-                            id: userId,
-                            name: userInfo.name,
-                            email: userInfo.email,
-                            avatar: userInfo.avatar
-                        },
-                        project: {
-                            id: projId,
-                            name: projName
-                        },
-                        task: {
-                            id: doc.id,
-                            title: task.title || 'Untitled Task'
-                        },
-                        time: {
-                            start: startDate.getTime(),
-                            end: endDate.getTime(),
-                            duration: duration
-                        },
-                        notes: log.notes
-                    });
-                });
-            }
-        });
-
-        flattenedData.sort((a, b) => b.time.start - a.time.start);
-        setGlobalTimeLogs(flattenedData);
-
-      } catch (error) {
-        console.error("Failed to aggregate time reports:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchReportData();
-  }, [filterProject, metadata, projectId, isProjectMode]);
-
-  // --- Memo: Client-Side Filtering ---
+  // --- Filter Logs by Calculated Range ---
   const filteredLogs = useMemo(() => {
+      const startTs = rangeStart.getTime();
+      const endTs = rangeEnd.getTime();
+
       return globalTimeLogs.filter(log => {
-          // 1. User Filter
+          // User Filter
           if (filterUser !== 'all' && log.user.id !== filterUser) return false;
-
-          // 2. Date Logic (Local Time Boundaries)
-          if (!customStartDate || !customEndDate) return true;
+          // Project Filter (if not handled by fetch)
+          if (filterProject !== 'all' && log.project.id !== filterProject) return false;
           
-          const logTime = log.date.getTime();
-          const start = new Date(customStartDate + 'T00:00:00').getTime();
-          const end = new Date(customEndDate + 'T23:59:59').getTime();
-
-          return logTime >= start && logTime <= end;
+          // Date Range Filter
+          const logTs = log.date.getTime();
+          return logTs >= startTs && logTs <= endTs;
       });
-  }, [globalTimeLogs, filterUser, customStartDate, customEndDate]);
+  }, [globalTimeLogs, rangeStart, rangeEnd, filterUser, filterProject]);
 
-  // --- Analytics Datasets ---
-  const analytics = useMemo(() => {
-      // A. Heatmap Data (Using dedicated helper)
-      const heatmapData = generateHeatmapData(filteredLogs, customStartDate, customEndDate);
+  // --- Navigation Handlers ---
+  const handleNavigate = (direction: 'prev' | 'next') => {
+      const newDate = new Date(anchorDate);
+      const dir = direction === 'next' ? 1 : -1;
+      
+      if (reportType === 'daily') newDate.setDate(newDate.getDate() + dir);
+      if (reportType === 'weekly') newDate.setDate(newDate.getDate() + (dir * 7));
+      if (reportType === 'monthly') newDate.setMonth(newDate.getMonth() + dir);
+      if (reportType === 'quarterly') newDate.setMonth(newDate.getMonth() + (dir * 3));
+      if (reportType === 'yearly') newDate.setFullYear(newDate.getFullYear() + dir);
+      
+      setAnchorDate(newDate);
+  };
 
-      // B. Peak Hours Data (Using dedicated helper)
-      const peakData = calculatePeakHours(filteredLogs);
+  // --- Derived Data for UI ---
+  const analytics = useMemo(() => ({
+      heatmapData: generateHeatmapData(filteredLogs, rangeStart, rangeEnd),
+      peakData: calculatePeakHours(filteredLogs),
+      workloadData: calculateWorkloadDistribution(filteredLogs)
+  }), [filteredLogs, rangeStart, rangeEnd]);
 
-      // C. Workload Distribution (Using dedicated helper)
-      const workloadData = calculateWorkloadDistribution(filteredLogs);
+  const stats = useMemo(() => ({
+      totalHours: (filteredLogs.reduce((sum, l) => sum + l.time.duration, 0) / 3600).toFixed(1),
+      activeUsers: new Set(filteredLogs.map(l => l.user.id)).size,
+      topProject: analytics.workloadData[0]?.name || '-',
+      count: filteredLogs.length
+  }), [filteredLogs, analytics]);
 
-      return { heatmapData, peakData, workloadData };
-  }, [filteredLogs, customStartDate, customEndDate]);
-
-  // --- Stats Calculation ---
-  const stats = useMemo(() => {
-      const totalSeconds = filteredLogs.reduce((acc, log) => acc + log.time.duration, 0);
-      const totalHours = (totalSeconds / 3600).toFixed(1);
-      const activeUsers = new Set(filteredLogs.map(l => l.user.id)).size;
-      let topProject = '-';
-      if (analytics.workloadData.length > 0) {
-          topProject = analytics.workloadData[0].name;
-      }
-      return { totalHours, activeUsers, topProject, count: filteredLogs.length };
-  }, [filteredLogs, analytics]);
-
-  // --- Grouping Logic ---
-  const groupedLogs = useMemo<Record<string, FlatTimeLog[]>>(() => {
+  const groupedLogs = useMemo(() => {
       if (groupBy === 'none') return { 'All Logs': filteredLogs };
       const groups: Record<string, FlatTimeLog[]> = {};
       filteredLogs.forEach(log => {
@@ -439,243 +420,259 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
       return groups;
   }, [filteredLogs, groupBy]);
 
-  // --- Export Handler ---
-  const handleExportCSV = () => {
-      const headers = ["Date", "Employee Name", "Employee Email", "Project Name", "Task Title", "Start Time", "End Time", "Duration (Decimal Hours)", "Notes"];
-      const rows = filteredLogs.map(log => {
-          const dateStr = log.date.toISOString().split('T')[0];
-          const decimalHours = (log.time.duration / 3600).toFixed(2);
-          const notes = `"${(log.notes || '').replace(/"/g, '""')}"`;
-          return [
-              dateStr,
-              log.user.name,
-              log.user.email,
-              log.project.name,
-              `"${log.task.title.replace(/"/g, '""')}"`,
-              new Date(log.time.start).toLocaleTimeString(),
-              new Date(log.time.end).toLocaleTimeString(),
-              decimalHours,
-              notes
-          ];
-      });
-      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const handleExport = () => {
+      const headers = ["Date", "Employee", "Email", "Project", "Task", "Start", "End", "Hours", "Notes"];
+      const rows = filteredLogs.map(l => [
+          l.date.toLocaleDateString(),
+          l.user.name,
+          l.user.email,
+          l.project.name,
+          `"${l.task.title.replace(/"/g, '""')}"`,
+          new Date(l.time.start).toLocaleTimeString(),
+          new Date(l.time.end).toLocaleTimeString(),
+          (l.time.duration / 3600).toFixed(2),
+          `"${(l.notes || '').replace(/"/g, '""')}"`
+      ]);
+      const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const timestamp = new Date().toISOString().split('T')[0];
-      const scopePrefix = isProjectMode ? `Project_${currentProjectName?.replace(/\s+/g, '_')}` : 'Global';
-      const filename = `WorkLogs_${scopePrefix}_${customStartDate}_to_${customEndDate}_${timestamp}.csv`;
       link.href = url;
-      link.setAttribute('download', filename);
+      link.download = `TimeReport_${reportType}_${rangeStart.toISOString().split('T')[0]}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
   };
 
-  if (loading) {
-    return (
-      <div className="flex flex-col h-full items-center justify-center p-6 animate-fade-in">
-        <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400 mb-4" size={48} />
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white">Generating Report...</h2>
-        <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">Aggregating time logs...</p>
-      </div>
-    );
-  }
+  if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="animate-spin text-indigo-600" size={48} /></div>;
 
   return (
-    <div className="flex flex-col h-full animate-fade-in p-6 max-w-[1600px] mx-auto">
+    <div className="flex flex-col h-full animate-fade-in p-4 lg:p-8 max-w-[1600px] mx-auto space-y-6">
       
-      <div className="mb-6">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase tracking-wider">
-            {isProjectMode ? (
-                <><span>Projects</span><span className="text-slate-300 dark:text-slate-600">/</span><span className="text-indigo-600 dark:text-indigo-400">{currentProjectName}</span></>
-            ) : (
-                <><span>Home</span><span className="text-slate-300 dark:text-slate-600">/</span><span className="text-indigo-600 dark:text-indigo-400">Global</span></>
-            )}
-        </div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
-            <PieChart className="text-indigo-600 dark:text-indigo-400" size={32} />
-            {isProjectMode ? `Time Report` : 'Global Time Reports'}
-        </h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-1">
-            {isProjectMode ? `Detailed work logs and payroll data for ${currentProjectName}.` : `Payroll & Performance analytics across ${projectOptions.length} active projects.`}
-        </p>
-      </div>
-
-      <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm mb-6 flex flex-col xl:flex-row gap-4 items-center justify-between">
-          
-          {/* Filters Left */}
-          <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto items-end sm:items-center">
-              
-              {/* Date Pickers */}
-              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                  <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"><Calendar size={14} /></span>
-                      <input 
-                        type="date" 
-                        value={customStartDate} 
-                        onChange={(e) => setCustomStartDate(e.target.value)} 
-                        className="pl-9 pr-3 py-1.5 bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]"
-                        title="Start Date"
-                      />
-                  </div>
-                  <span className="text-slate-400 text-xs font-bold">to</span>
-                  <div className="relative">
-                      <input 
-                        type="date" 
-                        value={customEndDate} 
-                        onChange={(e) => setCustomEndDate(e.target.value)} 
-                        className="pl-3 pr-3 py-1.5 bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark]" 
-                        title="End Date"
-                      />
-                  </div>
-              </div>
-
-              <div className="relative min-w-[180px]">
-                  <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                  <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)} className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer appearance-none">
-                      <option value="all">All Employees</option>
-                      {userOptions.map(u => <option key={u.id} value={u.id}>{u.label}</option>)}
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              </div>
-
-              {!isProjectMode ? (
-                  <div className="relative min-w-[200px]">
-                      <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                      <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="w-full pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer appearance-none">
-                          <option value="all">All Projects</option>
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
+                  <PieChart className="text-indigo-600 dark:text-indigo-400" />
+                  {isProjectMode ? `Time Report: ${currentProjectName}` : 'Global Time Intelligence'}
+              </h1>
+              <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                  {formatRangeDisplay(reportType, rangeStart, rangeEnd)} • {stats.count} entries found
+              </p>
+          </div>
+          <div className="flex gap-2">
+              {!isProjectMode && (
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 flex items-center gap-2">
+                      <Briefcase size={14} className="text-slate-400" />
+                      <select 
+                        value={filterProject} 
+                        onChange={(e) => setFilterProject(e.target.value)}
+                        className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                      >
                           {projectOptions.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
                       </select>
-                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
+              )}
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 flex items-center gap-2">
+                  <User size={14} className="text-slate-400" />
+                  <select 
+                    value={filterUser} 
+                    onChange={(e) => setFilterUser(e.target.value)}
+                    className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none cursor-pointer"
+                  >
+                      {userOptions.map(u => <option key={u.id} value={u.id}>{u.label}</option>)}
+                  </select>
+              </div>
+          </div>
+      </div>
+
+      {/* Advanced Date Navigation Bar */}
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-2 flex flex-col lg:flex-row items-center gap-4">
+          
+          {/* Mode Tabs */}
+          <div className="flex bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl shrink-0 overflow-x-auto max-w-full">
+              {(['daily', 'weekly', 'monthly', 'quarterly', 'yearly', 'custom'] as ReportType[]).map(type => (
+                  <button
+                    key={type}
+                    onClick={() => setReportType(type)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg capitalize transition-all whitespace-nowrap ${reportType === type ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                  >
+                      {type}
+                  </button>
+              ))}
+          </div>
+
+          {/* Navigation Controls */}
+          <div className="flex items-center gap-3 flex-1 w-full justify-center lg:justify-start">
+              {reportType !== 'custom' ? (
+                  <>
+                    <div className="flex items-center bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1">
+                        <button onClick={() => handleNavigate('prev')} className="p-1.5 hover:bg-white dark:hover:bg-slate-800 rounded-lg text-slate-500 transition-colors"><ChevronLeft size={16}/></button>
+                        <div className="px-4 text-sm font-bold text-slate-700 dark:text-slate-200 min-w-[140px] text-center select-none">
+                            {formatRangeDisplay(reportType, rangeStart, rangeEnd)}
+                        </div>
+                        <button onClick={() => handleNavigate('next')} className="p-1.5 hover:bg-white dark:hover:bg-slate-800 rounded-lg text-slate-500 transition-colors"><ChevronRight size={16}/></button>
+                    </div>
+                    <button onClick={() => setAnchorDate(new Date())} className="text-xs font-bold text-indigo-600 hover:underline px-2">Today</button>
+                  </>
               ) : (
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-500 dark:text-slate-400 font-medium cursor-not-allowed">
-                      <Briefcase size={14} />
-                      <span className="truncate max-w-[150px]">{currentProjectName}</span>
+                  <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                      <input type="date" value={customRange.start} onChange={(e) => setCustomRange(prev => ({...prev, start: e.target.value}))} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none [color-scheme:light] dark:[color-scheme:dark]" />
+                      <span className="text-slate-400">-</span>
+                      <input type="date" value={customRange.end} onChange={(e) => setCustomRange(prev => ({...prev, end: e.target.value}))} className="bg-transparent text-sm font-bold text-slate-700 dark:text-slate-200 outline-none [color-scheme:light] dark:[color-scheme:dark]" />
                   </div>
               )}
           </div>
 
-          {/* Actions Right */}
-          <div className="flex items-center gap-3 w-full xl:w-auto">
-              <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
-                  <button onClick={() => setGroupBy('none')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${groupBy === 'none' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Flat</button>
-                  {!isProjectMode && <button onClick={() => setGroupBy('project')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${groupBy === 'project' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Project</button>}
-                  <button onClick={() => setGroupBy('user')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${groupBy === 'user' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>User</button>
+          {/* View Actions */}
+          <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
+                  <button onClick={() => setGroupBy('none')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'none' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>Flat</button>
+                  <button onClick={() => setGroupBy('user')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'user' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>User</button>
+                  {!isProjectMode && <button onClick={() => setGroupBy('project')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'project' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>Project</button>}
               </div>
-              <button onClick={handleExportCSV} disabled={filteredLogs.length === 0} className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-colors shadow-lg shadow-emerald-200 dark:shadow-emerald-900/20 active:scale-95 ml-auto xl:ml-0 disabled:opacity-50 disabled:cursor-not-allowed">
-                  <Download size={16} /> <span className="hidden sm:inline">Payroll CSV</span>
-              </button>
+              <button onClick={handleExport} disabled={filteredLogs.length === 0} className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"><Download size={18} /></button>
           </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-3 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-5">
-              <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2"><Activity size={16} className="text-emerald-500" /> Productivity Heatmap</h3>
+      {/* Analytics Dashboard */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Workload Stats Cards */}
+          <div className="lg:col-span-1 flex flex-col gap-4">
+              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+                  <div><p className="text-xs font-bold text-slate-500 uppercase mb-1">Total Hours</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.totalHours}h</h3></div>
+                  <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-xl"><Clock size={24} /></div>
               </div>
-              <div className="grid grid-cols-7 sm:grid-cols-14 lg:grid-cols-[repeat(auto-fit,minmax(30px,1fr))] gap-2 overflow-hidden">
-                  {analytics.heatmapData.map((day) => {
-                      let bgClass = 'bg-slate-100 dark:bg-slate-700';
-                      if (day.intensity === 1) bgClass = 'bg-emerald-200 dark:bg-emerald-900/40';
-                      if (day.intensity === 2) bgClass = 'bg-emerald-300 dark:bg-emerald-800';
-                      if (day.intensity === 3) bgClass = 'bg-emerald-400 dark:bg-emerald-600';
-                      if (day.intensity === 4) bgClass = 'bg-emerald-600 dark:bg-emerald-400';
-                      
-                      return (
-                          <div key={day.date} className={`aspect-square rounded-lg ${bgClass} flex flex-col items-center justify-center group relative cursor-help transition-all hover:scale-110`}>
-                              <span className="text-[10px] font-bold text-slate-500/50 dark:text-slate-400/50 group-hover:text-slate-700 dark:group-hover:text-white transition-colors">{new Date(day.date).getDate()}</span>
-                              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none z-50 whitespace-nowrap shadow-xl">{day.date}: {day.hours.toFixed(1)}h</div>
+              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+                  <div><p className="text-xs font-bold text-slate-500 uppercase mb-1">Active Staff</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.activeUsers}</h3></div>
+                  <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 rounded-xl"><Users size={24} /></div>
+              </div>
+              <div className="flex-1 bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                  <h4 className="text-xs font-bold text-slate-500 uppercase mb-4 flex items-center gap-2"><BarChart3 size={14}/> Project Distribution</h4>
+                  <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                      {analytics.workloadData.map((w, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{backgroundColor: w.color}}></div><span className="text-slate-700 dark:text-slate-300 truncate max-w-[120px]">{w.name}</span></div>
+                              <span className="font-bold">{Math.round(w.percentage)}%</span>
                           </div>
-                      );
-                  })}
+                      ))}
+                  </div>
               </div>
           </div>
-          <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-5">
+
+          {/* Peak Hours Chart */}
+          <div className="lg:col-span-2 bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
               <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2"><Zap size={16} className="text-amber-500" /> Peak Activity Hours (Starts)</h3>
-                  {analytics.peakData.maxCount > 0 && (
-                      <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded">
-                          Peak: {analytics.peakData.peakLabel}
-                      </span>
-                  )}
+                  <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2"><Zap size={18} className="text-amber-500" /> Activity Heatmap & Peak Hours</h3>
+                  {analytics.peakData.maxCount > 0 && <span className="text-xs font-bold bg-amber-100 text-amber-700 px-2 py-1 rounded">Peak: {analytics.peakData.peakLabel}</span>}
               </div>
-              <div className="h-40 flex items-end gap-1 sm:gap-2">
-                  {analytics.peakData.hoursData.map((count, hour) => {
-                      const maxVal = analytics.peakData.maxCount;
-                      const heightPercent = maxVal > 0 ? (count / maxVal) * 100 : 0;
-                      const isPeak = hour === analytics.peakData.peakHourIdx && count > 0;
-                      return (
-                          <div key={hour} className="flex-1 flex flex-col justify-end group relative">
-                              <div className={`w-full rounded-t-md transition-all duration-500 relative group-hover:opacity-80 ${isPeak ? 'bg-indigo-500 dark:bg-indigo-400' : 'bg-slate-200 dark:bg-slate-700'}`} style={{ height: `${Math.max(heightPercent, 4)}%` }}></div>
-                              {(hour % 4 === 0 || hour === 23) && <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10px] text-slate-400">{hour}</span>}
-                              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 text-[10px] bg-slate-800 text-white px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 pointer-events-none z-10">{count}</div>
-                          </div>
-                      );
-                  })}
+              
+              {/* Heatmap Grid */}
+              <div className="mb-6">
+                  <div className="flex flex-wrap gap-1">
+                      {analytics.heatmapData.map((cell) => (
+                          <div 
+                            key={cell.date} 
+                            className={`w-3 h-3 sm:w-4 sm:h-4 rounded-sm ${
+                                cell.intensity === 0 ? 'bg-slate-100 dark:bg-slate-700' : 
+                                cell.intensity === 1 ? 'bg-emerald-200 dark:bg-emerald-900' :
+                                cell.intensity === 2 ? 'bg-emerald-300 dark:bg-emerald-700' :
+                                cell.intensity === 3 ? 'bg-emerald-400 dark:bg-emerald-600' :
+                                'bg-emerald-600 dark:bg-emerald-500'
+                            }`} 
+                            title={`${cell.date}: ${cell.hours.toFixed(1)}h`}
+                          />
+                      ))}
+                  </div>
               </div>
-              <div className="mt-6 text-xs text-slate-400 text-center">Hour of Day (0-23)</div>
-          </div>
-          <div className="lg:col-span-1 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 flex flex-col">
-              <h3 className="text-sm font-bold text-slate-700 dark:text-white flex items-center gap-2 mb-4"><BarChart3 size={16} className="text-purple-500" /> Workload Distribution</h3>
-              <div className="flex-1 flex items-center justify-center relative">
-                  <svg viewBox="0 0 36 36" className="w-32 h-32 transform -rotate-90">
-                      {analytics.workloadData.reduce((acc, item, idx) => {
-                          const dashArray = `${item.percentage} 100`;
-                          const offset = -acc.offset;
-                          acc.elements.push(<circle key={idx} cx="18" cy="18" r="15.915" fill="none" stroke={item.color} strokeWidth="4" strokeDasharray={dashArray} strokeDashoffset={offset} className="transition-all duration-1000" />);
-                          acc.offset += item.percentage;
-                          return acc;
-                      }, { offset: 0, elements: [] as React.ReactElement[] }).elements}
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"><span className="text-xs font-bold text-slate-500 uppercase">Total</span><span className="text-lg font-bold text-slate-900 dark:text-white">{stats.totalHours}h</span></div>
+
+              {/* Peak Bar Chart */}
+              <div className="h-32 flex items-end gap-1 mt-auto">
+                  {analytics.peakData.hoursData.map((h, i) => (
+                      <div key={i} className="flex-1 flex flex-col justify-end group relative">
+                          <div 
+                            className={`w-full rounded-t-sm transition-all ${i === analytics.peakData.peakHourIdx ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-700'}`} 
+                            style={{ height: `${(h / (analytics.peakData.maxCount || 1)) * 100}%`, minHeight: '4px' }} 
+                          />
+                          <div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-slate-800 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">{h}</div>
+                      </div>
+                  ))}
               </div>
-              <div className="mt-4 space-y-2">{analytics.workloadData.map((item, idx) => (<div key={idx} className="flex items-center justify-between text-xs"><div className="flex items-center gap-2 max-w-[70%]"><div className="w-2 h-2 rounded-full" style={{ backgroundColor: item.color }}></div><span className="truncate text-slate-600 dark:text-slate-300" title={item.name}>{item.name}</span></div><span className="font-bold text-slate-900 dark:text-white">{Math.round(item.percentage)}%</span></div>))}</div>
+              <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-mono">
+                  <span>00:00</span><span>12:00</span><span>23:00</span>
+              </div>
           </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between"><div><p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Total Man-Hours</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.totalHours}h</h3></div><div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl"><Clock size={24} /></div></div>
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between"><div><p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Active Personnel</p><h3 className="text-3xl font-bold text-slate-900 dark:text-white">{stats.activeUsers}</h3></div><div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-xl"><Users size={24} /></div></div>
-          <div className="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between"><div><p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Top Project</p><h3 className="text-lg font-bold text-slate-900 dark:text-white truncate max-w-[180px]" title={stats.topProject}>{stats.topProject}</h3></div><div className="p-3 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl"><Briefcase size={24} /></div></div>
-      </div>
-
+      {/* Data Table */}
       <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
-          <div className="overflow-auto custom-scrollbar flex-1">
+          <div className="flex-1 overflow-auto custom-scrollbar">
               <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 sticky top-0 z-10 shadow-sm">
-                      <tr><th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32">Date</th><th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-48">Employee</th>{!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-48">Project</th>}<th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Task Details</th><th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32 text-right">Hours</th></tr>
+                      <tr>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32">Date</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employee</th>
+                          {!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Project</th>}
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Task / Notes</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Duration</th>
+                      </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                      {Object.entries(groupedLogs).map(([groupName, logs]) => (
-                          <React.Fragment key={groupName}>
-                              {groupBy !== 'none' && (logs as FlatTimeLog[]).length > 0 && (<tr className="bg-slate-50/50 dark:bg-slate-800/30"><td colSpan={isProjectMode ? 4 : 5} className="px-6 py-3"><div className="flex items-center gap-2"><Layers size={16} className="text-indigo-500" /><span className="font-bold text-sm text-slate-800 dark:text-white">{groupName}</span><span className="text-xs text-slate-500 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-2 py-0.5 rounded-full ml-2">{((logs as FlatTimeLog[]).reduce((acc, l) => acc + l.time.duration, 0) / 3600).toFixed(1)}h</span></div></td></tr>)}
+                      {Object.entries(groupedLogs).map(([group, logs]) => (
+                          <React.Fragment key={group}>
+                              {groupBy !== 'none' && (
+                                  <tr className="bg-slate-50/50 dark:bg-slate-800/30">
+                                      <td colSpan={isProjectMode ? 4 : 5} className="px-6 py-2">
+                                          <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                                              <Layers size={14} className="text-indigo-500" />
+                                              {group}
+                                              <span className="text-xs font-normal text-slate-500 ml-2 bg-white dark:bg-slate-700 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600">
+                                                  {(logs as FlatTimeLog[]).reduce((acc, l) => acc + l.time.duration, 0) / 3600 < 0.1 ? '0.0' : ((logs as FlatTimeLog[]).reduce((acc, l) => acc + l.time.duration, 0) / 3600).toFixed(1)}h
+                                              </span>
+                                          </div>
+                                      </td>
+                                  </tr>
+                              )}
                               {(logs as FlatTimeLog[]).map(log => (
-                                  <tr key={log.logId} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors">
-                                      <td className="px-6 py-4 text-sm font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">{log.date.toLocaleDateString()}</td>
-                                      <td className="px-6 py-4"><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${getAvatarColor(log.user.name)}`}>{getAvatarInitials(log.user.name)}</div><div><div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate max-w-[120px]">{log.user.name}</div><div className="text-[10px] text-slate-400 truncate max-w-[120px]">{log.user.email}</div></div></div></td>
-                                      {!isProjectMode && <td className="px-6 py-4"><span className="inline-block px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800 truncate max-w-[140px]">{log.project.name}</span></td>}
-                                      <td className="px-6 py-4"><div className="flex flex-col"><span className="text-sm font-bold text-slate-800 dark:text-white truncate">{log.task.title}</span>{log.notes ? <span className="text-xs text-slate-500 dark:text-slate-400 italic mt-0.5 truncate max-w-[300px] flex items-center gap-1"><FileText size={10} /> {log.notes}</span> : <span className="text-xs text-slate-400 mt-0.5">{new Date(log.time.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.time.end).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>}</div></td>
-                                      <td className="px-6 py-4 text-right"><span className="font-mono font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{(log.time.duration / 3600).toFixed(2)}h</span></td>
+                                  <tr key={log.logId} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors group">
+                                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-mono">{log.date.toLocaleDateString()}</td>
+                                      <td className="px-6 py-4">
+                                          <div className="flex items-center gap-3">
+                                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${getAvatarColor(log.user.name)}`}>{getAvatarInitials(log.user.name)}</div>
+                                              <div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{log.user.name}</div></div>
+                                          </div>
+                                      </td>
+                                      {!isProjectMode && (
+                                          <td className="px-6 py-4"><span className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800">{log.project.name}</span></td>
+                                      )}
+                                      <td className="px-6 py-4">
+                                          <div className="flex flex-col">
+                                              <span className="text-sm font-bold text-slate-800 dark:text-white truncate max-w-[300px]">{log.task.title}</span>
+                                              {log.notes && <span className="text-xs text-slate-500 italic flex items-center gap-1 mt-0.5"><FileText size={10}/> {log.notes}</span>}
+                                              <span className="text-[10px] text-slate-400 mt-0.5 font-mono">{new Date(log.time.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.time.end).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                                          </div>
+                                      </td>
+                                      <td className="px-6 py-4 text-right">
+                                          <span className="font-mono font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{(log.time.duration / 3600).toFixed(2)}h</span>
+                                      </td>
                                   </tr>
                               ))}
                           </React.Fragment>
                       ))}
                       {filteredLogs.length === 0 && (
                           <tr>
-                              <td colSpan={isProjectMode ? 4 : 5} className="px-6 py-16 text-center text-slate-400 dark:text-slate-500">
-                                  {globalTimeLogs.length > 0 
-                                    ? <><Search size={48} className="mx-auto mb-4 opacity-20" /><p className="text-sm font-medium">No logs match your filters.</p></> 
-                                    : <><Clock size={48} className="mx-auto mb-4 opacity-20" /><p className="text-sm font-medium">No time logs recorded yet.</p></>
-                                  }
+                              <td colSpan={isProjectMode ? 4 : 5} className="px-6 py-20 text-center text-slate-400">
+                                  <div className="flex flex-col items-center">
+                                      <Search size={48} className="opacity-20 mb-4" />
+                                      <p className="font-medium">No logs found for this period.</p>
+                                      <p className="text-xs mt-1">Try adjusting the date range or filters.</p>
+                                  </div>
                               </td>
                           </tr>
                       )}
                   </tbody>
               </table>
           </div>
-          <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex justify-between items-center"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Showing {filteredLogs.length} Entries</span><div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">Total: <span className="text-indigo-600 dark:text-indigo-400 text-lg">{stats.totalHours} Hours</span></div></div>
       </div>
     </div>
   );
