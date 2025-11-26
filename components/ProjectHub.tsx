@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Plus, Briefcase, MapPin, Clock, ArrowRight, Folder, User, Copy, Loader2, X, 
   Search, Filter, ArrowUpDown, Trash2, ChevronDown, Check, AlertCircle, Settings, 
-  Palette, Save, Edit2 
+  Palette, Save, Edit2, Zap, CheckCircle2, PieChart
 } from 'lucide-react';
 import { Project } from '../types';
 import { auth, db } from '../firebase';
@@ -45,15 +45,15 @@ const COLOR_OPTIONS = [
 ];
 
 const getColorStyles = (colorName: string) => {
-  const map: Record<string, { bg: string, text: string, border: string, dot: string }> = {
-    slate: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', dot: 'bg-slate-500' },
-    blue: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500' },
-    emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
-    indigo: { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500' },
-    purple: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500' },
-    rose: { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200', dot: 'bg-rose-500' },
-    amber: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500' },
-    cyan: { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200', dot: 'bg-cyan-500' },
+  const map: Record<string, { bg: string, text: string, border: string, dot: string, stroke: string, fill: string }> = {
+    slate: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', dot: 'bg-slate-500', stroke: 'text-slate-400', fill: 'bg-slate-500' },
+    blue: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500', stroke: 'text-blue-500', fill: 'bg-blue-500' },
+    emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500', stroke: 'text-emerald-500', fill: 'bg-emerald-500' },
+    indigo: { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500', stroke: 'text-indigo-500', fill: 'bg-indigo-500' },
+    purple: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500', stroke: 'text-purple-500', fill: 'bg-purple-500' },
+    rose: { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200', dot: 'bg-rose-500', stroke: 'text-rose-500', fill: 'bg-rose-500' },
+    amber: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500', stroke: 'text-amber-500', fill: 'bg-amber-500' },
+    cyan: { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200', dot: 'bg-cyan-500', stroke: 'text-cyan-500', fill: 'bg-cyan-500' },
   };
   return map[colorName] || map['slate'];
 };
@@ -110,6 +110,52 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
           return 0;
       }
   };
+
+  // --- Portfolio Stats Logic ---
+  const stats = useMemo(() => {
+    const total = projects.length;
+    const counts: Record<string, number> = {};
+    
+    // Initialize counts
+    statuses.forEach(s => counts[s.label] = 0);
+    counts['Other'] = 0;
+
+    projects.forEach(p => {
+      // Match by label (case-insensitive safety can be added if needed, assuming strict match for now)
+      const statusLabel = statuses.find(s => s.label === p.status)?.label;
+      if (statusLabel) {
+        counts[statusLabel]++;
+      } else {
+        counts['Other']++;
+      }
+    });
+
+    const activeCount = counts['Active'] || 0;
+    const completedCount = counts['Completed'] || 0;
+
+    // Prepare Chart Data
+    const chartData = statuses.map(s => ({
+      name: s.label,
+      value: counts[s.label] || 0,
+      colorName: s.color
+    })).filter(d => d.value > 0);
+
+    if (counts['Other'] > 0) {
+        chartData.push({ name: 'Other', value: counts['Other'], colorName: 'slate' });
+    }
+
+    // Calculate donut segments
+    let accumulatedPercent = 0;
+    const donutSegments = chartData.map(d => {
+        const percent = d.value / total;
+        const strokeDasharray = `${percent * 100} 100`;
+        const strokeDashoffset = -accumulatedPercent * 100;
+        accumulatedPercent += percent;
+        return { ...d, strokeDasharray, strokeDashoffset };
+    });
+
+    return { total, active: activeCount, completed: completedCount, donutSegments };
+  }, [projects, statuses]);
 
   // --- Filter & Sort Logic ---
   const filteredProjects = useMemo(() => {
@@ -327,6 +373,113 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
     <div className="w-full max-w-[1600px] mx-auto px-6 animate-fade-in pb-10 h-full">
       
       <WelcomeBanner userName={userName || 'User'} isCompact={false} />
+
+      {/* PORTFOLIO OVERVIEW */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Metrics Cards */}
+          <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+             {/* Total Projects */}
+             <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between relative overflow-hidden group transition-all hover:shadow-md">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                    <Folder size={64} className="text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Total Projects</p>
+                    <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.total}</h3>
+                </div>
+                <div className="mt-4 flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 w-fit px-2.5 py-1 rounded-lg">
+                    <Folder size={14} /> Portfolio Size
+                </div>
+             </div>
+
+             {/* Active Projects */}
+             <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between relative overflow-hidden group transition-all hover:shadow-md">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                    <Zap size={64} className="text-emerald-500" />
+                </div>
+                <div>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Active</p>
+                    <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.active}</h3>
+                </div>
+                <div className="mt-4 flex items-center gap-2 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 w-fit px-2.5 py-1 rounded-lg">
+                    <Zap size={14} /> In Progress
+                </div>
+             </div>
+
+             {/* Completed Projects */}
+             <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between relative overflow-hidden group transition-all hover:shadow-md">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity transform group-hover:scale-110">
+                    <CheckCircle2 size={64} className="text-blue-500" />
+                </div>
+                <div>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs font-bold uppercase tracking-wider">Completed</p>
+                    <h3 className="text-3xl font-bold text-slate-900 dark:text-white mt-2">{stats.completed}</h3>
+                </div>
+                <div className="mt-4 flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 w-fit px-2.5 py-1 rounded-lg">
+                    <CheckCircle2 size={14} /> Delivered
+                </div>
+             </div>
+          </div>
+
+          {/* Chart Card */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm p-5 flex items-center justify-between relative overflow-hidden">
+             <div className="absolute top-3 right-3 opacity-5"><PieChart size={80} className="text-slate-400" /></div>
+             
+             {stats.total === 0 ? (
+                 <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+                     <PieChart size={32} className="mb-2 opacity-50" />
+                     <span className="text-xs font-medium">No Data</span>
+                 </div>
+             ) : (
+                 <>
+                    {/* Donut SVG */}
+                    <div className="relative w-32 h-32 shrink-0">
+                        <svg viewBox="0 0 36 36" className="w-full h-full transform -rotate-90">
+                            <path
+                                className="text-slate-100 dark:text-slate-700"
+                                d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                            />
+                            {stats.donutSegments.map((d, i) => (
+                                <path
+                                    key={i}
+                                    className={`${getColorStyles(d.colorName).stroke} transition-all duration-1000 ease-out`}
+                                    strokeDasharray={d.strokeDasharray}
+                                    strokeDashoffset={d.strokeDashoffset}
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="4"
+                                />
+                            ))}
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-xl font-bold text-slate-900 dark:text-white">{stats.total}</span>
+                            <span className="text-[9px] text-slate-500 uppercase font-bold tracking-wider">Total</span>
+                        </div>
+                    </div>
+
+                    {/* Legend */}
+                    <div className="flex-1 ml-6 space-y-2 z-10">
+                        <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Status Dist.</h4>
+                        <div className="grid grid-cols-1 gap-2">
+                            {stats.donutSegments.map((d) => (
+                                <div key={d.name} className="flex items-center justify-between text-xs">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${getColorStyles(d.colorName).dot}`} />
+                                        <span className="text-slate-700 dark:text-slate-300 font-medium truncate max-w-[80px]">{d.name}</span>
+                                    </div>
+                                    <span className="font-bold text-slate-900 dark:text-white">{d.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                 </>
+             )}
+          </div>
+      </div>
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
