@@ -1,7 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Menu, Search, Loader2, Settings, Trash2, Edit3, ChevronDown, Copy, PanelLeft, AlertTriangle, Send, X } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import KanbanBoard from './components/KanbanBoard';
@@ -23,7 +22,6 @@ import CommandPalette from './components/CommandPalette';
 import ImageGenerator from './components/ImageGenerator';
 import ActiveTimerBar from './components/ActiveTimerBar';
 import PageTransition from './components/PageTransition';
-import ErrorBoundary from './components/ErrorBoundary';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType } from './types';
@@ -62,6 +60,38 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: 'col-3', title: 'Done', color: 'emerald' },
 ];
 
+// Views that are part of the Infinity Scroll Workspace
+const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'trash', 'image-gen', 'settings'];
+
+// Section Wrapper Component
+const Section: React.FC<{ id: string; children: React.ReactNode; className?: string }> = ({ id, children, className = "" }) => (
+  <section 
+    id={id} 
+    className={`h-full w-full overflow-y-auto relative bg-slate-50 dark:bg-slate-950 pt-6 px-4 md:px-6 pb-20 border-b border-slate-200 dark:border-slate-800 ${className}`}
+  >
+     {children}
+  </section>
+);
+
+// Helper to normalize task data for state updates
+const normalizeTaskData = (task: Partial<Task>): Partial<Task> => {
+  const normalized = { ...task };
+  const dateFields = ['startDate', 'dueDate', 'createdAt', 'updatedAt', 'deletedAt'] as const;
+
+  dateFields.forEach(field => {
+    const val = normalized[field];
+    if (val) {
+      if (typeof val === 'object' && 'toDate' in val && typeof val.toDate === 'function') {
+         normalized[field] = val.toDate().toISOString();
+      } else if (val instanceof Date) {
+         normalized[field] = val.toISOString();
+      }
+    }
+  });
+  
+  return normalized;
+};
+
 // Helper to ensure consistent data format throughout the app
 const sanitizeFirestoreData = (data: any): any => {
   if (data === null || data === undefined) return data;
@@ -81,29 +111,6 @@ const sanitizeFirestoreData = (data: any): any => {
     return sanitized;
   }
   return data;
-};
-
-// Helper to normalize task data for state updates
-const normalizeTaskData = (task: Partial<Task>): Partial<Task> => {
-  const normalized = { ...task };
-  const dateFields = ['startDate', 'dueDate', 'createdAt', 'updatedAt', 'deletedAt'] as const;
-
-  dateFields.forEach(field => {
-    const val = normalized[field];
-    if (val) {
-      // If it's a Firestore Timestamp (has toDate)
-      if (typeof val === 'object' && 'toDate' in val && typeof val.toDate === 'function') {
-         normalized[field] = val.toDate().toISOString();
-      } 
-      // If it's a JS Date object
-      else if (val instanceof Date) {
-         normalized[field] = val.toISOString();
-      }
-      // If it's already a string, leave it (assuming ISO)
-    }
-  });
-  
-  return normalized;
 };
 
 const App: React.FC = () => {
@@ -204,6 +211,9 @@ const App: React.FC = () => {
   // Banner State
   const [showBanner, setShowBanner] = useState(true);
 
+  // Scroll Refs
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
   // --- Permission Logic Hook ---
   const currentProject = projects.find(p => p.id === selectedProjectId);
   
@@ -244,7 +254,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
       if (firebaseUser) {
-        // Session Expiration Logic (Custom Persistence)
         const expiry = localStorage.getItem('session_expiry');
         if (expiry && Date.now() > parseInt(expiry)) {
             signOut(auth).then(() => {
@@ -310,10 +319,8 @@ const App: React.FC = () => {
 
     let q;
     if (currentUser.email === SUPER_ADMIN_EMAIL) {
-        // All-Seeing Eye: Fetch ALL projects for Super Admin
         q = query(collection(db, 'projects'));
     } else {
-        // Standard Security: Fetch only associated projects
         q = query(
             collection(db, 'projects'),
             or(
@@ -329,7 +336,6 @@ const App: React.FC = () => {
             return { id: doc.id, ...sanitizeFirestoreData(data) };
         }) as Project[];
         
-        // Filter out soft-deleted projects
         const activeProjects = fetchedProjects.filter(p => !p.isDeleted);
         
         activeProjects.sort((a, b) => {
@@ -358,7 +364,6 @@ const App: React.FC = () => {
             return { id: doc.id, ...sanitizeFirestoreData(data) };
         }) as Task[];
         
-        // Filter out soft-deleted tasks
         const activeTasks = fetchedTasks.filter(t => !t.isDeleted);
         
         setTasks(activeTasks);
@@ -368,7 +373,7 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [currentUser?.id, selectedProjectId]);
 
-  // --- Sync editingTask with Tasks (Fix for Real-time updates in Modal) ---
+  // --- Sync editingTask with Tasks ---
   useEffect(() => {
     if (editingTask && isTaskModalOpen) {
       const updated = tasks.find(t => t.id === editingTask.id);
@@ -421,6 +426,19 @@ const App: React.FC = () => {
       else localStorage.removeItem(PROJECT_KEY);
   }, [selectedProjectId]);
 
+  // --- Scroll Logic (Programmatic Only) ---
+  useEffect(() => {
+    if (selectedProjectId && scrollContainerRef.current) {
+        const section = document.getElementById(activeTab);
+        if (section) {
+            scrollContainerRef.current.scrollTo({
+                top: section.offsetTop,
+                behavior: 'smooth'
+            });
+        }
+    }
+  }, [activeTab, selectedProjectId]);
+
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
   const handleLogout = async () => {
@@ -437,9 +455,17 @@ const App: React.FC = () => {
     }
   };
 
+  // --- Navigation Handler ---
+  const handleNavigation = (tab: Tab) => {
+      setActiveTab(tab);
+      if (tab === 'projects') {
+          setSelectedProjectId(null); // Go back to hub
+      }
+  };
+
   const handleSelectProject = (projectId: string | null) => {
       setSelectedProjectId(projectId);
-      setActiveTab('dashboard');
+      setActiveTab('dashboard'); // Reset to top of scroll
       setIsProjectSettingsOpen(false);
   };
 
@@ -457,15 +483,6 @@ const App: React.FC = () => {
       localStorage.setItem(SNOOZE_KEY, untilTimestamp.toString());
       setIsReminderModalOpen(false);
       notify('info', 'Reminders snoozed');
-  };
-
-  const handleDashboardNavigation = (tab: Tab, filterStatus?: string) => {
-    setActiveTab(tab);
-    if (filterStatus) {
-        setFilterStatus(filterStatus);
-        setFilterPriority('All');
-        setSearchQuery('');
-    }
   };
 
   const handleResendVerification = async () => {
@@ -510,7 +527,6 @@ const App: React.FC = () => {
               createdAt: serverTimestamp()
           });
           
-          // Log Project Creation
           await logProjectActivity(
               docRef.id, 
               'project-init', 
@@ -521,7 +537,6 @@ const App: React.FC = () => {
               'create'
           );
 
-          // Handle Template Instantiation if ID is provided
           if (templateId) {
               const template = await getTemplateById(templateId);
               if (template && template.content && template.content.tasks) {
@@ -558,7 +573,6 @@ const App: React.FC = () => {
               memberUIDs: memberUIDs
           });
           
-          // Log Update
           if (currentUser) {
               await logProjectActivity(
                   projectToEdit.id,
@@ -587,7 +601,6 @@ const App: React.FC = () => {
       const projectToDelete = projects.find(p => p.id === id);
       if (!projectToDelete) return;
       
-      // Allow Super Admin or Owner
       if (!currentUser || (projectToDelete.ownerId !== currentUser.id && currentUser.email !== SUPER_ADMIN_EMAIL)) {
           notify('warning', "Only the project owner can delete this project.");
           return;
@@ -648,22 +661,16 @@ const App: React.FC = () => {
 
   const handleSaveTask = async (taskData: Partial<Task>) => { 
       if (!currentUser || !selectedProjectId) return;
-      
-      // NORMALIZE DATA (Fix data type mismatch issues)
       const safeTaskData = normalizeTaskData(taskData);
 
       if (editingTask) {
-          // Snapshot for Rollback
           const previousTasks = [...tasks];
-
-          // Optimistic Update (Immutable)
           setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...safeTaskData } : t));
           
           try {
              const taskRef = doc(db, 'tasks', editingTask.id);
              await updateDoc(taskRef, { ...safeTaskData, updatedAt: serverTimestamp() });
              
-             // Activity Logging for specific changes
              const changes: string[] = [];
              let type: ActivityType = 'update';
              
@@ -695,25 +702,24 @@ const App: React.FC = () => {
              notify('success', "Task updated");
           } catch (e) { 
               console.error("Save failed:", e);
-              // Rollback on error
               setTasks(previousTasks);
               notify('error', 'Update failed'); 
           }
       } else {
           try {
-             // Local optimistic add (requires temporary ID)
-             // Ideally we wait for server ID, but for pure optimistic UI we could fake it.
-             // For creation, usually safer to wait unless we generate ID locally.
-             // Here we'll just wait for standard addDoc which is fast enough or let onSnapshot handle it.
-             
-             const newDocRef = await addDoc(collection(db, 'tasks'), { 
+             const newTaskPayload = {
                  ...safeTaskData, 
                  projectId: selectedProjectId, 
-                 ownerId: currentUser.id, 
-                 createdAt: serverTimestamp() 
-             });
+                 ownerId: currentUser.id,
+                 status: safeTaskData.status || 'To Do',
+                 priority: safeTaskData.priority || 'Medium',
+                 createdAt: serverTimestamp(),
+                 updatedAt: serverTimestamp(),
+                 isDeleted: false
+             };
+
+             const newDocRef = await addDoc(collection(db, 'tasks'), newTaskPayload);
              
-             // Log Creation
              await logProjectActivity(
                  selectedProjectId,
                  newDocRef.id,
@@ -725,18 +731,17 @@ const App: React.FC = () => {
              );
 
              notify('success', 'Task created');
-          } catch (e) { notify('error', 'Create failed'); }
+          } catch (e) { 
+              console.error("Create task failed:", e);
+              notify('error', 'Create failed'); 
+          }
       }
       setIsTaskModalOpen(false);
       setEditingTask(undefined);
   };
 
-  // Handler for Comments from TaskModal
   const handleTaskComment = async (taskId: string, text: string) => {
       if (!currentUser || !selectedProjectId) return;
-      
-      // The comment is already saved to the task document inside TaskModal's internal state/save
-      // Here we just log the activity
       const task = tasks.find(t => t.id === taskId);
       if (task) {
           await logProjectActivity(
@@ -776,7 +781,6 @@ const App: React.FC = () => {
               originalProjectId: taskToDelete.projectId 
           });
           
-          // Log Deletion
           if (selectedProjectId) {
               await logProjectActivity(
                   selectedProjectId,
@@ -799,38 +803,27 @@ const App: React.FC = () => {
   };
 
   const handleDropTask = async (taskId: string, newStatus: TaskStatus) => {
-      // 1. Safety Check: Input validation
       if (!taskId || !newStatus) return;
-      
-      // Find index safely
       const taskIndex = tasks.findIndex(t => t.id === taskId);
       if (taskIndex === -1) return;
       
       const task = tasks[taskIndex];
-      if (task.status === newStatus) return; // No change needed
+      if (task.status === newStatus) return; 
 
-      // 2. Snapshot for Rollback (Deep copy not strictly needed for array of objects if we don't mutate objects in place, 
-      // but a shallow copy of the array is essential)
       const originalTasks = [...tasks];
 
-      // 3. Optimistic Update (Strict Immutable Pattern)
       try {
-          // Create a brand new object for the updated task to avoid reference mutation
-          // Normalize data while we are at it to ensure consistency
           const updatedTask: Task = { 
               ...task, 
               status: newStatus,
-              updatedAt: new Date().toISOString() // ISO string for local consistency
+              updatedAt: new Date().toISOString() 
           };
           
-          // Create a new array for the state
           const newTasks = [...tasks];
           newTasks[taskIndex] = updatedTask;
           
-          // Update state immediately
           setTasks(newTasks);
 
-          // 4. Async Operations (Firestore)
           const taskRef = doc(db, 'tasks', taskId);
           
           await updateDoc(taskRef, { 
@@ -838,10 +831,7 @@ const App: React.FC = () => {
               updatedAt: serverTimestamp() 
           });
 
-          // 5. Isolated Logging (Non-blocking)
           if (currentUser && selectedProjectId) {
-              // We use the original task object for logging title to avoid any potential state race issues, 
-              // though 'task' constant is safe here from closure
               logProjectActivity(
                   selectedProjectId,
                   taskId,
@@ -855,8 +845,6 @@ const App: React.FC = () => {
 
       } catch (e) {
           console.error("Drag update failed:", e);
-          
-          // 6. Rollback on Error
           setTasks(originalTasks);
           notify('error', 'Failed to update task status. Reverting changes.');
       }
@@ -879,10 +867,8 @@ const App: React.FC = () => {
           return col;
       });
       
-      // If title changed, we need to update all tasks in that column to the new status
       const oldColumn = columns.find(c => c.id === columnId);
       if (oldColumn && oldColumn.title !== newTitle) {
-          // Update Tasks Locally
           const updatedTasks = tasks.map(t => {
               if (t.status === oldColumn.title) {
                   return { ...t, status: newTitle };
@@ -891,9 +877,6 @@ const App: React.FC = () => {
           });
           setTasks(updatedTasks);
 
-          // Update Tasks in Firestore (Batch)
-          // Note: This can be heavy if many tasks. In a real app, use a cloud function or careful batching.
-          // For MVP, we do simple batching.
           const tasksToUpdate = tasks.filter(t => t.status === oldColumn.title);
           if (tasksToUpdate.length > 0) {
               const batch = writeBatch(db);
@@ -917,7 +900,6 @@ const App: React.FC = () => {
 
   const handleDeleteColumn = async (id: string) => { 
       if(!currentUser) return;
-      // Check if column has tasks
       const colToDelete = columns.find(c => c.id === id);
       if (colToDelete) {
           const hasTasks = tasks.some(t => t.status === colToDelete.title);
@@ -938,15 +920,18 @@ const App: React.FC = () => {
       setAvailableTags([...availableTags, newTag]);
       return newTag;
   };
+  
   const openNewTaskModal = (date?: string) => {
       if (!selectedProjectId) { notify('info', "Select a project"); return; }
-      setEditingTask(undefined); setInitialTaskDate(date); setIsTaskModalOpen(true);
+      setEditingTask(undefined); 
+      setInitialTaskDate(date); 
+      setIsTaskModalOpen(true);
   };
   const openEditTaskModal = (task: Task) => { setEditingTask(task); setIsTaskModalOpen(true); };
 
   const modalPermissions = useMemo(() => {
       if (!currentUser) return { canEdit: false, canDelete: false, isReadOnly: true };
-      if (currentUser.email === SUPER_ADMIN_EMAIL) return { canEdit: true, canDelete: true, isReadOnly: false }; // Super Admin Override
+      if (currentUser.email === SUPER_ADMIN_EMAIL) return { canEdit: true, canDelete: true, isReadOnly: false };
       
       if (!editingTask) return { canEdit: userRole !== 'guest', canDelete: true, isReadOnly: userRole === 'guest' };
       const isOwner = editingTask.createdBy === currentUser.id || editingTask.ownerId === currentUser.id;
@@ -954,117 +939,104 @@ const App: React.FC = () => {
       return { canEdit: userRole !== 'guest' || isOwner || isAdmin, canDelete: isAdmin || isOwner, isReadOnly: userRole === 'guest' && !isOwner };
   }, [editingTask, userRole, currentUser]);
 
-  // Determine Content to Render
+  // Determine Content to Render based on Navigation state
   const renderContent = () => {
-    // Hub logic: if no project selected and not on specific tabs
     if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings' && activeTab !== 'trash') {
+         if (activeTab === 'settings') {
+             return (
+               <PageTransition key="settings" className="overflow-hidden p-4 md:p-6">
+                 <SettingsView tasks={[]} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} onClose={() => handleNavigation('projects')} />
+               </PageTransition>
+             );
+         }
          return <PageTransition key="hub-root" className="overflow-y-auto custom-scrollbar p-4 md:p-6"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
     }
-    const NoResultsState = () => (
-      <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl animate-fade-in bg-white dark:bg-slate-800/50">
-        <Search size={48} className="mb-4 opacity-20" />
-        <p className="text-lg font-medium text-slate-500 dark:text-slate-400">No tasks found</p>
-        <button onClick={resetFilters} className="text-indigo-600 dark:text-indigo-400 hover:underline mt-2">Clear filters</button>
-      </div>
-    );
 
-    return (
-      <AnimatePresence mode="wait">
-        {activeTab === 'dashboard' && (
-          <PageTransition key="dashboard" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
-            <Dashboard tasks={tasks} projects={projects} columns={columns} currentProject={currentProject} onAddTask={() => openNewTaskModal()} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} />
-          </PageTransition>
-        )}
-        
-        {activeTab === 'projects' && (
+    if (activeTab === 'projects') {
+        return (
           <PageTransition key="projects" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
             <ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} />
           </PageTransition>
-        )}
-        
-        {activeTab === 'kanban' && (
-          <PageTransition key="kanban" className="overflow-hidden p-4 md:p-6">
-            <div className="flex flex-col h-full">
-              <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} onDeleteTask={handleDeleteTask} />}
-            </div>
-          </PageTransition>
-        )}
-        
-        {activeTab === 'list' && (
-          <PageTransition key="list" className="overflow-hidden p-4 md:p-6">
-            <div className="flex flex-col h-full">
-              <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <ListView tasks={filteredTasks} onTaskClick={openEditTaskModal} onDeleteTask={handleDeleteTask} />}
-            </div>
-          </PageTransition>
-        )}
-        
-        {activeTab === 'timeline' && (
-          <PageTransition key="timeline" className="overflow-hidden p-4 md:p-6">
-            <div className="flex flex-col h-full">
-              <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />}
-            </div>
-          </PageTransition>
-        )}
-        
-        {activeTab === 'map' && (
-          <PageTransition key="map" className="overflow-hidden p-4 md:p-6">
-            <div className="flex flex-col h-full">
-              <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} />}
-            </div>
-          </PageTransition>
-        )}
-        
-        {activeTab === 'calendar' && (
-          <PageTransition key="calendar" className="overflow-hidden p-4 md:p-6">
-            <div className="flex flex-col h-full">
-              <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />}
-            </div>
-          </PageTransition>
-        )}
-        
-        {activeTab === 'settings' && (
-          <PageTransition key="settings" className="overflow-hidden p-4 md:p-6">
-            <SettingsView tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} onClose={() => { if (selectedProjectId) setActiveTab('dashboard'); else setActiveTab('projects'); }} />
-          </PageTransition>
-        )}
-        
-        {activeTab === 'trash' && (
-          <PageTransition key="trash" className="overflow-hidden p-4 md:p-6">
-            <TrashView />
-          </PageTransition>
-        )}
-        
-        {activeTab === 'image-gen' && (
-          <PageTransition key="image-gen" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
-            <ImageGenerator />
-          </PageTransition>
-        )}
-      </AnimatePresence>
+        );
+    }
+
+    // PROJECT WORKSPACE: ELEVATOR STACK
+    // Render all main views in a single scrollable container
+    return (
+        <div 
+            id="main-scroll-container" 
+            ref={scrollContainerRef} 
+            className="flex-1 h-full w-full overflow-hidden relative scroll-smooth bg-slate-50 dark:bg-slate-950"
+        >
+            <Section id="dashboard">
+                <Dashboard tasks={tasks} projects={projects} columns={columns} currentProject={currentProject} onAddTask={() => openNewTaskModal()} onTaskClick={openEditTaskModal} onNavigate={(tab, status) => { if(status) { setFilterStatus(status); } handleNavigation(tab); }} userName={userSettings.userName} onStatusChange={handleDropTask} />
+            </Section>
+
+            <Section id="kanban">
+                <div className="flex flex-col h-full min-h-[800px]">
+                    <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
+                    <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} onDeleteTask={handleDeleteTask} />
+                </div>
+            </Section>
+
+            <Section id="list">
+                <div className="flex flex-col h-full min-h-[600px]">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">List View</h2>
+                    <ListView tasks={filteredTasks} onTaskClick={openEditTaskModal} onDeleteTask={handleDeleteTask} />
+                </div>
+            </Section>
+
+            <Section id="timeline">
+                <div className="flex flex-col h-full min-h-[600px]">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Timeline</h2>
+                    <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />
+                </div>
+            </Section>
+
+            <Section id="map">
+                <div className="flex flex-col h-full min-h-[800px]">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Project Map</h2>
+                    <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} />
+                </div>
+            </Section>
+
+            <Section id="calendar">
+                <div className="flex flex-col h-full min-h-[700px]">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Calendar</h2>
+                    <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />
+                </div>
+            </Section>
+
+            <Section id="image-gen">
+                <ImageGenerator />
+            </Section>
+
+            <Section id="trash">
+                <TrashView />
+            </Section>
+
+            <Section id="settings">
+                <SettingsView tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} onClose={() => handleNavigation('dashboard')} />
+            </Section>
+        </div>
     );
   };
 
   if (loading) return <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}><Loader2 size={48} className="text-indigo-600 animate-spin" /></div>;
   if (isSeeding) return <div className={`min-h-screen flex flex-col items-center justify-center gap-4 ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}><Loader2 size={64} className="text-indigo-600 animate-spin" /><h2 className="text-2xl font-bold animate-pulse">Setting up Demo Environment...</h2><p className="text-slate-500">Generating projects, tasks, and analytics data.</p></div>;
   if (!currentUser) return (
-    <ErrorBoundary>
-      <NotificationProvider>
-        <div className={isDarkMode ? 'dark' : ''}>
-          <AuthScreen onLoginSuccess={() => {}} onSeedingStart={() => setIsSeeding(true)} onSeedingEnd={() => setIsSeeding(false)} />
-        </div>
-      </NotificationProvider>
-    </ErrorBoundary>
+    <NotificationProvider>
+      <div className={isDarkMode ? 'dark' : ''}>
+        <AuthScreen onLoginSuccess={() => {}} onSeedingStart={() => setIsSeeding(true)} onSeedingEnd={() => setIsSeeding(false)} />
+      </div>
+    </NotificationProvider>
   );
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 font-sans transition-colors duration-300 relative">
       
       <Sidebar 
-        activeTab={activeTab} setActiveTab={setActiveTab}
+        activeTab={activeTab} setActiveTab={handleNavigation}
         isMobileOpen={isMobileOpen} setIsMobileOpen={setIsMobileOpen}
         onAddTask={() => openNewTaskModal()} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode}
         userName={userSettings.userName} userTitle={userSettings.userTitle}
@@ -1151,8 +1123,8 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Main Content Area - The Grid Stack */}
-        <div className="flex-1 relative z-10 grid grid-cols-1 grid-rows-1 overflow-hidden">
+        {/* Main Content Area - Replaced Grid Stack with Flex for Infinity Scroll or Single Page */}
+        <div className="flex-1 relative z-10 overflow-hidden">
           {renderContent()}
         </div>
         
@@ -1197,13 +1169,11 @@ const App: React.FC = () => {
 
 const MainApp = () => {
   return (
-    <ErrorBoundary>
-      <NotificationProvider>
-        <TimeTrackingProvider>
-          <App />
-        </TimeTrackingProvider>
-      </NotificationProvider>
-    </ErrorBoundary>
+    <NotificationProvider>
+      <TimeTrackingProvider>
+        <App />
+      </TimeTrackingProvider>
+    </NotificationProvider>
   );
 }
 

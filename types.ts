@@ -39,6 +39,7 @@ export interface Subtask {
 export interface Comment {
   id: string;
   user: string;
+  userId?: string;
   text: string;
   timestamp: string;
 }

@@ -7,6 +7,7 @@ import {
   Settings, 
   X,
   Plus,
+  FolderPlus,
   Moon,
   Sun,
   Calendar,
@@ -16,7 +17,8 @@ import {
   Layers,
   GitGraph,
   Trash2,
-  List
+  List,
+  Search
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
@@ -61,10 +63,16 @@ const Sidebar: React.FC<SidebarProps> = ({
   userEmail
 }) => {
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  const [projectSearch, setProjectSearch] = useState('');
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const currentProject = projects.find(p => p.id === selectedProjectId);
   const isSuperAdmin = userEmail === 'admin@dev.com';
+
+  // Filter projects based on search
+  const filteredProjects = projects.filter(p => 
+    p.name.toLowerCase().includes(projectSearch.toLowerCase())
+  );
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -76,6 +84,14 @@ const Sidebar: React.FC<SidebarProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Clear search when dropdown closes
+  useEffect(() => {
+    if (!isProjectDropdownOpen) {
+      const timer = setTimeout(() => setProjectSearch(''), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isProjectDropdownOpen]);
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'kanban', label: 'Kanban Board', icon: KanbanSquare },
@@ -83,10 +99,11 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'timeline', label: 'Timeline', icon: CalendarClock },
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    // Settings moved to bottom logic
   ];
 
   const handleNavClick = (tab: Tab) => {
+    // Just trigger the prop callback. The parent App.tsx handles whether to scroll or switch view.
     if (tab === 'dashboard' && !selectedProjectId) {
       setActiveTab('projects');
     } else {
@@ -154,6 +171,23 @@ const Sidebar: React.FC<SidebarProps> = ({
                     {/* Dropdown Menu */}
                     {isProjectDropdownOpen && (
                         <div className="absolute top-full left-0 w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in">
+                            
+                            {/* Search Bar */}
+                            <div className="p-2 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
+                                <div className="relative">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                    <input 
+                                        type="text"
+                                        placeholder="Find project..."
+                                        value={projectSearch}
+                                        onChange={(e) => setProjectSearch(e.target.value)}
+                                        className="w-full bg-slate-900/50 border border-slate-600 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                                        autoFocus
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                </div>
+                            </div>
+
                             <div className="max-h-60 overflow-y-auto custom-scrollbar py-1">
                                 <button 
                                     onClick={() => handleProjectSelect(null)}
@@ -170,26 +204,32 @@ const Sidebar: React.FC<SidebarProps> = ({
                                 
                                 <div className="px-3 py-1 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Your Projects</div>
                                 
-                                {projects.map(project => (
-                                    <button
-                                        key={project.id}
-                                        onClick={() => handleProjectSelect(project.id)}
-                                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-slate-700 transition-colors ${selectedProjectId === project.id ? 'bg-slate-700/50 text-white' : 'text-slate-300'}`}
-                                    >
-                                        <div className="flex items-center gap-2 min-w-0">
-                                            <Briefcase size={16} className="shrink-0" />
-                                            <span className="text-sm font-medium truncate">{project.name}</span>
-                                        </div>
-                                        {selectedProjectId === project.id && <Check size={14} className="text-indigo-400 shrink-0" />}
-                                    </button>
-                                ))}
+                                {filteredProjects.length > 0 ? (
+                                    filteredProjects.map(project => (
+                                        <button
+                                            key={project.id}
+                                            onClick={() => handleProjectSelect(project.id)}
+                                            className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-slate-700 transition-colors ${selectedProjectId === project.id ? 'bg-slate-700/50 text-white' : 'text-slate-300'}`}
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <Briefcase size={16} className="shrink-0" />
+                                                <span className="text-sm font-medium truncate">{project.name}</span>
+                                            </div>
+                                            {selectedProjectId === project.id && <Check size={14} className="text-indigo-400 shrink-0" />}
+                                        </button>
+                                    ))
+                                ) : (
+                                    <div className="px-4 py-3 text-center text-xs text-slate-500 italic">
+                                        No projects found
+                                    </div>
+                                )}
                             </div>
                             <div className="p-2 border-t border-slate-700 bg-slate-800/50">
                                 <button 
                                     onClick={() => { onCreateProject(); setIsProjectDropdownOpen(false); }}
                                     className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-xs font-bold transition-colors"
                                 >
-                                    <Plus size={14} /> Create New Project
+                                    <FolderPlus size={14} /> Create New Project
                                 </button>
                             </div>
                         </div>
@@ -198,17 +238,30 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             <div className="px-5 mb-6">
-            <button
-                onClick={() => {
-                onAddTask();
-                setIsMobileOpen(false);
-                }}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 px-4 rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!selectedProjectId || currentUserRole === 'guest'} 
-            >
-                <Plus size={20} strokeWidth={3} />
-                New Task
-            </button>
+            {!selectedProjectId ? (
+                <button
+                    onClick={() => {
+                        onCreateProject();
+                        setIsMobileOpen(false);
+                    }}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 px-4 rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95"
+                >
+                    <FolderPlus size={20} strokeWidth={2.5} />
+                    Create New Project
+                </button>
+            ) : (
+                <button
+                    onClick={() => {
+                    onAddTask();
+                    setIsMobileOpen(false);
+                    }}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 px-4 rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={currentUserRole === 'guest'} 
+                >
+                    <Plus size={20} strokeWidth={3} />
+                    New Task
+                </button>
+            )}
             </div>
 
             <nav className="flex-1 py-2 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
@@ -216,7 +269,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 const isActive = activeTab === item.id;
                 const Icon = item.icon;
                 
-                const isDisabled = !selectedProjectId && item.id !== 'settings' && item.id !== 'dashboard';
+                const isDisabled = !selectedProjectId && item.id !== 'dashboard';
                 
                 return (
                 <button
@@ -248,6 +301,25 @@ const Sidebar: React.FC<SidebarProps> = ({
             <div className="px-4 pb-2">
                 <div className="h-px bg-slate-800 my-2"></div>
                 
+                {/* Settings Button */}
+                <button
+                    onClick={() => handleNavClick('settings')}
+                    className={`
+                        w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group font-medium
+                        ${activeTab === 'settings' 
+                            ? 'bg-slate-800 text-white shadow-inner shadow-black/20' 
+                            : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                        }
+                    `}
+                >
+                    <Settings 
+                    size={20} 
+                    strokeWidth={activeTab === 'settings' ? 2.5 : 2} 
+                    className={`transition-colors ${activeTab === 'settings' ? 'text-indigo-400' : 'text-slate-500 group-hover:text-indigo-300'}`} 
+                    />
+                    <span>Settings</span>
+                </button>
+
                 <button
                     onClick={() => handleNavClick('trash')}
                     className={`
@@ -281,7 +353,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
             </button>
 
-            <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={() => setActiveTab('settings')}>
+            <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={() => handleNavClick('settings')}>
                 <div className="relative shrink-0">
                     {userAvatar && userAvatar.startsWith('http') ? (
                         <img 

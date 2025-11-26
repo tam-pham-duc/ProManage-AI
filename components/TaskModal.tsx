@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown, ListChecks } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 import { db } from '../firebase';
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, onSnapshot, query, collection, where, getDoc } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { saveTaskAsTemplate, getTemplates } from '../services/templateService';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
@@ -63,6 +63,7 @@ const formatMessageTime = (timestampStr: string) => {
     }
 };
 
+// ... (MiniTaskCard and TaskDependencyVisualizer components remain unchanged) ...
 const MiniTaskCard: React.FC<{ 
     task: Task; 
     type: 'upstream' | 'downstream' | 'current'; 
@@ -386,6 +387,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   // Discussion State
   const [comments, setComments] = useState<Comment[]>([]);
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
+  const [realtimeActivities, setRealtimeActivities] = useState<ActivityLog[]>([]);
   const [newComment, setNewComment] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -431,6 +433,44 @@ const TaskModal: React.FC<TaskModalProps> = ({
       return projectMembers.filter(m => (m.status === 'active' || !m.status) && m.uid !== null);
   }, [projectMembers]);
 
+  // Real-time Activity Listener
+  useEffect(() => {
+    if (!task?.projectId || !task?.id) {
+        setRealtimeActivities([]);
+        return;
+    }
+
+    // Modified query to avoid needing a composite index (removed orderBy timestamp)
+    const q = query(
+        collection(db, 'projects', task.projectId, 'activities'),
+        where('taskId', '==', task.id)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const acts = snapshot.docs.map(d => {
+            const data = d.data();
+            let timestamp = 'Just now';
+            if (data.timestamp) {
+                if (typeof data.timestamp.toDate === 'function') {
+                    timestamp = data.timestamp.toDate().toISOString();
+                } else if (typeof data.timestamp === 'object' && 'seconds' in data.timestamp) {
+                    timestamp = new Date(data.timestamp.seconds * 1000).toISOString();
+                } else if (typeof data.timestamp === 'string') {
+                    timestamp = data.timestamp;
+                }
+            }
+            return { id: d.id, ...data, timestamp } as ActivityLog;
+        });
+        // Sort client-side since we removed server-side sorting
+        acts.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        setRealtimeActivities(acts);
+    }, (error) => {
+        console.error("Error fetching activities:", error);
+    });
+
+    return () => unsubscribe();
+  }, [task?.id, task?.projectId]);
+
   // Potential Dependencies
   const potentialDependencies = useMemo(() => {
      return allTasks.filter(t => t.id !== task?.id);
@@ -468,7 +508,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
     }
-  }, [activeTab, comments, activityLog]);
+  }, [activeTab, comments, realtimeActivities]);
 
   // --- FIX 1: Reactive State Synchronization ---
   useEffect(() => {
@@ -485,6 +525,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
         }
 
         setSubtasks(task.subtasks || []);
+        setComments(task.comments || []);
         setDependencies(task.dependencies || []);
         setTags(task.tags || []);
         
@@ -526,7 +567,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
             setSubtasks(task.subtasks || []);
             setComments(task.comments || []);
-            setActivityLog(task.activityLog || []);
+            // setActivityLog(task.activityLog || []); // Removed, now using realtimeActivities
             setAttachments(task.attachments || []);
             setTags(task.tags || []);
             setDependencies(task.dependencies || []);
@@ -545,7 +586,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAssigneeAvatar('');
             setSubtasks([]);
             setComments([]);
-            setActivityLog([]);
+            // setActivityLog([]);
             setAttachments([]);
             setTags([]);
             setDependencies([]);
@@ -579,9 +620,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
     }
   }, [isOpen, task, columns, projectMembers, initialDate]);
 
-  // ... (Validation & Handlers: addSubtask, deleteSubtask, attachments, tags, dependencies, comments, logs - mostly same) ...
-  // ... Keeping logic blocks collapsed for brevity unless changes needed ...
-
   const filteredMembers = useMemo(() => {
     if (!mentionQuery) return activeMembers;
     return activeMembers.filter(m => 
@@ -606,10 +644,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
     const comment: Comment = { 
         id: Date.now().toString(), 
         user: currentUser, // this is username string
+        userId: currentUserId, // Added userId for deletion check
         text: newComment, 
         timestamp: new Date().toISOString() 
     };
     
+    // Optimistic update
     const updatedComments = [...comments, comment];
     setComments(updatedComments); 
     
@@ -619,7 +659,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 comments: arrayUnion(comment)
             });
             
-            // Trigger notification/activity log
             if (onTaskComment) onTaskComment(task.id, newComment);
         } catch(e) {
             console.error("Failed to save comment", e);
@@ -628,6 +667,43 @@ const TaskModal: React.FC<TaskModalProps> = ({
     
     setNewComment(''); 
     setShowMentionList(false); 
+  };
+
+  const canDeleteComment = (comment: Comment) => {
+      if (!currentUserId || !comment.userId) return false;
+      if (comment.userId !== currentUserId) return false;
+      
+      const commentTime = new Date(comment.timestamp).getTime();
+      const now = Date.now();
+      const fiveMinutes = 5 * 60 * 1000;
+      
+      return (now - commentTime) < fiveMinutes;
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+      if (!task) return;
+      if (!window.confirm("Delete this comment?")) return;
+
+      try {
+          // Since comments are an array of objects, we need to read, filter, and update.
+          // arrayRemove requires the exact object match which we might not have perfectly if dates drift, 
+          // but logically getting fresh doc is safest.
+          const taskRef = doc(db, 'tasks', task.id);
+          const taskSnap = await getDoc(taskRef);
+          
+          if (taskSnap.exists()) {
+              const data = taskSnap.data();
+              const currentComments = data.comments || [];
+              const newComments = currentComments.filter((c: Comment) => c.id !== commentId);
+              
+              await updateDoc(taskRef, { comments: newComments });
+              setComments(newComments); // Update local state
+              notify('success', 'Comment deleted');
+          }
+      } catch (e) {
+          console.error("Failed to delete comment:", e);
+          notify('error', 'Failed to delete comment');
+      }
   };
   
   const handleDeleteLog = async (logId: string) => {
@@ -720,11 +796,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
     if (match) {
         const matchIndex = match.index! + (match[0].startsWith(' ') ? 1 : 0);
         const prefix = newComment.slice(0, matchIndex);
-        const mentionTag = `@[${memberName}] `;
+        const mentionTag = `@${memberName} `; // Simplified for display
         const newText = prefix + mentionTag + textAfter;
         setNewComment(newText);
         setTimeout(() => { if (commentInputRef.current) { commentInputRef.current.focus(); const newCursorPos = prefix.length + mentionTag.length; commentInputRef.current.setSelectionRange(newCursorPos, newCursorPos); } }, 0);
-    } else { setNewComment(prev => prev + `@[${memberName}] `); }
+    } else { setNewComment(prev => prev + `@${memberName} `); }
     setShowMentionList(false);
     setMentionQuery('');
   };
@@ -778,12 +854,20 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly || !canEdit) return;
+    
+    if (!title.trim()) {
+        notify('error', 'Task Title is required.');
+        return;
+    }
+
     onSubmit({
       title, description, status, priority, startDate, dueDate, 
       assignee: assignee || 'Unassigned',
       assigneeId: assigneeId || 'UN',
       assigneeAvatar: assigneeAvatar,
-      subtasks, comments, activityLog, attachments, tags,
+      subtasks, comments, 
+      // activityLog is managed by realtime listener and separate service, not saved directly via form
+      attachments, tags,
       dependencies,
       estimatedCost: parseFloat(estimatedCost) || 0, 
       actualCost: parseFloat(actualCost) || 0,
@@ -793,10 +877,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
     });
   };
 
-  const streamItems = [
+  // Merge Comments and Real-time Activities
+  const streamItems = useMemo(() => [
     ...comments.map(c => ({ ...c, source: 'comment' as const })),
-    ...activityLog.map(l => ({ ...l, source: 'log' as const }))
-  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    ...realtimeActivities.map(l => ({ ...l, source: 'log' as const }))
+  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), [comments, realtimeActivities]);
 
   const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
   const filteredAvailableTags = availableTags.filter(at => at.name.toLowerCase().includes(tagInput.toLowerCase()) && !tags.find(t => t.id === at.id));
@@ -835,11 +920,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
             <div className="flex items-center gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <div className="w-2 h-6 bg-indigo-500 rounded-full shadow-sm"></div>
-                  {task ? 'Edit Task' : 'New Task'}
+                  <div className={`w-2 h-6 rounded-full shadow-sm ${task ? 'bg-indigo-500' : 'bg-emerald-500'}`}></div>
+                  {task ? 'Edit Task' : 'Create New Task'}
                   {isReadOnly && <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md flex items-center gap-1"><Lock size={10} /> Read Only</span>}
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">ID: {task?.id || 'Draft'}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">{task ? `ID: ${task.id}` : 'Fill in the details below'}</p>
               </div>
               
               {/* Template Loader (Create Mode Only) */}
@@ -900,7 +985,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
         {/* Tabs */}
         <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6">
           <button onClick={() => setActiveTab('details')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Details</button>
-          <button onClick={() => setActiveTab('discussion')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Discussion <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length}</span></button>
+          <button onClick={() => setActiveTab('discussion')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Discussion <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length + realtimeActivities.length}</span></button>
           {task && (<button onClick={() => setActiveTab('flow')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'flow' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Task Flow <GitBranch size={14} className={activeTab === 'flow' ? 'text-indigo-500' : ''} /></button>)}
           {task && (<button onClick={() => setActiveTab('timeLogs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'timeLogs' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Time Logs <History size={14} className={activeTab === 'timeLogs' ? 'text-indigo-500' : ''} /></button>)}
         </div>
@@ -909,17 +994,48 @@ const TaskModal: React.FC<TaskModalProps> = ({
           <form id="taskForm" onSubmit={handleSubmit} className="space-y-7 h-full">
             {activeTab === 'details' && (
               <>
-                <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Task Title</label><input type="text" required readOnly={isReadOnly} value={title} onChange={(e) => setTitle(e.target.value)} className={`${inputBaseClass} text-lg`} placeholder="Task Name" /></div>
-                <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><FileText size={12} /> Description</label>{isReadOnly ? (<div className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl min-h-[100px] prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: description }} />) : (<RichTextEditor value={description} onChange={setDescription} placeholder="Add detailed description here..." />)}</div>
+                <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Task Title <span className="text-red-500">*</span></label>
+                    <input type="text" required readOnly={isReadOnly} value={title} onChange={(e) => setTitle(e.target.value)} className={`${inputBaseClass} text-lg`} placeholder="e.g., Design Landing Page" autoFocus />
+                </div>
+                
+                <div>
+                    <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><FileText size={12} /> Description</label>
+                    {isReadOnly ? (<div className="w-full p-4 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl min-h-[100px] prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: description }} />) : (<RichTextEditor value={description} onChange={setDescription} placeholder="Add detailed description here..." />)}
+                </div>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Status</label><select disabled={isReadOnly} value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className={inputBaseClass}>{columns.map(col => <option key={col.id} value={col.title}>{col.title}</option>)}</select></div>
-                    <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Priority</label><select disabled={isReadOnly} value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)} className={inputBaseClass}><option value="Low">Low</option><option value="Medium">Medium</option><option value="High">High</option></select></div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Status</label>
+                        <select disabled={isReadOnly} value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className={inputBaseClass}>
+                            {columns.length > 0 ? columns.map(col => <option key={col.id} value={col.title}>{col.title}</option>) : (
+                                <>
+                                    <option value="To Do">To Do</option>
+                                    <option value="In Progress">In Progress</option>
+                                    <option value="Done">Done</option>
+                                </>
+                            )}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2">Priority</label>
+                        <select disabled={isReadOnly} value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)} className={inputBaseClass}>
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                        </select>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Calendar size={12} /> Start</label><input type="date" required readOnly={isReadOnly} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputBaseClass} /></div>
-                    <div><label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertCircle size={12} /> Due</label><input type="date" required readOnly={isReadOnly} value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputBaseClass} /></div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><Calendar size={12} /> Start Date</label>
+                        <input type="date" required readOnly={isReadOnly} value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputBaseClass} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><AlertCircle size={12} /> Due Date</label>
+                        <input type="date" required readOnly={isReadOnly} value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputBaseClass} />
+                    </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><User size={12} /> Assignee</label>
                         <select disabled={isReadOnly} value={assigneeId} onChange={(e) => { const uid = e.target.value; setAssigneeId(uid); if (uid === 'UN') { setAssignee('Unassigned'); setAssigneeAvatar(''); } else { const member = projectMembers.find(m => m.uid === uid); if (member) { setAssignee(member.displayName); setAssigneeAvatar(member.avatar || ''); } } }} className={`${inputBaseClass} cursor-pointer`}>
@@ -989,7 +1105,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
                 <div className="pt-6 border-t border-slate-100 dark:border-slate-700">
                   <div className="flex items-center justify-between mb-3">
-                    <label className="block text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"><CheckSquare size={16} className="text-indigo-500" /> Checklist</label>
+                    <label className="block text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2"><ListChecks size={16} className="text-indigo-500" /> Checklist</label>
                     {subtasks.length > 0 && <span className="text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded-md">{subtasks.filter(st => st.completed).length}/{subtasks.length} Done</span>}
                   </div>
                   {subtasks.length > 0 && (<div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full mb-4 overflow-hidden"><div className="h-full bg-indigo-500 transition-all duration-300 ease-out" style={{ width: `${subtasks.length > 0 ? Math.round((subtasks.filter(st => st.completed).length / subtasks.length) * 100) : 0}%` }} /></div>)}
@@ -1019,29 +1135,43 @@ const TaskModal: React.FC<TaskModalProps> = ({
                             streamItems.map((item, idx) => {
                                 if (item.source === 'comment') {
                                     const isMe = item.user === currentUser;
+                                    const deletable = canDeleteComment(item);
                                     return (
-                                        <div key={item.id} className={`flex gap-3 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                        <div key={item.id} className={`flex gap-3 group ${isMe ? 'justify-end' : 'justify-start'}`}>
                                             {!isMe && (
                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getAvatarColor(item.user)}`}>
                                                     {getAvatarInitials(item.user)}
                                                 </div>
                                             )}
-                                            <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${isMe ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
+                                            <div className={`relative max-w-[80%] p-3 rounded-2xl text-sm ${isMe ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
                                                 <div className="font-bold text-xs mb-1 opacity-80">{item.user}</div>
                                                 <div className="whitespace-pre-wrap">{item.text}</div>
                                                 <div className={`text-[10px] mt-1 text-right ${isMe ? 'text-indigo-200' : 'text-slate-400'}`}>
                                                     {formatMessageTime(item.timestamp)}
                                                 </div>
+                                                {deletable && (
+                                                    <button 
+                                                        onClick={() => handleDeleteComment(item.id)}
+                                                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-red-600"
+                                                        title="Delete (available for 5 mins)"
+                                                    >
+                                                        <Trash2 size={10} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     );
                                 } else {
                                     // Activity Log
+                                    const typeColor = item.type === 'status_change' ? 'text-emerald-500' 
+                                                    : item.type === 'priority_change' ? 'text-amber-500'
+                                                    : item.type === 'assign' ? 'text-blue-500'
+                                                    : 'text-slate-400';
                                     return (
                                         <div key={item.id} className="flex items-center justify-center gap-2 my-4">
                                             <div className="h-px bg-slate-200 dark:bg-slate-700 w-12"></div>
-                                            <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wide bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-100 dark:border-slate-700">
-                                                {item.userName || 'System'} {item.action} • {formatMessageTime(item.timestamp)}
+                                            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-100 dark:border-slate-700 flex items-center gap-1.5">
+                                                <span className={typeColor}>{item.action}</span> • {item.userName || 'System'} • {formatMessageTime(item.timestamp)}
                                             </span>
                                             <div className="h-px bg-slate-200 dark:bg-slate-700 w-12"></div>
                                         </div>
@@ -1123,9 +1253,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                             <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Total Time</span>
                             <span className="text-2xl font-mono font-bold text-indigo-700 dark:text-indigo-300">
                                 {useTimeTracking ? (
-                                    // Need to access helper from context or utils
-                                    // Since we can't access hook outside, we rely on prop or util
-                                    // For now simplified calculation display
                                     `${Math.floor((task.totalTimeSeconds || 0) / 3600)}h ${Math.floor(((task.totalTimeSeconds || 0) % 3600) / 60)}m`
                                 ) : '0h 0m'}
                             </span>
@@ -1212,10 +1339,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <button 
                         type="button"
                         onClick={handleSubmit}
-                        className="px-6 py-2.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 flex items-center gap-2"
+                        className={`px-6 py-2.5 rounded-xl font-bold text-white shadow-lg transition-all active:scale-95 flex items-center gap-2 ${task ? 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200 dark:shadow-indigo-900/30' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200 dark:shadow-emerald-900/30'}`}
                     >
-                        <Check size={18} strokeWidth={3} />
-                        Save Changes
+                        {task ? <SaveIcon size={18} strokeWidth={3} /> : <Plus size={18} strokeWidth={3} />}
+                        {task ? 'Save Changes' : 'Create Task'}
                     </button>
                 )}
             </div>

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban, Play, Square, Timer, Trash2, Edit2, Palette } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -167,7 +168,10 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
   };
 
   // Fix for ghost card: Use class based opacity instead of inline styles for cleaner reset
-  const dragClass = isDragging ? 'opacity-50 cursor-grabbing' : 'opacity-100 cursor-pointer hover:shadow-md hover:z-10';
+  // Added hover scale and elevation for interactive feedback
+  const dragClass = isDragging 
+    ? 'opacity-50 cursor-grabbing' 
+    : 'opacity-100 cursor-pointer hover:shadow-lg hover:z-20 hover:scale-[1.02]';
 
   return (
     <motion.div 
@@ -181,7 +185,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-shadow duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
+        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-all duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
         ${dragClass}
         ${isBlocked 
             ? 'bg-stripes-gray border-slate-300 dark:border-slate-600 opacity-90 border-l-slate-500' 
