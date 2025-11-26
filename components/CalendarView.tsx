@@ -220,9 +220,9 @@ const CalendarView: React.FC<CalendarViewProps> = ({ tasks, onTaskClick, onAddTa
                 {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
              </h2>
              <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
-                <button onClick={handlePrevMonth} className="p-1 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded shadow-sm transition-all"><ChevronLeft size={18} /></button>
+                <button onClick={handlePrevMonth} className="p-1 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded shadow-sm transition-all"><ChevronLeft size={18} /></button>
                 <button onClick={handleToday} className="px-3 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline">Today</button>
-                <button onClick={handleNextMonth} className="p-1 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 rounded shadow-sm transition-all"><ChevronRight size={18} /></button>
+                <button onClick={handleNextMonth} className="p-1 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 rounded shadow-sm transition-all"><ChevronRight size={18} /></button>
              </div>
          </div>
 
