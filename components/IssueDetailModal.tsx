@@ -45,11 +45,21 @@ const IssueDetailModal: React.FC<IssueDetailModalProps> = ({
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'Open': return <AlertCircle size={16} className="text-red-600 dark:text-red-400" />;
-      case 'Investigating': return <Clock size={16} className="text-blue-600 dark:text-blue-400" />;
-      case 'Resolved': return <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />;
-      case "Won't Fix": return <XCircle size={16} className="text-slate-500 dark:text-slate-400" />;
+      case 'Open': return <AlertCircle size={16} />;
+      case 'Investigating': return <Clock size={16} />;
+      case 'Resolved': return <CheckCircle2 size={16} />;
+      case "Won't Fix": return <XCircle size={16} />;
       default: return <AlertOctagon size={16} />;
+    }
+  };
+
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+        case 'Open': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800';
+        case 'Investigating': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800';
+        case 'Resolved': return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800';
+        case "Won't Fix": return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
+        default: return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300';
     }
   };
 
@@ -64,7 +74,7 @@ const IssueDetailModal: React.FC<IssueDetailModalProps> = ({
               <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border uppercase tracking-wide ${getSeverityColor(issue.severity)}`}>
                 {issue.severity}
               </span>
-              <div className="flex items-center gap-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/50 px-2.5 py-0.5 rounded-full border border-slate-100 dark:border-slate-600">
+              <div className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-0.5 rounded-full border ${getStatusBadgeStyle(issue.status)}`}>
                 {getStatusIcon(issue.status)}
                 <span>{issue.status}</span>
               </div>

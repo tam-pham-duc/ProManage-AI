@@ -129,6 +129,16 @@ const IssuesView: React.FC<IssuesViewProps> = ({
       }
   };
 
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+        case 'Open': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800';
+        case 'Investigating': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800';
+        case 'Resolved': return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800';
+        case "Won't Fix": return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
+        default: return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300';
+    }
+  };
+
   const safeDate = (timestamp: any) => {
       if (!timestamp) return '-';
       try {
@@ -273,9 +283,7 @@ const IssuesView: React.FC<IssuesViewProps> = ({
                                         onClick={(e) => e.stopPropagation()}
                                         onChange={(e) => handleStatusChange(e, issue.id)}
                                         disabled={isReadOnly}
-                                        className={`text-xs font-bold bg-white/50 dark:bg-black/20 border border-black/5 dark:border-white/10 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer transition-colors ${
-                                            issue.status === 'Resolved' ? 'text-emerald-700 dark:text-emerald-400' : issue.status === 'Open' ? 'text-red-700 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'
-                                        }`}
+                                        className={`text-xs font-bold rounded px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer transition-colors border ${getStatusBadgeStyle(issue.status)}`}
                                       >
                                           <option value="Open">Open</option>
                                           <option value="Investigating">Investigating</option>
