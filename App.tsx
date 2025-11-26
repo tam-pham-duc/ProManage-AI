@@ -29,7 +29,8 @@ import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType, Issue } from './types';
 import { logProjectActivity } from './services/activityService';
 import { createTasksFromTemplate, getTemplateById } from './services/templateService';
-import { TAG_PALETTE } from './utils/colors'; // Imported
+import { TAG_PALETTE } from './utils/colors';
+import { sanitizeFirestoreData } from './utils/dataUtils';
 
 // Firebase Imports
 import { auth, db } from './firebase';
@@ -80,27 +81,6 @@ const normalizeTaskData = (task: Partial<Task>): Partial<Task> => {
   });
   
   return normalized;
-};
-
-// Helper to ensure consistent data format throughout the app
-const sanitizeFirestoreData = (data: any): any => {
-  if (data === null || data === undefined) return data;
-  if (data && typeof data.toDate === 'function') {
-    return data.toDate().toISOString();
-  }
-  if (Array.isArray(data)) {
-    return data.map(item => sanitizeFirestoreData(item));
-  }
-  if (typeof data === 'object') {
-    const sanitized: any = {};
-    for (const key in data) {
-      if (Object.prototype.hasOwnProperty.call(data, key)) {
-        sanitized[key] = sanitizeFirestoreData(data[key]);
-      }
-    }
-    return sanitized;
-  }
-  return data;
 };
 
 const App: React.FC = () => {

@@ -7,6 +7,7 @@ import { useTimeTracking } from '../context/TimeTrackingContext';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 import { useCelebration } from '../hooks/useCelebration';
 import { getColorById } from '../utils/colors';
+import EditColumnModal from './EditColumnModal';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -402,7 +403,7 @@ interface KanbanColumnProps {
   isReadOnly?: boolean;
   allTasks?: Task[];
   onDeleteTask?: (taskId: string) => void;
-  onEditColumn?: (columnId: string, title: string, color: string) => void;
+  onEditRequest?: (column: IKanbanColumn) => void;
   onDeleteColumn?: (columnId: string) => void;
   issues?: Issue[];
 }
@@ -419,7 +420,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   isReadOnly,
   allTasks = [],
   onDeleteTask,
-  onEditColumn,
+  onEditRequest,
   onDeleteColumn,
   issues = []
 }) => {
@@ -660,7 +661,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                         <Plus size={18} />
                     </button>
                     
-                    {(onEditColumn || onDeleteColumn) && (
+                    {(onEditRequest || onDeleteColumn) && (
                         <div className="relative" ref={menuRef}>
                             <button 
                                 onClick={() => setShowMenu(!showMenu)}
@@ -670,6 +671,14 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                             </button>
                             {showMenu && (
                                 <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-fade-in">
+                                    {onEditRequest && (
+                                        <button
+                                            onClick={() => { onEditRequest(column); setShowMenu(false); }}
+                                            className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
+                                        >
+                                            <Edit2 size={12} /> Edit Column
+                                        </button>
+                                    )}
                                     {onDeleteColumn && (
                                         <button 
                                             onClick={() => { onDeleteColumn && onDeleteColumn(column.id); setShowMenu(false); }}
@@ -743,6 +752,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
+  const [columnToEdit, setColumnToEdit] = useState<IKanbanColumn | null>(null);
   
   // Column Visibility State
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
@@ -804,6 +814,13 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
       setNewColumnTitle('');
       setIsAddingColumn(false);
     }
+  };
+
+  const handleSaveColumnEdit = (title: string, color: string) => {
+      if (columnToEdit && onEditColumn) {
+          onEditColumn(columnToEdit.id, title, color);
+          setColumnToEdit(null);
+      }
   };
 
   const toggleColumnVisibility = (columnId: string) => {
@@ -916,7 +933,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 isReadOnly={isReadOnly}
                 allTasks={allTasks}
                 onDeleteTask={onDeleteTask}
-                onEditColumn={onEditColumn}
+                onEditRequest={onEditColumn ? setColumnToEdit : undefined}
                 onDeleteColumn={onDeleteColumn}
                 issues={issues}
                 />
@@ -971,6 +988,15 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           )}
         </div>
       </div>
+
+      {/* Edit Column Modal */}
+      <EditColumnModal 
+        isOpen={!!columnToEdit}
+        onClose={() => setColumnToEdit(null)}
+        onSave={handleSaveColumnEdit}
+        initialTitle={columnToEdit?.title || ''}
+        initialColor={columnToEdit?.color || 'slate-1'}
+      />
     </div>
   );
 };

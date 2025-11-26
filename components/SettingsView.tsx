@@ -10,6 +10,7 @@ import { clearDevData, generateDemoData } from '../services/demoDataService';
 import HealthCheckModal from './HealthCheckModal';
 import ColorPicker from './ColorPicker';
 import { TAG_PALETTE, getColorById } from '../utils/colors';
+import { sanitizeFirestoreData } from '../utils/dataUtils';
 
 interface SettingsViewProps {
   isOpen: boolean;
@@ -381,12 +382,13 @@ const SettingsView: React.FC<SettingsViewProps> = ({
           // Fetch user's projects
           const projQ = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
           const projSnap = await getDocs(projQ);
-          const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          // Sanitizing here to avoid circular reference errors (DocumentReference) and normalize Timestamps
+          const projects = projSnap.docs.map(d => ({ id: d.id, ...sanitizeFirestoreData(d.data()) }));
 
           // Fetch user's tasks
           const taskQ = query(collection(db, 'tasks'), where('ownerId', '==', user.uid));
           const taskSnap = await getDocs(taskQ);
-          const tasks = taskSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const tasks = taskSnap.docs.map(d => ({ id: d.id, ...sanitizeFirestoreData(d.data()) }));
 
           const backupData = {
               meta: {
