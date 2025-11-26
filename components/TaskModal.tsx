@@ -361,6 +361,14 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
   const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'flow' | 'timeLogs'>('details');
   
+  // Timer state for UI updates
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
   // Form State
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -386,7 +394,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   // Discussion State
   const [comments, setComments] = useState<Comment[]>([]);
-  const [activityLog, setActivityLog] = useState<ActivityLog[]>([]);
   const [realtimeActivities, setRealtimeActivities] = useState<ActivityLog[]>([]);
   const [newComment, setNewComment] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -674,7 +681,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
       if (comment.userId !== currentUserId) return false;
       
       const commentTime = new Date(comment.timestamp).getTime();
-      const now = Date.now();
       const fiveMinutes = 5 * 60 * 1000;
       
       return (now - commentTime) < fiveMinutes;
@@ -682,6 +688,16 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
   const handleDeleteComment = async (commentId: string) => {
       if (!task) return;
+      
+      // Optimistic check first to save DB read if expired locally
+      const commentToDelete = comments.find(c => c.id === commentId);
+      if (commentToDelete) {
+          if (!canDeleteComment(commentToDelete)) {
+              notify('error', "You can only delete comments within 5 minutes of posting.");
+              return;
+          }
+      }
+
       if (!window.confirm("Delete this comment?")) return;
 
       try {
@@ -694,6 +710,18 @@ const TaskModal: React.FC<TaskModalProps> = ({
           if (taskSnap.exists()) {
               const data = taskSnap.data();
               const currentComments = data.comments || [];
+              
+              // Double check in case comments changed on server or local clock was off
+              const serverComment = currentComments.find((c: Comment) => c.id === commentId);
+              if (!serverComment) return;
+
+              // Re-validate time on "server data" (still using client clock but fresh data timestamp)
+              const serverTime = new Date(serverComment.timestamp).getTime();
+              if (Date.now() - serverTime > 5 * 60 * 1000) {
+                   notify('error', "Time limit for deletion has expired.");
+                   return;
+              }
+
               const newComments = currentComments.filter((c: Comment) => c.id !== commentId);
               
               await updateDoc(taskRef, { comments: newComments });
