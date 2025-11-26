@@ -608,7 +608,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
   }
 
   return (
-    <div className="space-y-8 animate-fade-in pb-8">
+    <div className="flex flex-col gap-6 animate-fade-in pb-8 -mt-2">
       
       <PrintHeader 
         projectName={currentProject?.name || "Dashboard"} 
