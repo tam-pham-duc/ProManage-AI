@@ -10,6 +10,7 @@ import { auth, db } from '../firebase';
 import { collection, query, where, addDoc, serverTimestamp, getDocs, doc, updateDoc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 import WelcomeBanner from './WelcomeBanner';
 import { useNotification } from '../context/NotificationContext';
+import { getColorById } from '../utils/colors';
 
 interface ProjectHubProps {
   projects: Project[];
@@ -27,36 +28,11 @@ interface ProjectStatus {
 }
 
 const DEFAULT_STATUSES: ProjectStatus[] = [
-  { id: 'active', label: 'Active', color: 'emerald' },
-  { id: 'hold', label: 'On Hold', color: 'amber' },
-  { id: 'completed', label: 'Completed', color: 'blue' },
-  { id: 'archived', label: 'Archived', color: 'slate' }
+  { id: 'active', label: 'Active', color: 'emerald-1' },
+  { id: 'hold', label: 'On Hold', color: 'amber-1' },
+  { id: 'completed', label: 'Completed', color: 'blue-1' },
+  { id: 'archived', label: 'Archived', color: 'slate-1' }
 ];
-
-const COLOR_OPTIONS = [
-  { name: 'slate', class: 'bg-slate-500' },
-  { name: 'blue', class: 'bg-blue-500' },
-  { name: 'emerald', class: 'bg-emerald-500' },
-  { name: 'indigo', class: 'bg-indigo-500' },
-  { name: 'purple', class: 'bg-purple-500' },
-  { name: 'rose', class: 'bg-rose-500' },
-  { name: 'amber', class: 'bg-amber-500' },
-  { name: 'cyan', class: 'bg-cyan-500' },
-];
-
-const getColorStyles = (colorName: string) => {
-  const map: Record<string, { bg: string, text: string, border: string, dot: string, stroke: string, fill: string }> = {
-    slate: { bg: 'bg-slate-100', text: 'text-slate-700', border: 'border-slate-200', dot: 'bg-slate-500', stroke: 'text-slate-400', fill: 'bg-slate-500' },
-    blue: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-200', dot: 'bg-blue-500', stroke: 'text-blue-500', fill: 'bg-blue-500' },
-    emerald: { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500', stroke: 'text-emerald-500', fill: 'bg-emerald-500' },
-    indigo: { bg: 'bg-indigo-100', text: 'text-indigo-700', border: 'border-indigo-200', dot: 'bg-indigo-500', stroke: 'text-indigo-500', fill: 'bg-indigo-500' },
-    purple: { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-200', dot: 'bg-purple-500', stroke: 'text-purple-500', fill: 'bg-purple-500' },
-    rose: { bg: 'bg-rose-100', text: 'text-rose-700', border: 'border-rose-200', dot: 'bg-rose-500', stroke: 'text-rose-500', fill: 'bg-rose-500' },
-    amber: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500', stroke: 'text-amber-500', fill: 'bg-amber-500' },
-    cyan: { bg: 'bg-cyan-100', text: 'text-cyan-700', border: 'border-cyan-200', dot: 'bg-cyan-500', stroke: 'text-cyan-500', fill: 'bg-cyan-500' },
-  };
-  return map[colorName] || map['slate'];
-};
 
 const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCreateProject, userName, onDeleteProject, currentUserId }) => {
   const { notify } = useNotification();
@@ -70,7 +46,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
 
   // Status Management State
   const [statuses, setStatuses] = useState<ProjectStatus[]>(DEFAULT_STATUSES);
-  const [isManageStatusOpen, setIsManageStatusOpen] = useState(false);
+  const [isManageStatusOpen, setIsManageStatusOpen] = useState(false); // Keeping local state to avoid prop drilling if opened from Settings (but Settings handles it too)
   
   // --- Filter & Sort State ---
   const [searchQuery, setSearchQuery] = useState('');
@@ -137,11 +113,11 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
     const chartData = statuses.map(s => ({
       name: s.label,
       value: counts[s.label] || 0,
-      colorName: s.color
+      colorId: s.color
     })).filter(d => d.value > 0);
 
     if (counts['Other'] > 0) {
-        chartData.push({ name: 'Other', value: counts['Other'], colorName: 'slate' });
+        chartData.push({ name: 'Other', value: counts['Other'], colorId: 'slate-1' });
     }
 
     // Calculate donut segments
@@ -280,95 +256,6 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
       return statuses.find(s => s.label === statusLabel) || statuses[0] || DEFAULT_STATUSES[0];
   };
 
-  // --- Status Manager Modal Component ---
-  const StatusManagerModal = () => {
-      const [localStatuses, setLocalStatuses] = useState<ProjectStatus[]>(statuses);
-      const [newLabel, setNewLabel] = useState('');
-      const [newColor, setNewColor] = useState('slate');
-
-      const handleAdd = () => {
-          if (!newLabel.trim()) return;
-          const newStatus = { id: Date.now().toString(), label: newLabel.trim(), color: newColor };
-          setLocalStatuses([...localStatuses, newStatus]);
-          setNewLabel('');
-          setNewColor('slate');
-      };
-
-      const handleDelete = (id: string) => {
-          if (localStatuses.length <= 1) {
-              notify('warning', 'You must have at least one status.');
-              return;
-          }
-          setLocalStatuses(localStatuses.filter(s => s.id !== id));
-      };
-
-      const handleSave = async () => {
-          if (!currentUserId) return;
-          try {
-              await updateDoc(doc(db, 'users', currentUserId), { projectStatuses: localStatuses });
-              setStatuses(localStatuses);
-              setIsManageStatusOpen(false);
-              notify('success', 'Project statuses updated.');
-          } catch (e) {
-              console.error(e);
-              notify('error', 'Failed to save statuses.');
-          }
-      };
-
-      return (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
-              <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200 dark:border-slate-700 flex flex-col max-h-[80vh]">
-                  <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800">
-                      <h3 className="font-bold text-slate-900 dark:text-white">Manage Statuses</h3>
-                      <button onClick={() => setIsManageStatusOpen(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
-                  </div>
-                  
-                  <div className="p-4 overflow-y-auto custom-scrollbar flex-1">
-                      <div className="space-y-2 mb-4">
-                          {localStatuses.map(status => (
-                              <div key={status.id} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700">
-                                  <div className="flex items-center gap-3">
-                                      <div className={`w-3 h-3 rounded-full bg-${status.color}-500`}></div>
-                                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{status.label}</span>
-                                  </div>
-                                  <button onClick={() => handleDelete(status.id)} className="p-1 text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
-                              </div>
-                          ))}
-                      </div>
-
-                      <div className="pt-4 border-t border-slate-100 dark:border-slate-700">
-                          <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Add New Status</label>
-                          <div className="flex gap-2 mb-3">
-                              <input 
-                                  type="text" 
-                                  value={newLabel} 
-                                  onChange={(e) => setNewLabel(e.target.value)} 
-                                  placeholder="Status Name"
-                                  className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"
-                              />
-                              <button onClick={handleAdd} disabled={!newLabel.trim()} className="px-3 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-lg font-bold text-xs disabled:opacity-50"><Plus size={18} /></button>
-                          </div>
-                          <div className="flex gap-1.5 flex-wrap">
-                              {COLOR_OPTIONS.map(c => (
-                                  <button 
-                                      key={c.name}
-                                      onClick={() => setNewColor(c.name)}
-                                      className={`w-6 h-6 rounded-full ${c.class} transition-transform hover:scale-110 ${newColor === c.name ? 'ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-900 scale-110' : ''}`}
-                                  />
-                              ))}
-                          </div>
-                      </div>
-                  </div>
-
-                  <div className="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 flex justify-end gap-2">
-                      <button onClick={() => setIsManageStatusOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancel</button>
-                      <button onClick={handleSave} className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center gap-2"><Save size={14} /> Save Changes</button>
-                  </div>
-              </div>
-          </div>
-      );
-  };
-
   return (
     <div className="w-full max-w-[1600px] mx-auto px-6 animate-fade-in pb-10 h-full">
       
@@ -442,10 +329,17 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                                 stroke="currentColor"
                                 strokeWidth="4"
                             />
-                            {stats.donutSegments.map((d, i) => (
+                            {stats.donutSegments.map((d, i) => {
+                                const colorObj = getColorById(d.colorId);
+                                // Extract stroke color from text class (hacky but effective given the palette structure)
+                                // Palette text is 'text-red-800', we want stroke color.
+                                // Better approach: use the dot color as stroke color for chart
+                                const strokeClass = colorObj?.dot.replace('bg-', 'text-') || 'text-slate-500';
+                                
+                                return (
                                 <path
                                     key={i}
-                                    className={`${getColorStyles(d.colorName).stroke} transition-all duration-1000 ease-out`}
+                                    className={`${strokeClass} transition-all duration-1000 ease-out`}
                                     strokeDasharray={d.strokeDasharray}
                                     strokeDashoffset={d.strokeDashoffset}
                                     d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
@@ -453,7 +347,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                                     stroke="currentColor"
                                     strokeWidth="4"
                                 />
-                            ))}
+                            )})}
                         </svg>
                         <div className="absolute inset-0 flex flex-col items-center justify-center">
                             <span className="text-xl font-bold text-slate-900 dark:text-white">{stats.total}</span>
@@ -465,15 +359,17 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                     <div className="flex-1 ml-6 space-y-2 z-10">
                         <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Status Dist.</h4>
                         <div className="grid grid-cols-1 gap-2">
-                            {stats.donutSegments.map((d) => (
+                            {stats.donutSegments.map((d) => {
+                                const colorObj = getColorById(d.colorId);
+                                return (
                                 <div key={d.name} className="flex items-center justify-between text-xs">
                                     <div className="flex items-center gap-2">
-                                        <div className={`w-2 h-2 rounded-full ${getColorStyles(d.colorName).dot}`} />
+                                        <div className={`w-2 h-2 rounded-full ${colorObj?.dot || 'bg-slate-500'}`} />
                                         <span className="text-slate-700 dark:text-slate-300 font-medium truncate max-w-[80px]">{d.name}</span>
                                     </div>
                                     <span className="font-bold text-slate-900 dark:text-white">{d.value}</span>
                                 </div>
-                            ))}
+                            )})}
                         </div>
                     </div>
                  </>
@@ -534,16 +430,6 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
               </select>
               <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
            </div>
-
-           {/* Manage Statuses Button */}
-           <button 
-              onClick={() => setIsManageStatusOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl font-bold text-sm transition-colors border border-transparent hover:border-slate-300 dark:hover:border-slate-500 w-full sm:w-auto justify-center"
-              title="Manage Status Labels"
-           >
-              <Settings size={16} />
-              <span className="hidden xl:inline">Statuses</span>
-           </button>
         </div>
       </div>
 
@@ -567,7 +453,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
             const isOwner = currentUserId === project.ownerId;
             const createdTs = getTimestamp(project.createdAt);
             const statusObj = getProjectStatusObj(project.status);
-            const statusStyle = getColorStyles(statusObj.color);
+            const colorObj = getColorById(statusObj.color);
             
             return (
             <div 
@@ -593,9 +479,9 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                               e.stopPropagation();
                               setActiveStatusDropdown(activeStatusDropdown === project.id ? null : project.id);
                           }}
-                          className={`px-3 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1.5 transition-all hover:brightness-95 ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} dark:bg-opacity-20`}
+                          className={`px-3 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1.5 transition-all hover:brightness-95 ${colorObj?.bg} ${colorObj?.text} border-transparent dark:bg-opacity-20`}
                       >
-                          <div className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}></div>
+                          <div className={`w-1.5 h-1.5 rounded-full ${colorObj?.dot}`}></div>
                           {project.status}
                           <ChevronDown size={12} className="opacity-50" />
                       </button>
@@ -606,14 +492,14 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
                             <div className="fixed inset-0 z-40 cursor-default" onClick={(e) => { e.stopPropagation(); setActiveStatusDropdown(null); }}></div>
                             <div className="absolute right-0 top-full mt-2 w-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden animate-fade-in p-1">
                                 {statuses.map(status => {
-                                    const style = getColorStyles(status.color);
+                                    const cObj = getColorById(status.color);
                                     return (
                                         <button
                                             key={status.id}
                                             onClick={(e) => handleStatusUpdate(e, project.id, status.label)}
                                             className={`w-full text-left px-3 py-2 text-xs font-bold rounded-lg flex items-center gap-2 transition-colors ${project.status === status.label ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                                         >
-                                            <div className={`w-2 h-2 rounded-full ${style.dot}`}></div>
+                                            <div className={`w-2 h-2 rounded-full ${cObj?.dot}`}></div>
                                             {status.label}
                                             {project.status === status.label && <Check size={12} className="ml-auto" />}
                                         </button>
@@ -747,9 +633,6 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
           </div>
         </div>
       )}
-
-      {/* Status Manager Modal */}
-      {isManageStatusOpen && <StatusManagerModal />}
 
     </div>
   );

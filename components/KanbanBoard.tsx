@@ -6,6 +6,7 @@ import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 import { useCelebration } from '../hooks/useCelebration';
+import { getColorById } from '../utils/colors';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -31,17 +32,6 @@ interface TaskCardProps {
   allTasks?: Task[];
   onDelete?: (taskId: string) => void;
 }
-
-const COLOR_OPTIONS = [
-    { name: 'slate', class: 'bg-slate-500' },
-    { name: 'blue', class: 'bg-blue-500' },
-    { name: 'emerald', class: 'bg-emerald-500' },
-    { name: 'indigo', class: 'bg-indigo-500' },
-    { name: 'purple', class: 'bg-purple-500' },
-    { name: 'rose', class: 'bg-rose-500' },
-    { name: 'amber', class: 'bg-amber-500' },
-    { name: 'cyan', class: 'bg-cyan-500' },
-];
 
 const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [], onDelete }) => {
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
@@ -422,9 +412,6 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState(column.title);
-  const [editColor, setEditColor] = useState(column.color);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -437,90 +424,172 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // --- Helper: Theme Generator ---
-  const getColumnTheme = (title: string, assignedColor?: string) => {
-    // Priority to assigned color if available and not default slate (unless title suggests otherwise but we want user choice to rule)
-    let mode = assignedColor || 'slate';
-
-    // If no assigned color, use heuristics (backward compatibility)
-    if (!assignedColor) {
-        const t = title.toLowerCase();
-        if (t.includes('done') || t.includes('complete') || t.includes('closed')) mode = 'emerald';
-        else if (t.includes('progress') || t.includes('active') || t.includes('doing')) mode = 'blue';
-        else if (t.includes('review') || t.includes('qa') || t.includes('test')) mode = 'purple';
-        else if (t.includes('hold') || t.includes('block') || t.includes('wait')) mode = 'rose';
-        else if (t.includes('todo') || t.includes('to do') || t.includes('open') || t.includes('backlog')) mode = 'slate';
-        else mode = 'cyan';
-    }
-
-    switch (mode) {
-        case 'blue':
-        case 'indigo':
-            return {
-                container: 'border-blue-500 dark:border-blue-500 bg-blue-50/50 dark:bg-blue-900/10',
-                header: 'text-blue-900 dark:text-blue-100',
-                badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-                addButton: 'hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-400 hover:text-blue-600',
-                ring: 'ring-blue-400/50'
-            };
-        case 'emerald':
-        case 'green':
-            return {
-                container: 'border-emerald-500 dark:border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/10',
-                header: 'text-emerald-900 dark:text-emerald-100',
-                badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
-                addButton: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-400 hover:text-emerald-600',
-                ring: 'ring-emerald-400/50'
-            };
-        case 'purple':
-        case 'violet':
-            return {
-                container: 'border-purple-500 dark:border-purple-500 bg-purple-50/50 dark:bg-purple-900/10',
-                header: 'text-purple-900 dark:text-purple-100',
-                badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
-                addButton: 'hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-400 hover:text-purple-600',
-                ring: 'ring-purple-400/50'
-            };
-        case 'rose':
-        case 'red':
-            return {
-                container: 'border-rose-500 dark:border-rose-500 bg-rose-50/50 dark:bg-rose-900/10',
-                header: 'text-rose-900 dark:text-rose-100',
-                badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
-                addButton: 'hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-400 hover:text-rose-600',
-                ring: 'ring-rose-400/50'
-            };
-        case 'amber':
-        case 'orange':
-             return {
-                container: 'border-amber-500 dark:border-amber-500 bg-amber-50/50 dark:bg-amber-900/10',
-                header: 'text-amber-900 dark:text-amber-100',
-                badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-                addButton: 'hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-400 hover:text-amber-600',
-                ring: 'ring-amber-400/50'
-            };
-        case 'cyan':
-        case 'teal':
-            return {
-                container: 'border-cyan-500 dark:border-cyan-500 bg-cyan-50/50 dark:bg-cyan-900/10',
-                header: 'text-cyan-900 dark:text-cyan-100',
-                badge: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
-                addButton: 'hover:bg-cyan-100 dark:hover:bg-cyan-900/30 text-cyan-400 hover:text-cyan-600',
-                ring: 'ring-cyan-400/50'
-            };
-        case 'slate':
-        default:
-            return {
-                container: 'border-slate-400 dark:border-slate-500 bg-slate-50/80 dark:bg-slate-900/30',
-                header: 'text-slate-700 dark:text-slate-300',
-                badge: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-                addButton: 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600',
-                ring: 'ring-slate-400/50'
-            };
+  // --- Helper: Stronger Theme Generator ---
+  const getColumnTheme = (assignedColor?: string) => {
+    // Parse base color from ID (e.g., 'red-1' -> 'red')
+    const baseColor = assignedColor ? assignedColor.split('-')[0] : 'slate';
+    
+    // Explicit map to ensure Tailwind includes these classes without purging issues
+    // Using specific strong colors as requested
+    switch (baseColor) {
+        case 'red': return { 
+            container: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 border-t-red-500',
+            header: 'text-red-700 dark:text-red-300',
+            badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+            addButton: 'hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 hover:text-red-700',
+            ring: 'ring-red-400/50'
+        };
+        case 'orange': return { 
+            container: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 border-t-orange-500',
+            header: 'text-orange-700 dark:text-orange-300',
+            badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
+            addButton: 'hover:bg-orange-100 dark:hover:bg-orange-900/30 text-orange-500 hover:text-orange-700',
+            ring: 'ring-orange-400/50'
+        };
+        case 'amber': return { 
+            container: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 border-t-amber-500',
+            header: 'text-amber-700 dark:text-amber-300',
+            badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+            addButton: 'hover:bg-amber-100 dark:hover:bg-amber-900/30 text-amber-500 hover:text-amber-700',
+            ring: 'ring-amber-400/50'
+        };
+        case 'yellow': return { 
+            container: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 border-t-yellow-500',
+            header: 'text-yellow-700 dark:text-yellow-300',
+            badge: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+            addButton: 'hover:bg-yellow-100 dark:hover:bg-yellow-900/30 text-yellow-500 hover:text-yellow-700',
+            ring: 'ring-yellow-400/50'
+        };
+        case 'lime': return { 
+            container: 'bg-lime-50 dark:bg-lime-900/20 border-lime-200 dark:border-lime-800 border-t-lime-500',
+            header: 'text-lime-700 dark:text-lime-300',
+            badge: 'bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300',
+            addButton: 'hover:bg-lime-100 dark:hover:bg-lime-900/30 text-lime-500 hover:text-lime-700',
+            ring: 'ring-lime-400/50'
+        };
+        case 'green': return { 
+            container: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 border-t-green-500',
+            header: 'text-green-700 dark:text-green-300',
+            badge: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+            addButton: 'hover:bg-green-100 dark:hover:bg-green-900/30 text-green-500 hover:text-green-700',
+            ring: 'ring-green-400/50'
+        };
+        case 'emerald': return { 
+            container: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 border-t-emerald-500',
+            header: 'text-emerald-700 dark:text-emerald-300',
+            badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+            addButton: 'hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-500 hover:text-emerald-700',
+            ring: 'ring-emerald-400/50'
+        };
+        case 'teal': return { 
+            container: 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 border-t-teal-500',
+            header: 'text-teal-700 dark:text-teal-300',
+            badge: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300',
+            addButton: 'hover:bg-teal-100 dark:hover:bg-teal-900/30 text-teal-500 hover:text-teal-700',
+            ring: 'ring-teal-400/50'
+        };
+        case 'cyan': return { 
+            container: 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-200 dark:border-cyan-800 border-t-cyan-500',
+            header: 'text-cyan-700 dark:text-cyan-300',
+            badge: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300',
+            addButton: 'hover:bg-cyan-100 dark:hover:bg-cyan-900/30 text-cyan-500 hover:text-cyan-700',
+            ring: 'ring-cyan-400/50'
+        };
+        case 'sky': return { 
+            container: 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-800 border-t-sky-500',
+            header: 'text-sky-700 dark:text-sky-300',
+            badge: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+            addButton: 'hover:bg-sky-100 dark:hover:bg-sky-900/30 text-sky-500 hover:text-sky-700',
+            ring: 'ring-sky-400/50'
+        };
+        case 'blue': return { 
+            container: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 border-t-blue-500',
+            header: 'text-blue-700 dark:text-blue-300',
+            badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+            addButton: 'hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500 hover:text-blue-700',
+            ring: 'ring-blue-400/50'
+        };
+        case 'indigo': return { 
+            container: 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 border-t-indigo-500',
+            header: 'text-indigo-700 dark:text-indigo-300',
+            badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300',
+            addButton: 'hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-indigo-500 hover:text-indigo-700',
+            ring: 'ring-indigo-400/50'
+        };
+        case 'violet': return { 
+            container: 'bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-800 border-t-violet-500',
+            header: 'text-violet-700 dark:text-violet-300',
+            badge: 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300',
+            addButton: 'hover:bg-violet-100 dark:hover:bg-violet-900/30 text-violet-500 hover:text-violet-700',
+            ring: 'ring-violet-400/50'
+        };
+        case 'purple': return { 
+            container: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800 border-t-purple-500',
+            header: 'text-purple-700 dark:text-purple-300',
+            badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+            addButton: 'hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-500 hover:text-purple-700',
+            ring: 'ring-purple-400/50'
+        };
+        case 'fuchsia': return { 
+            container: 'bg-fuchsia-50 dark:bg-fuchsia-900/20 border-fuchsia-200 dark:border-fuchsia-800 border-t-fuchsia-500',
+            header: 'text-fuchsia-700 dark:text-fuchsia-300',
+            badge: 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300',
+            addButton: 'hover:bg-fuchsia-100 dark:hover:bg-fuchsia-900/30 text-fuchsia-500 hover:text-fuchsia-700',
+            ring: 'ring-fuchsia-400/50'
+        };
+        case 'pink': return { 
+            container: 'bg-pink-50 dark:bg-pink-900/20 border-pink-200 dark:border-pink-800 border-t-pink-500',
+            header: 'text-pink-700 dark:text-pink-300',
+            badge: 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300',
+            addButton: 'hover:bg-pink-100 dark:hover:bg-pink-900/30 text-pink-500 hover:text-pink-700',
+            ring: 'ring-pink-400/50'
+        };
+        case 'rose': return { 
+            container: 'bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800 border-t-rose-500',
+            header: 'text-rose-700 dark:text-rose-300',
+            badge: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300',
+            addButton: 'hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-500 hover:text-rose-700',
+            ring: 'ring-rose-400/50'
+        };
+        case 'gray': return { 
+            container: 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 border-t-gray-500',
+            header: 'text-gray-700 dark:text-gray-300',
+            badge: 'bg-gray-100 text-gray-700 dark:bg-gray-900/40 dark:text-gray-300',
+            addButton: 'hover:bg-gray-100 dark:hover:bg-gray-900/30 text-gray-500 hover:text-gray-700',
+            ring: 'ring-gray-400/50'
+        };
+        case 'zinc': return { 
+            container: 'bg-zinc-50 dark:bg-zinc-900/20 border-zinc-200 dark:border-zinc-800 border-t-zinc-500',
+            header: 'text-zinc-700 dark:text-zinc-300',
+            badge: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-300',
+            addButton: 'hover:bg-zinc-100 dark:hover:bg-zinc-900/30 text-zinc-500 hover:text-zinc-700',
+            ring: 'ring-zinc-400/50'
+        };
+        case 'neutral': return { 
+            container: 'bg-neutral-50 dark:bg-neutral-900/20 border-neutral-200 dark:border-neutral-800 border-t-neutral-500',
+            header: 'text-neutral-700 dark:text-neutral-300',
+            badge: 'bg-neutral-100 text-neutral-700 dark:bg-neutral-900/40 dark:text-neutral-300',
+            addButton: 'hover:bg-neutral-100 dark:hover:bg-neutral-900/30 text-neutral-500 hover:text-neutral-700',
+            ring: 'ring-neutral-400/50'
+        };
+        case 'stone': return { 
+            container: 'bg-stone-50 dark:bg-stone-900/20 border-stone-200 dark:border-stone-800 border-t-stone-500',
+            header: 'text-stone-700 dark:text-stone-300',
+            badge: 'bg-stone-100 text-stone-700 dark:bg-stone-900/40 dark:text-stone-300',
+            addButton: 'hover:bg-stone-100 dark:hover:bg-stone-900/30 text-stone-500 hover:text-stone-700',
+            ring: 'ring-stone-400/50'
+        };
+        default: return { 
+            container: 'bg-slate-50 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800 border-t-slate-500',
+            header: 'text-slate-700 dark:text-slate-300',
+            badge: 'bg-slate-100 text-slate-700 dark:bg-slate-900/40 dark:text-slate-300',
+            addButton: 'hover:bg-slate-100 dark:hover:bg-slate-900/30 text-slate-500 hover:text-slate-700',
+            ring: 'ring-slate-400/50'
+        };
     }
   };
 
-  const theme = getColumnTheme(column.title, column.color);
+  const theme = getColumnTheme(column.color);
 
   const handleDragOver = (e: React.DragEvent) => {
       if (isReadOnly) return;
@@ -549,13 +618,6 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       } 
   };
 
-  const handleSaveEdit = () => {
-      if (onEditColumn && editTitle.trim()) {
-          onEditColumn(column.id, editTitle.trim(), editColor);
-          setIsEditing(false);
-      }
-  };
-
   return (
     <div 
       onDragOver={handleDragOver}
@@ -563,36 +625,12 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        flex-1 min-w-[320px] rounded-2xl p-4 flex flex-col h-full transition-all duration-300 border-t-4 border-x border-b border-x-transparent border-b-transparent relative
+        flex-1 min-w-[320px] rounded-2xl p-4 flex flex-col h-full transition-all duration-300 border-t-4 border-2 
         ${theme.container}
         ${isDragOver ? `bg-opacity-100 ring-2 ${theme.ring} shadow-xl scale-[1.01]` : ''}
       `}
     >
-      {isEditing ? (
-          <div className="mb-4 p-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
-              <input 
-                  type="text" 
-                  value={editTitle} 
-                  onChange={(e) => setEditTitle(e.target.value)} 
-                  className="w-full text-sm font-bold mb-2 bg-transparent border-b border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none text-slate-900 dark:text-white pb-1"
-                  autoFocus
-              />
-              <div className="flex gap-1 mb-3 flex-wrap">
-                  {COLOR_OPTIONS.map(c => (
-                      <button 
-                          key={c.name}
-                          onClick={() => setEditColor(c.name)}
-                          className={`w-4 h-4 rounded-full ${c.class} ${editColor === c.name ? 'ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-900' : 'opacity-70 hover:opacity-100'}`}
-                      />
-                  ))}
-              </div>
-              <div className="flex gap-2">
-                  <button onClick={handleSaveEdit} className="flex-1 bg-indigo-600 text-white text-xs py-1.5 rounded hover:bg-indigo-700">Save</button>
-                  <button onClick={() => setIsEditing(false)} className="px-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs rounded hover:bg-slate-200 dark:hover:bg-slate-600">Cancel</button>
-              </div>
-          </div>
-      ) : (
-        <div className="flex items-center justify-between mb-5 px-1 relative">
+      <div className="flex items-center justify-between mb-5 px-1 relative">
             <div className="flex items-center gap-2">
             <h3 className={`font-bold text-lg tracking-tight ${theme.header}`}>{column.title}</h3>
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm ${theme.badge}`}>
@@ -609,37 +647,32 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                         <Plus size={18} />
                     </button>
                     
-                    <div className="relative" ref={menuRef}>
-                        <button 
-                            onClick={() => setShowMenu(!showMenu)}
-                            className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
-                        >
-                            <MoreHorizontal size={18} />
-                        </button>
-                        {showMenu && (
-                            <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-fade-in">
-                                <button 
-                                    onClick={() => { setIsEditing(true); setShowMenu(false); }}
-                                    className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
-                                >
-                                    <Edit2 size={12} /> Edit Column
-                                </button>
-                                {onDeleteColumn && (
-                                    <button 
-                                        onClick={() => { onDeleteColumn && onDeleteColumn(column.id); setShowMenu(false); }}
-                                        className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
-                                    >
-                                        <Trash2 size={12} /> Delete
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                    {(onEditColumn || onDeleteColumn) && (
+                        <div className="relative" ref={menuRef}>
+                            <button 
+                                onClick={() => setShowMenu(!showMenu)}
+                                className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
+                            >
+                                <MoreHorizontal size={18} />
+                            </button>
+                            {showMenu && (
+                                <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-fade-in">
+                                    {onDeleteColumn && (
+                                        <button 
+                                            onClick={() => { onDeleteColumn && onDeleteColumn(column.id); setShowMenu(false); }}
+                                            className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                        >
+                                            <Trash2 size={12} /> Delete
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </>
             )}
             </div>
         </div>
-      )}
 
       <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar pb-4">
         {tasks.map(task => (
@@ -692,7 +725,6 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
-  const [newColumnColor, setNewColumnColor] = useState('slate');
   
   // Column Visibility State
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
@@ -750,9 +782,8 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 
   const handleAddSubmit = () => {
     if (newColumnTitle.trim() && onAddColumn) {
-      onAddColumn(newColumnTitle.trim(), newColumnColor);
+      onAddColumn(newColumnTitle.trim(), 'slate-1');
       setNewColumnTitle('');
-      setNewColumnColor('slate');
       setIsAddingColumn(false);
     }
   };
@@ -812,6 +843,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                             {columns.map(col => {
                                 const isVisible = !hiddenColumns.includes(col.id);
                                 const isDisabled = isVisible && (columns.length - hiddenColumns.length) <= 1;
+                                const colorObj = getColorById(col.color);
 
                                 return (
                                     <button
@@ -821,7 +853,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                                         className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer'}`}
                                     >
                                         <div className="flex items-center gap-2">
-                                            <div className={`w-3 h-3 rounded-full bg-${col.color}-500`}></div>
+                                            <div className={`w-3 h-3 rounded-full ${colorObj?.dot || 'bg-slate-500'}`}></div>
                                             <span className={`font-medium ${isVisible ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}`}>{col.title}</span>
                                         </div>
                                         <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isVisible ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 dark:border-slate-600 bg-transparent'}`}>
@@ -891,17 +923,6 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                            }}
                         />
                         
-                        <div className="flex gap-2 mb-4 flex-wrap">
-                            {COLOR_OPTIONS.map(c => (
-                                <button 
-                                    key={c.name}
-                                    onClick={() => setNewColumnColor(c.name)}
-                                    className={`w-6 h-6 rounded-full ${c.class} transition-transform hover:scale-110 ${newColumnColor === c.name ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-800' : ''}`}
-                                    title={c.name}
-                                />
-                            ))}
-                        </div>
-
                         <div className="flex gap-2">
                             <button 
                                 onClick={handleAddSubmit}

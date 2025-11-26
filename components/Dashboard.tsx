@@ -406,7 +406,19 @@ const PrintHeader: React.FC<{ projectName: string; clientName: string; userName:
 
 const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [], currentProject, onAddTask, onTaskClick, onNavigate, onStatusChange, userName }) => {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-  const [activities, setActivities] = useState<any[]>([]); // New real-time state
+  const [activities, setActivities] = useState<ActivityLog[]>([]); // Raw activity logs
+
+  // Process activities to attach current task details
+  // This prevents stale closures and excessive re-subscriptions when tasks update
+  const processedActivities = useMemo(() => {
+      return activities.map(activity => ({
+          ...activity,
+          // Attach the current task object if found, to allow navigation
+          task: tasks.find(t => t.id === activity.taskId),
+          // Ensure project name is consistent with current context
+          projectName: currentProject?.name || ''
+      }));
+  }, [activities, tasks, currentProject]);
 
   // CSV Export Logic
   const handleExportCSV = () => {
@@ -549,19 +561,22 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
                   id: doc.id,
                   ...data,
                   timestamp,
-                  // Map fields to match previous UI expectation
-                  user: data.userName || 'System',
-                  taskTitle: data.taskTitle || '',
-                  projectName: currentProject.name,
-                  // Ensure task exists in current list for click handling, though we might not find it if deleted
-                  task: tasks.find(t => t.id === data.taskId) 
-              };
+                  // Explicitly map fields used in interface
+                  userId: data.userId,
+                  userName: data.userName,
+                  userAvatar: data.userAvatar,
+                  taskId: data.taskId,
+                  taskTitle: data.taskTitle,
+                  action: data.action,
+                  type: data.type,
+                  details: data.details
+              } as ActivityLog;
           });
           setActivities(fetchedActivities);
       });
 
       return () => unsubscribe();
-  }, [currentProject, tasks]); // Re-run if project changes, tasks dep allows linking task object
+  }, [currentProject?.id]); // Only re-run if the project ID changes, NOT when tasks update
 
 
   if (tasks.length === 0) {
@@ -788,7 +803,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
             
             <div className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar print:max-h-none print:overflow-visible">
             <div className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-700 space-y-8">
-                {activities.map((item) => {
+                {processedActivities.map((item: any) => {
                     if (!item) return null;
                     let Icon = Clock;
                     let iconBg = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400';
@@ -834,7 +849,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
                             {/* Header */}
                             <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
                                 <div className="text-sm text-slate-900 dark:text-white leading-snug print:text-black">
-                                    <span className="font-bold hover:underline">{item.user}</span> 
+                                    <span className="font-bold hover:underline">{item.userName || 'System'}</span> 
                                     <span className="text-slate-500 dark:text-slate-400 mx-1.5">{item.action}</span>
                                     <span className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors print:text-black">{item.taskTitle}</span>
                                 </div>
@@ -876,7 +891,7 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
                 })}
             </div>
             
-            {activities.length === 0 && (
+            {processedActivities.length === 0 && (
                 <div className="text-center py-12 text-slate-400">
                     <Clock size={48} className="mx-auto mb-3 opacity-20" />
                     <p>No recent activity.</p>

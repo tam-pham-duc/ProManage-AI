@@ -55,6 +55,9 @@ export interface ActivityLog {
   userAvatar?: string;
   details?: string;
   type?: ActivityType;
+  taskId?: string;
+  taskTitle?: string;
+  projectId?: string;
 }
 
 export interface Attachment {

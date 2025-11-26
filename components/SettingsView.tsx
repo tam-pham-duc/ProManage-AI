@@ -1,13 +1,15 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Database, FileJson, User, Sliders, LayoutTemplate, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare, Check, Edit2, Volume2, VolumeX, CalendarDays, CreditCard, MapPin } from 'lucide-react';
+import { Download, Upload, Database, FileJson, User, Sliders, LayoutTemplate, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare, Check, Edit2, Volume2, VolumeX, CalendarDays, CreditCard, MapPin, Tags } from 'lucide-react';
 import { Task, UserSettings, KanbanColumn, Template, Project } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc, getDocs, onSnapshot } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { clearDevData, generateDemoData } from '../services/demoDataService';
 import HealthCheckModal from './HealthCheckModal';
+import ColorPicker from './ColorPicker';
+import { TAG_PALETTE, getColorById } from '../utils/colors';
 
 interface SettingsViewProps {
   isOpen: boolean;
@@ -31,7 +33,14 @@ type SettingsTab = 'general' | 'preferences' | 'project' | 'data' | 'templates';
 
 const SUPER_ADMIN_EMAIL = 'admin@dev.com';
 
-// Helper for safe date parsing
+// Default Statuses if none exist
+const DEFAULT_STATUSES = [
+  { id: 'active', label: 'Active', color: 'emerald-1' },
+  { id: 'hold', label: 'On Hold', color: 'amber-1' },
+  { id: 'completed', label: 'Completed', color: 'blue-1' },
+  { id: 'archived', label: 'Archived', color: 'slate-1' }
+];
+
 const safeParseDate = (dateInput: any): Date | null => {
     if (!dateInput) return null;
     try {
@@ -188,10 +197,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({
 
   // --- Kanban Column Local State ---
   const [newColumnTitle, setNewColumnTitle] = useState('');
-  const [newColumnColor, setNewColumnColor] = useState('blue');
-  const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
-  const [editColumnTitle, setEditColumnTitle] = useState('');
-  const [editColumnColor, setEditColumnColor] = useState('');
+  const [newColumnColor, setNewColumnColor] = useState('blue-1');
+
+  // --- Project Status Local State ---
+  const [projectStatuses, setProjectStatuses] = useState<any[]>(DEFAULT_STATUSES);
+  const [newStatusLabel, setNewStatusLabel] = useState('');
+  const [newStatusColor, setNewStatusColor] = useState('slate-1');
 
   // Initialize/Reset State when Modal Opens
   useEffect(() => {
@@ -211,6 +222,25 @@ const SettingsView: React.FC<SettingsViewProps> = ({
           setProjectName(project.name);
           setProjectClient(project.clientName);
           setProjectAddress(project.address);
+      }
+
+      // Fetch Project Statuses
+      const user = auth.currentUser;
+      if (user) {
+          const userRef = doc(db, 'users', user.uid);
+          getDocs(collection(db, 'users')).then(() => { 
+              // Simple read via onSnapshot handles real-time, but for settings initial load is enough or subscription in effect
+          });
+          
+          const unsubscribe = onSnapshot(userRef, (docSnap) => {
+              if (docSnap.exists()) {
+                  const data = docSnap.data();
+                  if (data.projectStatuses && Array.isArray(data.projectStatuses)) {
+                      setProjectStatuses(data.projectStatuses);
+                  }
+              }
+          });
+          return () => unsubscribe();
       }
     }
   }, [isOpen, userSettings, project]);
@@ -403,14 +433,49 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     if (newColumnTitle.trim() && onAddColumn) {
         onAddColumn(newColumnTitle.trim(), newColumnColor);
         setNewColumnTitle('');
-        setNewColumnColor('blue');
+        setNewColumnColor('blue-1');
     }
   };
 
-  const saveEditingColumn = () => {
-      if (editingColumnId && onEditColumn && editColumnTitle.trim()) {
-          onEditColumn(editingColumnId, editColumnTitle.trim(), editColumnColor);
-          setEditingColumnId(null);
+  // --- Project Status Handlers ---
+  const handleAddStatus = async () => {
+      if (!newStatusLabel.trim() || !auth.currentUser) return;
+      const newStatuses = [...projectStatuses, { id: Date.now().toString(), label: newStatusLabel.trim(), color: newStatusColor }];
+      setProjectStatuses(newStatuses);
+      setNewStatusLabel('');
+      setNewStatusColor('slate-1');
+      try {
+          await updateDoc(doc(db, 'users', auth.currentUser.uid), { projectStatuses: newStatuses });
+          notify('success', 'Status added');
+      } catch (e) {
+          notify('error', 'Failed to save status');
+      }
+  };
+
+  const handleDeleteStatus = async (id: string) => {
+      if (projectStatuses.length <= 1) {
+          notify('warning', 'At least one status is required');
+          return;
+      }
+      if (!auth.currentUser) return;
+      const newStatuses = projectStatuses.filter(s => s.id !== id);
+      setProjectStatuses(newStatuses);
+      try {
+          await updateDoc(doc(db, 'users', auth.currentUser.uid), { projectStatuses: newStatuses });
+          notify('success', 'Status deleted');
+      } catch (e) {
+          notify('error', 'Failed to delete status');
+      }
+  };
+
+  const handleStatusColorChange = async (statusId: string, newColor: string) => {
+      if (!auth.currentUser) return;
+      const newStatuses = projectStatuses.map(s => s.id === statusId ? { ...s, color: newColor } : s);
+      setProjectStatuses(newStatuses);
+      try {
+          await updateDoc(doc(db, 'users', auth.currentUser.uid), { projectStatuses: newStatuses });
+      } catch (e) {
+          console.error(e);
       }
   };
 
@@ -477,24 +542,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   const updatePref = (key: keyof UserSettings, value: any) => {
       setUserSettings(prev => ({ ...prev, [key]: value }));
   };
-
-  const updateKanbanPref = (key: string, value: boolean) => {
-      setUserSettings(prev => ({
-          ...prev,
-          kanbanDisplay: { ...prev.kanbanDisplay, [key]: value }
-      }));
-  };
-
-  const colorOptions = [
-    { name: 'slate', class: 'bg-slate-500' },
-    { name: 'blue', class: 'bg-blue-500' },
-    { name: 'emerald', class: 'bg-emerald-500' },
-    { name: 'indigo', class: 'bg-indigo-500' },
-    { name: 'purple', class: 'bg-purple-500' },
-    { name: 'rose', class: 'bg-rose-500' },
-    { name: 'amber', class: 'bg-amber-500' },
-    { name: 'cyan', class: 'bg-cyan-500' },
-  ];
 
   // Tabs config
   const tabs = [
@@ -656,63 +703,68 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                         </div>
                     </div>
 
-                    {/* Section C: Kanban Cards Display */}
-                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><CreditCard size={18} className="text-blue-500" /> Kanban Card Details</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            {[
-                                { key: 'showId', label: 'Show Task ID' },
-                                { key: 'showAvatar', label: 'Show Assignee Avatar' },
-                                { key: 'showPriority', label: 'Show Priority Badge' },
-                                { key: 'showTags', label: 'Show Tags' },
-                            ].map(opt => (
-                                <label key={opt.key} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer hover:border-indigo-300 transition-colors">
-                                    <div className={`w-5 h-5 rounded border flex items-center justify-center ${userSettings.kanbanDisplay?.[opt.key as keyof typeof userSettings.kanbanDisplay] ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 dark:border-slate-500'}`}>
-                                        {userSettings.kanbanDisplay?.[opt.key as keyof typeof userSettings.kanbanDisplay] && <Check size={12} className="text-white" />}
-                                    </div>
-                                    <input type="checkbox" className="hidden" checked={!!userSettings.kanbanDisplay?.[opt.key as keyof typeof userSettings.kanbanDisplay]} onChange={(e) => updateKanbanPref(opt.key, e.target.checked)} />
-                                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">{opt.label}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Section D: Kanban Columns */}
+                    {/* Section C: Kanban Columns */}
                     <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><KanbanSquare size={18} className="text-purple-500" /> Kanban Columns</h3>
                         <div className="space-y-3 mb-4">
-                            {columns.map((col) => (
+                            {columns.map((col) => {
+                                return (
                                 <div key={col.id} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl group">
                                     <GripVertical size={16} className="text-slate-400 cursor-grab" />
-                                    {editingColumnId === col.id ? (
-                                        <div className="flex-1 flex items-center gap-2">
-                                            <input type="text" value={editColumnTitle} onChange={(e) => setEditColumnTitle(e.target.value)} className="flex-1 px-2 py-1 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded outline-none focus:ring-2 focus:ring-indigo-500" autoFocus />
-                                            <div className="flex gap-1">{colorOptions.map(c => (<button key={c.name} onClick={() => setEditColumnColor(c.name)} className={`w-4 h-4 rounded-full ${c.class} ${editColumnColor === c.name ? 'ring-2 ring-offset-1 ring-slate-400' : ''}`} />))}</div>
-                                            <button onClick={saveEditingColumn} className="p-1 bg-indigo-100 text-indigo-600 rounded"><Check size={14} /></button>
-                                            <button onClick={() => setEditingColumnId(null)} className="p-1 bg-slate-200 text-slate-600 rounded"><X size={14} /></button>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <div className={`w-4 h-4 rounded-full bg-${col.color}-500 shadow-sm`}></div>
-                                            <span className="flex-1 font-medium text-sm text-slate-700 dark:text-slate-200">{col.title}</span>
-                                            <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
-                                                {onEditColumn && <button onClick={() => { setEditingColumnId(col.id); setEditColumnTitle(col.title); setEditColumnColor(col.color); }} className="p-2 text-slate-400 hover:text-indigo-500"><Edit2 size={16} /></button>}
-                                                {onDeleteColumn && <button onClick={() => onDeleteColumn(col.id)} className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={16} /></button>}
-                                            </div>
-                                        </>
+                                    <ColorPicker 
+                                        selectedColorId={col.color} 
+                                        onChange={(newColor) => onEditColumn && onEditColumn(col.id, col.title, newColor)} 
+                                    />
+                                    <input 
+                                        type="text" 
+                                        defaultValue={col.title} 
+                                        onBlur={(e) => onEditColumn && onEditColumn(col.id, e.target.value, col.color)}
+                                        className="flex-1 bg-transparent outline-none text-sm font-bold text-slate-900 dark:text-white placeholder-slate-400 border-b border-transparent focus:border-indigo-500 px-2 py-1 transition-colors"
+                                        placeholder="Column Name"
+                                    />
+                                    {onDeleteColumn && (
+                                        <button 
+                                            onClick={() => onDeleteColumn(col.id)} 
+                                            className="p-2 text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
                                     )}
                                 </div>
-                            ))}
+                            )})}
                         </div>
                         {onAddColumn && (
                             <div className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl">
                                 <Plus size={16} className="text-slate-400 ml-1" />
-                                <input type="text" value={newColumnTitle} onChange={(e) => setNewColumnTitle(e.target.value)} placeholder="New Column Name" className="flex-1 bg-transparent outline-none text-sm text-slate-900 dark:text-white placeholder-slate-400" onKeyDown={(e) => e.key === 'Enter' && handleAddColumnClick()} />
-                                <div className="flex gap-1">{colorOptions.map(c => (<button key={c.name} onClick={() => setNewColumnColor(c.name)} className={`w-5 h-5 rounded-full ${c.class} transition-transform hover:scale-110 ${newColumnColor === c.name ? 'ring-2 ring-offset-1 ring-slate-400' : ''}`} />))}</div>
+                                <ColorPicker selectedColorId={newColumnColor} onChange={setNewColumnColor} />
+                                <input type="text" value={newColumnTitle} onChange={(e) => setNewColumnTitle(e.target.value)} placeholder="New Column Name" className="flex-1 bg-transparent outline-none text-sm font-bold text-slate-900 dark:text-white placeholder-slate-400" onKeyDown={(e) => e.key === 'Enter' && handleAddColumnClick()} />
                                 <button onClick={handleAddColumnClick} disabled={!newColumnTitle.trim()} className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50">Add</button>
                             </div>
                         )}
                     </div>
+
+                    {/* Section D: Project Statuses */}
+                    <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><Tags size={18} className="text-amber-500" /> Project Statuses</h3>
+                        <div className="space-y-3 mb-4">
+                            {projectStatuses.map((status) => {
+                                return (
+                                    <div key={status.id} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl">
+                                        <ColorPicker selectedColorId={status.color} onChange={(newColor) => handleStatusColorChange(status.id, newColor)} />
+                                        <span className="flex-1 font-medium text-sm text-slate-700 dark:text-slate-200">{status.label}</span>
+                                        <button onClick={() => handleDeleteStatus(status.id)} className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={16} /></button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <div className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 rounded-xl">
+                            <Plus size={16} className="text-slate-400 ml-1" />
+                            <ColorPicker selectedColorId={newStatusColor} onChange={setNewStatusColor} />
+                            <input type="text" value={newStatusLabel} onChange={(e) => setNewStatusLabel(e.target.value)} placeholder="New Status Name" className="flex-1 bg-transparent outline-none text-sm text-slate-900 dark:text-white placeholder-slate-400" onKeyDown={(e) => e.key === 'Enter' && handleAddStatus()} />
+                            <button onClick={handleAddStatus} disabled={!newStatusLabel.trim()} className="px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded-lg hover:bg-indigo-700 disabled:opacity-50">Add</button>
+                        </div>
+                    </div>
+
                     </div>
                 )}
 
