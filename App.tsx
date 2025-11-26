@@ -8,6 +8,7 @@ import { ListView } from './components/ListView';
 import Timeline from './components/Timeline';
 import CalendarView from './components/CalendarView';
 import ProjectMapView from './components/ProjectMapView';
+import IssuesView from './components/IssuesView';
 import TaskModal from './components/TaskModal';
 import ProjectModal from './components/ProjectModal';
 import FilterBar from './components/FilterBar';
@@ -24,7 +25,7 @@ import ActiveTimerBar from './components/ActiveTimerBar';
 import PageTransition from './components/PageTransition';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
-import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType } from './types';
+import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType, Issue } from './types';
 import { logProjectActivity } from './services/activityService';
 import { createTasksFromTemplate, getTemplateById } from './services/templateService';
 import { TAG_PALETTE } from './utils/colors'; // Imported
@@ -49,7 +50,7 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
 ];
 
 // Views that are part of the Infinity Scroll Workspace
-const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'trash', 'image-gen'];
+const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen'];
 
 // Section Wrapper Component
 const Section: React.FC<{ id: string; children: React.ReactNode; className?: string }> = ({ id, children, className = "" }) => (
@@ -182,6 +183,7 @@ const App: React.FC = () => {
   const [initialTaskDate, setInitialTaskDate] = useState<string | undefined>(undefined);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [columns, setColumns] = useState<KanbanColumn[]>(DEFAULT_COLUMNS);
+  const [issues, setIssues] = useState<Issue[]>([]);
 
   // Reminder State
   const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
@@ -235,6 +237,10 @@ const App: React.FC = () => {
       const member = currentProject.members?.find(m => m.uid === currentUser.id);
       return member?.role || 'guest';
   }, [currentProject, currentUser]);
+
+  const openIssuesCount = useMemo(() => {
+      return issues.filter(i => i.status !== 'Resolved' && i.status !== "Won't Fix").length;
+  }, [issues]);
 
   // --- Global Keyboard Shortcuts ---
   useEffect(() => {
@@ -381,6 +387,20 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, [currentUser?.id, selectedProjectId]);
+
+  // --- Issues Listener ---
+  useEffect(() => {
+    if (!selectedProjectId) {
+        setIssues([]);
+        return;
+    }
+    const q = query(collection(db, 'projects', selectedProjectId, 'issues'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const fetchedIssues = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Issue));
+        setIssues(fetchedIssues);
+    });
+    return () => unsubscribe();
+  }, [selectedProjectId]);
 
   // --- Sync editingTask with Tasks ---
   useEffect(() => {
@@ -1019,6 +1039,19 @@ const App: React.FC = () => {
                 </div>
             </Section>
 
+            <Section id="issues">
+                <div className="flex flex-col h-full min-h-[700px]">
+                    <IssuesView 
+                        issues={issues} 
+                        projectId={selectedProjectId || ''} 
+                        tasks={tasks} 
+                        projectMembers={currentProject?.members || []}
+                        currentUserId={currentUser?.id || ''}
+                        isReadOnly={userRole === 'guest'}
+                    />
+                </div>
+            </Section>
+
             <Section id="image-gen">
                 <ImageGenerator />
             </Section>
@@ -1055,6 +1088,7 @@ const App: React.FC = () => {
         currentUserRole={userRole}
         userEmail={currentUser.email}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        openIssuesCount={openIssuesCount}
       />
       <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
         <div className="absolute inset-0 z-0 print:hidden">

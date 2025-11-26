@@ -18,7 +18,8 @@ import {
   GitGraph,
   Trash2,
   List,
-  Search
+  Search,
+  AlertCircle
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
@@ -42,6 +43,7 @@ interface SidebarProps {
   currentUserRole?: ProjectRole; 
   userEmail?: string;
   onOpenSettings?: () => void;
+  openIssuesCount?: number;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -62,7 +64,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   isDesktopOpen,
   currentUserRole,
   userEmail,
-  onOpenSettings
+  onOpenSettings,
+  openIssuesCount = 0
 }) => {
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState('');
@@ -101,6 +104,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'timeline', label: 'Timeline', icon: CalendarClock },
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
+    { id: 'issues', label: 'Issues List', icon: AlertCircle, badge: openIssuesCount },
   ];
 
   const handleNavClick = (tab: Tab) => {
@@ -278,7 +282,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => !isDisabled && handleNavClick(item.id as Tab)}
                     disabled={isDisabled}
                     className={`
-                    w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group font-medium
+                    w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group font-medium
                     ${isActive 
                         ? 'bg-slate-800 text-white shadow-inner shadow-black/20' 
                         : isDisabled 
@@ -287,12 +291,19 @@ const Sidebar: React.FC<SidebarProps> = ({
                     }
                     `}
                 >
-                    <Icon 
-                    size={20} 
-                    strokeWidth={isActive ? 2.5 : 2} 
-                    className={`transition-colors ${isActive ? 'text-indigo-400' : isDisabled ? 'text-slate-700' : 'text-slate-500 group-hover:text-indigo-300'}`} 
-                    />
-                    <span>{item.label}</span>
+                    <div className="flex items-center gap-3">
+                        <Icon 
+                        size={20} 
+                        strokeWidth={isActive ? 2.5 : 2} 
+                        className={`transition-colors ${isActive ? 'text-indigo-400' : isDisabled ? 'text-slate-700' : 'text-slate-500 group-hover:text-indigo-300'}`} 
+                        />
+                        <span>{item.label}</span>
+                    </div>
+                    {item.badge && item.badge > 0 ? (
+                        <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                            {item.badge}
+                        </span>
+                    ) : null}
                 </button>
                 );
             })}

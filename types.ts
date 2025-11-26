@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type Tab = 'dashboard' | 'kanban' | 'list' | 'timeline' | 'calendar' | 'map' | 'settings' | 'image-gen' | 'projects' | 'trash';
+export type Tab = 'dashboard' | 'kanban' | 'list' | 'timeline' | 'calendar' | 'map' | 'issues' | 'settings' | 'image-gen' | 'projects' | 'trash';
 
 export interface MetricCardProps {
   title: string;
@@ -115,6 +115,24 @@ export interface Task {
   isDeleted?: boolean;
   deletedAt?: string;
   originalProjectId?: string; // Used to track project association when in trash
+}
+
+export type IssueStatus = 'Open' | 'Investigating' | 'Resolved' | "Won't Fix";
+export type IssueSeverity = 'Critical' | 'High' | 'Medium' | 'Low';
+
+export interface Issue {
+  id: string;
+  projectId: string;
+  title: string;
+  description: string;
+  status: IssueStatus;
+  severity: IssueSeverity;
+  reporterId: string;
+  reporterName?: string;
+  assigneeId?: string;
+  relatedTaskId?: string;
+  createdAt: any;
+  resolvedAt?: any;
 }
 
 export interface KanbanColumn {
