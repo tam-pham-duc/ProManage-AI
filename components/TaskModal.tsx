@@ -63,86 +63,143 @@ const formatMessageTime = (timestampStr: string) => {
     }
 };
 
-// MiniTaskCard with Enhanced Status Indicators
+// --- Shared Smart Connector Component (Copied Concept from ProjectMapView for consistency) ---
+const SmartConnector: React.FC<{ 
+    startX: number; startY: number; endX: number; endY: number; 
+    isBlocked: boolean; isHighlighted: boolean; isDimmed: boolean; 
+}> = ({ startX, startY, endX, endY, isBlocked, isHighlighted, isDimmed }) => {
+    
+    const midX = (startX + endX) / 2;
+    const midY = (startY + endY) / 2;
+    
+    // Bezier Curve
+    const cp1x = startX;
+    const cp1y = startY + (endY - startY) / 2;
+    const cp2x = endX;
+    const cp2y = endY - (endY - startY) / 2;
+    const pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+
+    // Styling
+    const strokeColor = isBlocked 
+        ? (isHighlighted ? '#f87171' : '#94a3b8') 
+        : (isHighlighted ? '#10b981' : '#cbd5e1');
+    
+    const strokeWidth = isHighlighted ? 3 : 2;
+    const isFlowing = isHighlighted && !isBlocked;
+    const strokeDasharray = isBlocked ? "6, 4" : (isFlowing ? "8, 4" : "none");
+    const animationClass = isFlowing ? "animate-dash-flow" : "";
+
+    return (
+        <g className={`transition-all duration-500 ${isDimmed ? 'opacity-20' : 'opacity-100'}`}>
+            {/* Glow */}
+            {isHighlighted && (
+                <path d={pathD} fill="none" stroke={isBlocked ? "rgba(248,113,113,0.2)" : "rgba(16,185,129,0.2)"} strokeWidth={8} className="transition-all" />
+            )}
+            <path d={pathD} fill="none" stroke={strokeColor} strokeWidth={strokeWidth} strokeDasharray={strokeDasharray} className={`transition-all duration-500 ${animationClass}`} />
+            
+            {/* Icon */}
+            <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
+                <div className={`w-5 h-5 rounded-full flex items-center justify-center border shadow-sm z-10 transition-transform duration-300 ${isHighlighted ? 'scale-125' : ''} ${isBlocked ? 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-900' : 'bg-emerald-50 dark:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800'}`}>
+                    {isBlocked ? <Lock size={10} className="text-red-500" /> : <Check size={10} className="text-emerald-600 dark:text-emerald-400" />}
+                </div>
+            </foreignObject>
+        </g>
+    );
+};
+
+// MiniTaskCard with Enhanced Visuals
 const MiniTaskCard: React.FC<{ 
     task: Task; 
     type: 'upstream' | 'downstream' | 'current'; 
     onClick?: () => void;
     id?: string;
     blocked?: boolean;
-}> = ({ task, type, onClick, id, blocked }) => {
+    isHovered: boolean;
+    isDimmed: boolean;
+    onMouseEnter: () => void;
+    onMouseLeave: () => void;
+}> = ({ task, type, onClick, id, blocked, isHovered, isDimmed, onMouseEnter, onMouseLeave }) => {
     const isCompleted = task.status === 'Done';
+    const isActive = task.status === 'In Progress';
     const isCurrent = type === 'current';
     
-    let containerClass = 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800';
-    let statusColor = 'text-slate-500';
-    let icon = <Clock size={14} className="text-slate-400" />;
+    // Dynamic Styling based on Status & Blockage
+    let borderColor = 'border-slate-200 dark:border-slate-700';
+    let bgColor = 'bg-white dark:bg-slate-800';
+    let shadowClass = 'shadow-sm';
+    let glowClass = '';
 
-    // Logic for coloring borders based on status/blockage
     if (blocked) {
-        containerClass = 'border-red-300 dark:border-red-900/50 bg-white dark:bg-slate-900 shadow-sm relative ring-1 ring-red-100 dark:ring-red-900/30';
-        statusColor = 'text-slate-500';
-        icon = <Ban size={14} className="text-red-400" />;
+        borderColor = 'border-red-300 dark:border-red-900/50';
+        bgColor = 'bg-slate-50 dark:bg-slate-900';
+        if (isHovered) glowClass = 'shadow-[0_0_15px_rgba(248,113,113,0.3)] ring-1 ring-red-400';
     } else if (isCompleted) {
-        containerClass = 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-900/10 ring-1 ring-emerald-100 dark:ring-emerald-900/30 shadow-sm';
-        statusColor = 'text-emerald-600 dark:text-emerald-400';
-        icon = <CheckCircle2 size={16} className="text-emerald-500" />;
-    } else if (task.status === 'In Progress') {
-        containerClass = 'border-blue-500 bg-blue-50/10 dark:bg-blue-900/10 ring-1 ring-blue-100 dark:ring-blue-900/30 shadow-sm';
-        statusColor = 'text-blue-600 dark:text-blue-400';
-        icon = <Play size={14} className="text-blue-500" fill="currentColor" />;
+        borderColor = 'border-emerald-500';
+        bgColor = 'bg-emerald-50/20 dark:bg-emerald-900/10';
+        if (isHovered) glowClass = 'shadow-[0_0_15px_rgba(16,185,129,0.3)] ring-1 ring-emerald-500';
+    } else if (isActive) {
+        borderColor = 'border-blue-500';
+        bgColor = 'bg-blue-50/20 dark:bg-blue-900/10';
+        if (isHovered) glowClass = 'shadow-[0_0_15px_rgba(59,130,246,0.3)] ring-1 ring-blue-500';
     }
 
-    // Current node highlight
+    // Current node special style
     if (isCurrent) {
-        containerClass += ' scale-105 shadow-xl ring-2 !ring-indigo-500 border-indigo-500 z-20';
-    } else {
-        containerClass += ' hover:scale-105 hover:shadow-md hover:z-10';
+        shadowClass = 'shadow-lg';
+        if (!blocked && !isCompleted && !isActive) {
+             borderColor = 'border-indigo-500';
+             if (isHovered) glowClass = 'shadow-[0_0_15px_rgba(99,102,241,0.3)] ring-1 ring-indigo-500';
+        }
     }
 
     return (
         <div 
             id={id}
             onClick={onClick}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
             className={`
                 relative p-3 rounded-xl border w-48 transition-all duration-300 group cursor-pointer
-                ${containerClass}
+                ${borderColor} ${bgColor} ${shadowClass} ${glowClass}
+                ${isDimmed ? 'opacity-40 blur-[1px] grayscale scale-95' : 'opacity-100 scale-100'}
+                ${isHovered ? 'z-50 scale-105 -translate-y-1' : 'z-10'}
             `}
         >
-            {/* Blocked Padlock Overlay */}
+            {/* Status Badges */}
             {blocked && (
                 <div className="absolute -top-2 -right-2 bg-white dark:bg-slate-800 p-1 rounded-full shadow-md border border-red-100 dark:border-red-900 z-30">
                     <Lock size={12} className="text-red-500" />
                 </div>
             )}
+            {!blocked && isCompleted && (
+                <div className="absolute -top-2 -right-2 bg-white dark:bg-slate-800 p-1 rounded-full shadow-md border border-emerald-100 dark:border-emerald-900 z-30">
+                    <Check size={12} className="text-emerald-500" />
+                </div>
+            )}
 
             <div className="flex justify-between items-start mb-2">
-                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/80 dark:bg-black/30 ${statusColor}`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${blocked ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' : isCompleted ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400'}`}>
                     {task.status}
                 </span>
-                {icon}
+                {isActive && <Play size={12} className="text-blue-500 animate-pulse" fill="currentColor" />}
             </div>
             
             <h5 className={`font-bold text-xs leading-snug mb-2 line-clamp-2 ${isCurrent ? 'text-slate-900 dark:text-white text-sm' : 'text-slate-700 dark:text-slate-300'}`}>
                 {task.title}
             </h5>
 
-            <div className="flex items-center justify-between mt-auto">
+            <div className="flex items-center justify-between mt-auto border-t border-black/5 dark:border-white/5 pt-2">
                 <div className="flex items-center gap-1.5">
                     <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-slate-600 dark:text-slate-300 overflow-hidden border border-white dark:border-slate-600 ${task.assigneeAvatar ? '' : 'bg-slate-200 dark:bg-slate-700'}`}>
-                        {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full object-cover" /> : task.assignee.charAt(0)}
+                        {task.assigneeAvatar ? <img src={task.assigneeAvatar} className="w-full h-full object-cover" /> : (task.assignee ? task.assignee.charAt(0) : 'U')}
                     </div>
-                    <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[80px]">{task.assignee}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[80px]">{task.assignee || 'Unassigned'}</span>
                 </div>
-                {task.priority === 'High' && !isCompleted && (
-                    <AlertTriangle size={12} className="text-rose-500 animate-pulse" />
-                )}
             </div>
         </div>
     );
 };
 
-// Visualizer with Smart Connectors
 const TaskDependencyVisualizer: React.FC<{
     task: Task;
     upstreamTasks: Task[];
@@ -151,6 +208,7 @@ const TaskDependencyVisualizer: React.FC<{
 }> = ({ task, upstreamTasks, downstreamTasks, onTaskSelect }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [paths, setPaths] = useState<React.ReactElement[]>([]);
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
 
     useEffect(() => {
         const calculatePaths = () => {
@@ -167,46 +225,7 @@ const TaskDependencyVisualizer: React.FC<{
             const currentTopY = currentRect.top - containerRect.top;
             const currentBottomY = currentRect.bottom - containerRect.top;
 
-            const drawSmartConnector = (
-                startX: number, startY: number, 
-                endX: number, endY: number, 
-                isBlocked: boolean, 
-                key: string
-            ) => {
-                const cp1x = startX;
-                const cp1y = startY + (endY - startY) / 2;
-                const cp2x = endX;
-                const cp2y = endY - (endY - startY) / 2;
-                
-                const pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
-                const midX = (startX + endX) / 2;
-                const midY = (startY + endY) / 2;
-
-                const color = isBlocked ? '#94a3b8' : '#10b981'; // Slate vs Green
-                const strokeWidth = isBlocked ? 2 : 3;
-                const dashArray = isBlocked ? "5,5" : "none";
-                const animationClass = !isBlocked ? "animate-flow-pulse" : "";
-
-                return (
-                    <g key={key}>
-                        <path 
-                            d={pathD} 
-                            fill="none" 
-                            stroke={color} 
-                            strokeWidth={strokeWidth} 
-                            strokeDasharray={dashArray}
-                            className={`transition-all duration-500 ease-in-out ${animationClass}`}
-                        />
-                        <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center shadow-sm border z-10 ${isBlocked ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-400' : 'bg-emerald-100 border-emerald-200 text-emerald-600'}`}>
-                                {isBlocked ? <Lock size={10} /> : <Check size={10} />}
-                            </div>
-                        </foreignObject>
-                    </g>
-                );
-            };
-
-            // 1. Draw Lines from Upstream (Prereqs) -> Current
+            // --- Upstream Links ---
             upstreamTasks.forEach(t => {
                 const el = document.getElementById(`node-up-${t.id}`);
                 if (el) {
@@ -214,13 +233,26 @@ const TaskDependencyVisualizer: React.FC<{
                     const startX = rect.left + rect.width / 2 - containerRect.left;
                     const startY = rect.bottom - containerRect.top;
                     
-                    // Logic: If parent is NOT done, the line is blocked
                     const isBlocked = t.status !== 'Done';
-                    newPaths.push(drawSmartConnector(startX, startY, currentX, currentTopY, isBlocked, `link-up-${t.id}`));
+                    
+                    // Highlight Logic: If hovering Upstream Node OR Current Node, highlight this link
+                    const isHighlighted = hoveredId === t.id || hoveredId === task.id;
+                    const isDimmed = hoveredId && !isHighlighted;
+
+                    newPaths.push(
+                        <SmartConnector 
+                            key={`link-up-${t.id}`} 
+                            startX={startX} startY={startY} 
+                            endX={currentX} endY={currentTopY}
+                            isBlocked={isBlocked} 
+                            isHighlighted={isHighlighted}
+                            isDimmed={!!isDimmed}
+                        />
+                    );
                 }
             });
 
-            // 2. Draw Lines from Current -> Downstream (Blocking)
+            // --- Downstream Links ---
             downstreamTasks.forEach(t => {
                 const el = document.getElementById(`node-down-${t.id}`);
                 if (el) {
@@ -228,43 +260,63 @@ const TaskDependencyVisualizer: React.FC<{
                     const endX = rect.left + rect.width / 2 - containerRect.left;
                     const endY = rect.top - containerRect.top;
                     
-                    // Logic: If CURRENT is not done, this line is blocked
                     const isBlocked = task.status !== 'Done';
-                    newPaths.push(drawSmartConnector(currentX, currentBottomY, endX, endY, isBlocked, `link-down-${t.id}`));
+                    
+                    // Highlight Logic: If hovering Downstream Node OR Current Node
+                    const isHighlighted = hoveredId === t.id || hoveredId === task.id;
+                    const isDimmed = hoveredId && !isHighlighted;
+
+                    newPaths.push(
+                        <SmartConnector 
+                            key={`link-down-${t.id}`}
+                            startX={currentX} startY={currentBottomY} 
+                            endX={endX} endY={endY} 
+                            isBlocked={isBlocked}
+                            isHighlighted={isHighlighted}
+                            isDimmed={!!isDimmed}
+                        />
+                    );
                 }
             });
 
             setPaths(newPaths);
         };
 
-        setTimeout(calculatePaths, 100);
+        // Recalculate on mount, resize, and hover change
+        calculatePaths();
+        const timer = setTimeout(calculatePaths, 100); // Ensure DOM is ready
+        
         window.addEventListener('resize', calculatePaths);
-        return () => window.removeEventListener('resize', calculatePaths);
-    }, [task, upstreamTasks, downstreamTasks]);
+        return () => {
+            window.removeEventListener('resize', calculatePaths);
+            clearTimeout(timer);
+        };
+    }, [task, upstreamTasks, downstreamTasks, hoveredId]);
 
     return (
         <div ref={containerRef} className="relative w-full min-h-[600px] py-8 bg-slate-50 dark:bg-slate-900/50 rounded-xl overflow-hidden">
             <style>{`
-                @keyframes flow-pulse {
-                  0%, 100% { stroke-opacity: 1; stroke-width: 3; }
-                  50% { stroke-opacity: 0.6; stroke-width: 4; }
+                @keyframes dash-flow {
+                  to { stroke-dashoffset: -24; }
                 }
-                .animate-flow-pulse {
-                  animation: flow-pulse 2s ease-in-out infinite;
+                .animate-dash-flow {
+                  animation: dash-flow 1s linear infinite;
                 }
             `}</style>
             <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
                 {paths}
             </svg>
-            <div className="relative z-10 flex flex-col items-center justify-between h-full gap-16">
+            
+            <div className="relative z-10 flex flex-col items-center justify-between h-full gap-20">
+                {/* Upstream Level */}
                 <div className="flex flex-col items-center w-full px-4">
-                    <div className="mb-4 text-center">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider bg-white dark:bg-slate-800 px-3 py-1 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
+                    <div className="mb-6">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-white dark:bg-slate-800 px-3 py-1 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
                             Prerequisites
                         </span>
                     </div>
                     {upstreamTasks.length > 0 ? (
-                        <div className="flex flex-wrap justify-center gap-6">
+                        <div className="flex flex-wrap justify-center gap-8">
                             {upstreamTasks.map(t => (
                                 <MiniTaskCard 
                                     key={t.id} 
@@ -272,40 +324,46 @@ const TaskDependencyVisualizer: React.FC<{
                                     task={t} 
                                     type="upstream" 
                                     onClick={() => onTaskSelect && onTaskSelect(t)} 
+                                    onMouseEnter={() => setHoveredId(t.id)}
+                                    onMouseLeave={() => setHoveredId(null)}
+                                    isHovered={hoveredId === t.id}
+                                    isDimmed={!!hoveredId && hoveredId !== t.id && hoveredId !== task.id}
+                                    blocked={false} // Upstream tasks are blocked by their own parents (not shown here)
                                 />
                             ))}
                         </div>
                     ) : (
-                        <div className="text-sm text-slate-400 italic py-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl px-8 bg-slate-50/50 dark:bg-slate-800/50">
+                        <div className="text-xs text-slate-400 italic py-3 px-6 border border-dashed border-slate-300 dark:border-slate-700 rounded-full bg-slate-50/50 dark:bg-slate-900/50">
                             No prerequisites
                         </div>
                     )}
                 </div>
 
+                {/* Current Level */}
                 <div className="flex flex-col items-center">
-                    <div className="mb-4 text-center">
-                        <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider bg-indigo-50 dark:bg-indigo-900/20 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800">
-                            Current Focus
-                        </span>
-                    </div>
                     <div id={`node-current-${task.id}`}>
                         <MiniTaskCard 
                             task={task} 
                             type="current" 
-                            // Current task is blocked if ANY upstream is not done
                             blocked={upstreamTasks.some(t => t.status !== 'Done')}
+                            onClick={() => {}} // Already here
+                            onMouseEnter={() => setHoveredId(task.id)}
+                            onMouseLeave={() => setHoveredId(null)}
+                            isHovered={hoveredId === task.id}
+                            isDimmed={!!hoveredId && hoveredId !== task.id && !upstreamTasks.some(t => t.id === hoveredId) && !downstreamTasks.some(t => t.id === hoveredId)}
                         />
                     </div>
                 </div>
 
+                {/* Downstream Level */}
                 <div className="flex flex-col items-center w-full px-4">
-                    <div className="mb-4 text-center">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider bg-white dark:bg-slate-800 px-3 py-1 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
+                    <div className="mb-6">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider bg-white dark:bg-slate-800 px-3 py-1 rounded-full shadow-sm border border-slate-100 dark:border-slate-700">
                             Blocking
                         </span>
                     </div>
                     {downstreamTasks.length > 0 ? (
-                        <div className="flex flex-wrap justify-center gap-6">
+                        <div className="flex flex-wrap justify-center gap-8">
                             {downstreamTasks.map(t => (
                                 <MiniTaskCard 
                                     key={t.id} 
@@ -313,12 +371,16 @@ const TaskDependencyVisualizer: React.FC<{
                                     task={t} 
                                     type="downstream" 
                                     onClick={() => onTaskSelect && onTaskSelect(t)}
-                                    blocked={task.status !== 'Done'} // Downstream nodes are effectively "blocked" by this task if it's not done
+                                    onMouseEnter={() => setHoveredId(t.id)}
+                                    onMouseLeave={() => setHoveredId(null)}
+                                    isHovered={hoveredId === t.id}
+                                    isDimmed={!!hoveredId && hoveredId !== t.id && hoveredId !== task.id}
+                                    blocked={task.status !== 'Done'} 
                                 />
                             ))}
                         </div>
                     ) : (
-                        <div className="text-sm text-slate-400 italic py-4 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl px-8 bg-slate-50/50 dark:bg-slate-800/50">
+                        <div className="text-xs text-slate-400 italic py-3 px-6 border border-dashed border-slate-300 dark:border-slate-700 rounded-full bg-slate-50/50 dark:bg-slate-900/50">
                             End of chain
                         </div>
                     )}
