@@ -491,6 +491,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [taskTemplates, setTaskTemplates] = useState<any[]>([]);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
 
+  // New Optimistic State for Time Logs
+  const [timeLogs, setTimeLogs] = useState<TimeLog[]>([]);
+  const [totalTimeSeconds, setTotalTimeSeconds] = useState(0);
+
   const prevTaskIdRef = useRef<string | undefined>(undefined);
 
   const activeMembers = useMemo(() => {
@@ -595,6 +599,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
         setDependencies(task.dependencies || []);
         setTags(task.tags || []);
         
+        // Sync Time Logs
+        setTimeLogs(task.timeLogs || []);
+        setTotalTimeSeconds(task.totalTimeSeconds || 0);
+        
         setEstimatedCost(task.estimatedCost?.toString() || '');
         setActualCost(task.actualCost?.toString() || '');
         setEstimatedHours(task.estimatedHours?.toString() || '');
@@ -636,6 +644,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAttachments(task.attachments || []);
             setTags(task.tags || []);
             setDependencies(task.dependencies || []);
+            
+            setTimeLogs(task.timeLogs || []);
+            setTotalTimeSeconds(task.totalTimeSeconds || 0);
           } else {
             // Default values for New Task
             setTitle('');
@@ -654,6 +665,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAttachments([]);
             setTags([]);
             setDependencies([]);
+            setTimeLogs([]);
+            setTotalTimeSeconds(0);
             setEstimatedCost('');
             setActualCost('');
             setEstimatedHours('');
@@ -828,14 +841,26 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const handleDeleteLog = async (logId: string) => {
     if (!task) return;
     if (!window.confirm("Delete this time entry?")) return;
+    
+    // Calculate new state
+    const newLogs = timeLogs.filter(l => l.id !== logId);
+    const newTotal = newLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
+    
+    // Optimistic Update
+    setTimeLogs(newLogs);
+    setTotalTimeSeconds(newTotal);
+    if (editingLog?.id === logId) setEditingLog(null);
+
     try {
-        const currentLogs = task.timeLogs || [];
-        const newLogsArray = currentLogs.filter(l => l.id !== logId);
-        const newTotalSeconds = newLogsArray.reduce((acc, l) => acc + l.durationSeconds, 0);
-        await updateDoc(doc(db, 'tasks', task.id), { timeLogs: newLogsArray, totalTimeSeconds: newTotalSeconds });
+        await updateDoc(doc(db, 'tasks', task.id), { timeLogs: newLogs, totalTimeSeconds: newTotal });
         notify('success', 'Time log deleted');
-        if (editingLog?.id === logId) setEditingLog(null);
-    } catch (e) { console.error(e); notify('error', 'Failed to delete log'); }
+    } catch (e) { 
+        console.error(e); 
+        notify('error', 'Failed to delete log');
+        // Revert UI state
+        if (task.timeLogs) setTimeLogs(task.timeLogs);
+        if (task.totalTimeSeconds) setTotalTimeSeconds(task.totalTimeSeconds);
+    }
   };
 
   const handleEditLogClick = (log: TimeLog) => { 
@@ -851,15 +876,26 @@ const TaskModal: React.FC<TaskModalProps> = ({
     const end = new Date(editEndTime).getTime();
     if (isNaN(start) || isNaN(end)) { notify('warning', 'Invalid date/time'); return; }
     if (end <= start) { notify('warning', 'End time must be after start time'); return; }
+    
     const durationSeconds = Math.floor((end - start) / 1000);
     const updatedLog = { ...editingLog, startTime: start, endTime: end, durationSeconds, notes: editNotes.trim() };
-    const updatedLogs = (task.timeLogs || []).map(l => l.id === editingLog.id ? updatedLog : l);
+    
+    const updatedLogs = timeLogs.map(l => l.id === editingLog.id ? updatedLog : l);
     const newTotal = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
+    
+    // Optimistic Update
+    setTimeLogs(updatedLogs);
+    setTotalTimeSeconds(newTotal);
+    setEditingLog(null);
+
     try {
         await updateDoc(doc(db, 'tasks', task.id), { timeLogs: updatedLogs, totalTimeSeconds: newTotal });
         notify('success', 'Time log updated');
-        setEditingLog(null); 
-    } catch (e) { console.error(e); notify('error', 'Failed to update log'); }
+    } catch (e) { 
+        console.error(e); notify('error', 'Failed to update log'); 
+        // Revert from props
+        if (task.timeLogs) setTimeLogs(task.timeLogs);
+    }
   };
 
   const handleAddManualLog = async () => {
@@ -883,20 +919,27 @@ const TaskModal: React.FC<TaskModalProps> = ({
         notes: manualNotes.trim()
     };
 
+    const updatedLogs = [...timeLogs, newLog];
+    const newTotal = totalTimeSeconds + durationSeconds;
+
+    // Optimistic Update
+    setTimeLogs(updatedLogs);
+    setTotalTimeSeconds(newTotal);
+    setManualStartTime('');
+    setManualEndTime('');
+    setManualNotes('');
+
     try {
         await updateDoc(doc(db, 'tasks', task.id), {
-            totalTimeSeconds: (task.totalTimeSeconds || 0) + durationSeconds,
-            timeLogs: arrayUnion(newLog)
+            totalTimeSeconds: newTotal,
+            timeLogs: updatedLogs
         });
-        
-        // Reset form
-        setManualStartTime('');
-        setManualEndTime('');
-        setManualNotes('');
         notify('success', 'Time log added manually');
     } catch (e) {
         console.error(e);
         notify('error', 'Failed to add time log');
+        // Revert
+        if (task.timeLogs) setTimeLogs(task.timeLogs);
     }
   };
 
@@ -1084,7 +1127,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <button onClick={() => isTracking ? stopTimer() : startTimer(task)} className={`ml-4 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold transition-all border ${isTracking ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200'}`}>
                         {isTracking ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
                         {isTracking ? 'STOP' : 'START TIMER'}
-                        {(isTracking || (task.totalTimeSeconds || 0) > 0) && (<span className="ml-1 opacity-80 font-mono">{formatDuration((task.totalTimeSeconds || 0) + (isTracking ? 0 : 0))}</span>)}
+                        {(isTracking || (totalTimeSeconds || 0) > 0) && (<span className="ml-1 opacity-80 font-mono">{formatDuration((totalTimeSeconds || 0) + (isTracking ? 0 : 0))}</span>)}
                     </button>
                     
                     <button 
@@ -1450,25 +1493,23 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         <div className="flex-1 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/30 flex flex-col items-center justify-center text-center">
                             <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Total Time</span>
                             <span className="text-2xl font-mono font-bold text-indigo-700 dark:text-indigo-300">
-                                {useTimeTracking ? (
-                                    `${Math.floor((task.totalTimeSeconds || 0) / 3600)}h ${Math.floor(((task.totalTimeSeconds || 0) % 3600) / 60)}m`
-                                ) : '0h 0m'}
+                                {`${Math.floor((totalTimeSeconds || 0) / 3600)}h ${Math.floor(((totalTimeSeconds || 0) % 3600) / 60)}m`}
                             </span>
                         </div>
                         <div className="flex-1 p-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center text-center">
                             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Est. Hours</span>
                             <span className="text-2xl font-mono font-bold text-slate-700 dark:text-slate-300">
-                                {task.estimatedHours || 0}h
+                                {task?.estimatedHours || 0}h
                             </span>
                         </div>
                     </div>
 
                     {/* Log List */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar mb-6 space-y-2 pr-1">
-                        {(!task.timeLogs || task.timeLogs.length === 0) && (
+                        {(!timeLogs || timeLogs.length === 0) && (
                             <div className="text-center py-8 text-slate-400">No time logs recorded yet.</div>
                         )}
-                        {task.timeLogs && [...task.timeLogs].sort((a,b) => b.startTime - a.startTime).map(log => (
+                        {[...timeLogs].sort((a,b) => b.startTime - a.startTime).map(log => (
                             <div key={log.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 rounded-xl hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors group">
                                 <div>
                                     <div className="text-sm font-bold text-slate-700 dark:text-slate-200">
@@ -1481,8 +1522,18 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                 </div>
                                 {!isReadOnly && (
                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={() => handleEditLogClick(log)} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-indigo-600"><Pencil size={14} /></button>
-                                        <button onClick={() => handleDeleteLog(log.id)} className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleEditLogClick(log); }} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-indigo-600"><Pencil size={14} /></button>
+                                        <button 
+                                            type="button" 
+                                            onClick={async (e) => { 
+                                                e.preventDefault(); 
+                                                e.stopPropagation(); 
+                                                await handleDeleteLog(log.id); 
+                                            }} 
+                                            className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-slate-400 hover:text-red-600"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -1499,7 +1550,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                             </div>
                             <div className="flex gap-3">
                                 <input type="text" value={manualNotes} onChange={(e) => setManualNotes(e.target.value)} placeholder="Notes (optional)" className={`${inputBaseClass} flex-1`} />
-                                <button onClick={handleAddManualLog} disabled={!manualStartTime || !manualEndTime} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm disabled:opacity-50 transition-colors">Add</button>
+                                <button type="button" onClick={(e) => { e.preventDefault(); handleAddManualLog(); }} disabled={!manualStartTime || !manualEndTime} className="px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm disabled:opacity-50 transition-colors">Add</button>
                             </div>
                         </div>
                     )}
