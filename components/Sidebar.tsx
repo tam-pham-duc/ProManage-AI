@@ -149,33 +149,47 @@ const Sidebar: React.FC<SidebarProps> = ({
         ${isMobileOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
         
         md:translate-x-0 md:static md:h-screen
-        ${isDesktopOpen ? 'md:w-72' : 'md:w-0 md:overflow-hidden md:border-r-0'}
+        ${isDesktopOpen ? 'md:w-72' : 'md:w-20'}
+        ${!isDesktopOpen ? 'md:overflow-visible' : ''} 
       `}>
         
-        <div className="w-72 flex flex-col h-full">
+        <div className="w-full flex flex-col h-full">
             
             {/* Sidebar Header: Project Switcher */}
-            <div className="p-4 mb-2">
+            <div className={`transition-all duration-300 ${isDesktopOpen ? 'p-4 mb-2' : 'p-2 mb-4 mt-2 flex justify-center'}`}>
                 <div className="relative" ref={dropdownRef}>
                     <button 
                         onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
-                        className="w-full bg-slate-800 hover:bg-slate-700 transition-colors rounded-xl p-3 flex items-center justify-between border border-slate-700 group"
+                        className={`
+                            bg-slate-800 hover:bg-slate-700 transition-colors rounded-xl border border-slate-700 group
+                            ${isDesktopOpen ? 'w-full p-3 flex items-center justify-between' : 'w-12 h-12 flex items-center justify-center p-0'}
+                        `}
+                        title={!isDesktopOpen ? currentProject?.name || "Select Project" : undefined}
                     >
-                        <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shrink-0">
+                        <div className={`
+                            rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shrink-0
+                            ${isDesktopOpen ? 'w-8 h-8' : 'w-8 h-8'}
+                        `}>
                             <span className="font-bold text-sm">{currentProject ? currentProject.name.charAt(0) : 'P'}</span>
-                            </div>
-                            <div className="flex flex-col items-start min-w-0 text-left">
-                                <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Project</span>
-                                <span className="font-bold text-white truncate w-full text-sm">{currentProject ? currentProject.name : 'Select Project'}</span>
-                            </div>
                         </div>
-                        <ChevronDown size={16} className={`text-slate-400 transition-transform ${isProjectDropdownOpen ? 'rotate-180' : ''}`} />
+                        
+                        {isDesktopOpen && (
+                            <>
+                                <div className="flex flex-col items-start min-w-0 text-left flex-1 ml-3">
+                                    <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Project</span>
+                                    <span className="font-bold text-white truncate w-full text-sm">{currentProject ? currentProject.name : 'Select Project'}</span>
+                                </div>
+                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${isProjectDropdownOpen ? 'rotate-180' : ''}`} />
+                            </>
+                        )}
                     </button>
 
                     {/* Dropdown Menu */}
                     {isProjectDropdownOpen && (
-                        <div className="absolute top-full left-0 w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in">
+                        <div className={`
+                            absolute top-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-fade-in
+                            ${isDesktopOpen ? 'left-0 w-full' : 'left-0 w-64 origin-top-left'} 
+                        `}>
                             
                             {/* Search Bar */}
                             <div className="p-2 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
@@ -242,17 +256,21 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
             </div>
 
-            <div className="px-5 mb-6">
+            <div className={`transition-all duration-300 ${isDesktopOpen ? 'px-5 mb-6' : 'px-2 mb-6 flex justify-center'}`}>
             {!selectedProjectId ? (
                 <button
                     onClick={() => {
                         onCreateProject();
                         setIsMobileOpen(false);
                     }}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 px-4 rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95"
+                    className={`
+                        bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center transition-all transform hover:scale-[1.02] active:scale-95
+                        ${isDesktopOpen ? 'w-full py-3.5 px-4 gap-2' : 'w-12 h-12 p-0'}
+                    `}
+                    title={!isDesktopOpen ? "Create New Project" : undefined}
                 >
                     <FolderPlus size={20} strokeWidth={2.5} />
-                    Create New Project
+                    {isDesktopOpen && <span>Create New Project</span>}
                 </button>
             ) : (
                 <button
@@ -260,16 +278,20 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onAddTask();
                     setIsMobileOpen(false);
                     }}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 px-4 rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center gap-2 transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`
+                        bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold shadow-lg shadow-indigo-900/40 flex items-center justify-center transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
+                        ${isDesktopOpen ? 'w-full py-3.5 px-4 gap-2' : 'w-12 h-12 p-0'}
+                    `}
                     disabled={currentUserRole === 'guest'} 
+                    title={!isDesktopOpen ? "New Task" : undefined}
                 >
                     <Plus size={20} strokeWidth={3} />
-                    New Task
+                    {isDesktopOpen && <span>New Task</span>}
                 </button>
             )}
             </div>
 
-            <nav className="flex-1 py-2 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
+            <nav className="flex-1 py-2 px-2 space-y-1.5 overflow-y-auto custom-scrollbar overflow-x-hidden">
             {navItems.map((item) => {
                 const isActive = activeTab === item.id;
                 const Icon = item.icon;
@@ -282,36 +304,48 @@ const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => !isDisabled && handleNavClick(item.id as Tab)}
                     disabled={isDisabled}
                     className={`
-                    w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 group font-medium
-                    ${isActive 
-                        ? 'bg-slate-800 text-white shadow-inner shadow-black/20' 
-                        : isDisabled 
-                            ? 'text-slate-600 cursor-not-allowed' 
-                            : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
-                    }
+                        relative w-full flex items-center rounded-xl transition-all duration-200 group font-medium
+                        ${isDesktopOpen ? 'px-4 py-3 justify-start gap-3' : 'justify-center py-3 px-0'}
+                        ${isActive 
+                            ? 'bg-slate-800 text-white shadow-inner shadow-black/20' 
+                            : isDisabled 
+                                ? 'text-slate-600 cursor-not-allowed' 
+                                : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                        }
                     `}
                 >
-                    <div className="flex items-center gap-3">
-                        <Icon 
+                    <Icon 
                         size={20} 
                         strokeWidth={isActive ? 2.5 : 2} 
                         className={`transition-colors ${isActive ? 'text-indigo-400' : isDisabled ? 'text-slate-700' : 'text-slate-500 group-hover:text-indigo-300'}`} 
-                        />
-                        <span>{item.label}</span>
-                    </div>
-                    {item.badge && item.badge > 0 ? (
-                        <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {item.badge}
-                        </span>
-                    ) : null}
+                    />
+                    
+                    {isDesktopOpen && <span>{item.label}</span>}
+                    
+                    {item.badge && item.badge > 0 && (
+                        isDesktopOpen ? (
+                            <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+                                {item.badge}
+                            </span>
+                        ) : (
+                            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-slate-900"></span>
+                        )
+                    )}
+
+                    {/* Mini Mode Tooltip */}
+                    {!isDesktopOpen && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-xl border border-slate-700">
+                            {item.label}
+                        </div>
+                    )}
                 </button>
                 );
             })}
             </nav>
 
             {/* Trash Can Divider and Item */}
-            <div className="px-4 pb-2">
-                <div className="h-px bg-slate-800 my-2"></div>
+            <div className="px-2 pb-2">
+                <div className="h-px bg-slate-800 my-2 mx-2"></div>
                 
                 {/* Settings Button */}
                 <button
@@ -322,21 +356,28 @@ const Sidebar: React.FC<SidebarProps> = ({
                         }
                     }}
                     className={`
-                        w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group font-medium text-slate-400 hover:bg-slate-800/50 hover:text-white
+                        relative w-full flex items-center rounded-xl transition-all duration-200 group font-medium text-slate-400 hover:bg-slate-800/50 hover:text-white
+                        ${isDesktopOpen ? 'px-4 py-3 justify-start gap-3' : 'justify-center py-3 px-0'}
                     `}
                 >
                     <Settings 
-                    size={20} 
-                    strokeWidth={2} 
-                    className={`transition-colors text-slate-500 group-hover:text-indigo-300`} 
+                        size={20} 
+                        strokeWidth={2} 
+                        className={`transition-colors text-slate-500 group-hover:text-indigo-300`} 
                     />
-                    <span>Settings</span>
+                    {isDesktopOpen && <span>Settings</span>}
+                    {!isDesktopOpen && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-xl border border-slate-700">
+                            Settings
+                        </div>
+                    )}
                 </button>
 
                 <button
                     onClick={() => handleNavClick('trash')}
                     className={`
-                        w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group font-medium
+                        relative w-full flex items-center rounded-xl transition-all duration-200 group font-medium
+                        ${isDesktopOpen ? 'px-4 py-3 justify-start gap-3' : 'justify-center py-3 px-0'}
                         ${activeTab === 'trash' 
                             ? 'bg-red-900/20 text-red-400' 
                             : 'text-slate-500 hover:bg-slate-800/50 hover:text-red-400'
@@ -348,25 +389,47 @@ const Sidebar: React.FC<SidebarProps> = ({
                         strokeWidth={activeTab === 'trash' ? 2.5 : 2}
                         className={`transition-colors ${activeTab === 'trash' ? 'text-red-400' : 'text-slate-500 group-hover:text-red-400'}`}
                     />
-                    <span>Trash Can</span>
+                    {isDesktopOpen && <span>Trash Can</span>}
+                    {!isDesktopOpen && (
+                        <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 bg-slate-900 text-white text-xs font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap shadow-xl border border-slate-700">
+                            Trash Can
+                        </div>
+                    )}
                 </button>
             </div>
 
-            <div className="p-5 border-t border-slate-800 bg-slate-900/50 space-y-4">
+            <div className={`border-t border-slate-800 bg-slate-900/50 space-y-4 ${isDesktopOpen ? 'p-5' : 'p-2 py-4 flex flex-col items-center'}`}>
             <button 
                 onClick={toggleDarkMode}
-                className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-colors bg-slate-800/30"
+                className={`
+                    flex items-center rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-colors bg-slate-800/30
+                    ${isDesktopOpen ? 'w-full justify-between px-4 py-2.5' : 'justify-center w-10 h-10 p-0'}
+                `}
+                title={!isDesktopOpen ? "Toggle Dark Mode" : undefined}
             >
-                <div className="flex items-center gap-3">
-                {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
-                <span className="text-sm font-medium">{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
-                </div>
-                <div className={`w-9 h-5 rounded-full relative transition-colors ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-600'}`}>
-                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-transform duration-300 shadow-sm`} style={{ left: isDarkMode ? '20px' : '4px' }}></div>
-                </div>
+                {isDesktopOpen ? (
+                    <>
+                        <div className="flex items-center gap-3">
+                            {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
+                            <span className="text-sm font-medium">{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
+                        </div>
+                        <div className={`w-9 h-5 rounded-full relative transition-colors ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-600'}`}>
+                            <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-transform duration-300 shadow-sm`} style={{ left: isDarkMode ? '20px' : '4px' }}></div>
+                        </div>
+                    </>
+                ) : (
+                    isDarkMode ? <Moon size={18} /> : <Sun size={18} />
+                )}
             </button>
 
-            <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={onOpenSettings}>
+            <div 
+                className={`
+                    flex items-center hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700
+                    ${isDesktopOpen ? 'gap-3 p-3' : 'justify-center w-10 h-10 p-0'}
+                `} 
+                onClick={onOpenSettings}
+                title={!isDesktopOpen ? userName : undefined}
+            >
                 <div className="relative shrink-0">
                     {userAvatar && userAvatar.startsWith('http') ? (
                         <img 
@@ -391,20 +454,23 @@ const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                     ) : null}
                 </div>
-                <div className="min-w-0">
-                <p className="text-sm font-bold text-white truncate flex items-center gap-1">
-                    {userName}
-                    {isSuperAdmin && <span className="text-[9px] px-1 py-0.5 rounded bg-red-900/50 text-red-400 uppercase">ROOT</span>}
-                </p>
-                <div className="flex items-center gap-1.5">
-                    <p className="text-xs text-slate-400 truncate font-medium">{userTitle}</p>
-                    {selectedProjectId && currentUserRole && !isSuperAdmin && (
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-sm uppercase font-bold tracking-wider ${currentUserRole === 'admin' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}`}>
-                            {currentUserRole}
-                        </span>
-                    )}
-                </div>
-                </div>
+                
+                {isDesktopOpen && (
+                    <div className="min-w-0">
+                        <p className="text-sm font-bold text-white truncate flex items-center gap-1">
+                            {userName}
+                            {isSuperAdmin && <span className="text-[9px] px-1 py-0.5 rounded bg-red-900/50 text-red-400 uppercase">ROOT</span>}
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                            <p className="text-xs text-slate-400 truncate font-medium">{userTitle}</p>
+                            {selectedProjectId && currentUserRole && !isSuperAdmin && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded-sm uppercase font-bold tracking-wider ${currentUserRole === 'admin' ? 'bg-purple-500/20 text-purple-300' : 'bg-slate-700 text-slate-400'}`}>
+                                    {currentUserRole}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
             </div>
         </div>
