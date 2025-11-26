@@ -63,13 +63,14 @@ const formatMessageTime = (timestampStr: string) => {
     }
 };
 
-// ... (MiniTaskCard and TaskDependencyVisualizer components remain unchanged) ...
+// MiniTaskCard with Enhanced Status Indicators
 const MiniTaskCard: React.FC<{ 
     task: Task; 
     type: 'upstream' | 'downstream' | 'current'; 
     onClick?: () => void;
     id?: string;
-}> = ({ task, type, onClick, id }) => {
+    blocked?: boolean;
+}> = ({ task, type, onClick, id, blocked }) => {
     const isCompleted = task.status === 'Done';
     const isCurrent = type === 'current';
     
@@ -77,32 +78,26 @@ const MiniTaskCard: React.FC<{
     let statusColor = 'text-slate-500';
     let icon = <Clock size={14} className="text-slate-400" />;
 
+    // Logic for coloring borders based on status/blockage
+    if (blocked) {
+        containerClass = 'border-red-300 dark:border-red-900/50 bg-white dark:bg-slate-900 shadow-sm relative ring-1 ring-red-100 dark:ring-red-900/30';
+        statusColor = 'text-slate-500';
+        icon = <Ban size={14} className="text-red-400" />;
+    } else if (isCompleted) {
+        containerClass = 'border-emerald-500 bg-emerald-50/10 dark:bg-emerald-900/10 ring-1 ring-emerald-100 dark:ring-emerald-900/30 shadow-sm';
+        statusColor = 'text-emerald-600 dark:text-emerald-400';
+        icon = <CheckCircle2 size={16} className="text-emerald-500" />;
+    } else if (task.status === 'In Progress') {
+        containerClass = 'border-blue-500 bg-blue-50/10 dark:bg-blue-900/10 ring-1 ring-blue-100 dark:ring-blue-900/30 shadow-sm';
+        statusColor = 'text-blue-600 dark:text-blue-400';
+        icon = <Play size={14} className="text-blue-500" fill="currentColor" />;
+    }
+
+    // Current node highlight
     if (isCurrent) {
-        containerClass = 'border-indigo-500 ring-2 ring-indigo-100 dark:ring-indigo-900/30 bg-white dark:bg-slate-800 shadow-xl scale-105 z-20';
-        statusColor = 'text-indigo-600 dark:text-indigo-400';
-        if (isCompleted) {
-             containerClass = 'border-emerald-500 ring-2 ring-emerald-100 dark:ring-emerald-900/30 bg-white dark:bg-slate-800 shadow-xl scale-105 z-20';
-             statusColor = 'text-emerald-600 dark:text-emerald-400';
-             icon = <CheckCircle2 size={16} className="text-emerald-500" />;
-        }
-    } else if (type === 'upstream') {
-        if (!isCompleted) {
-            containerClass = 'border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/10';
-            statusColor = 'text-rose-600 dark:text-rose-400';
-            icon = <AlertCircle size={14} className="text-rose-500" />;
-        } else {
-            containerClass = 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10';
-            statusColor = 'text-emerald-600 dark:text-emerald-400';
-            icon = <CheckCircle2 size={14} className="text-emerald-500" />;
-        }
+        containerClass += ' scale-105 shadow-xl ring-2 !ring-indigo-500 border-indigo-500 z-20';
     } else {
-        // Downstream (Blocking)
-        containerClass = 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 opacity-90';
-        if (isCompleted) {
-             icon = <CheckCircle2 size={14} className="text-emerald-500" />;
-        } else {
-             icon = <Lock size={14} className="text-slate-400" />;
-        }
+        containerClass += ' hover:scale-105 hover:shadow-md hover:z-10';
     }
 
     return (
@@ -110,19 +105,25 @@ const MiniTaskCard: React.FC<{
             id={id}
             onClick={onClick}
             className={`
-                relative p-3 rounded-xl border shadow-sm w-48 transition-all duration-300 group cursor-pointer
+                relative p-3 rounded-xl border w-48 transition-all duration-300 group cursor-pointer
                 ${containerClass}
-                ${!isCurrent ? 'hover:scale-105 hover:shadow-md hover:z-10' : ''}
             `}
         >
+            {/* Blocked Padlock Overlay */}
+            {blocked && (
+                <div className="absolute -top-2 -right-2 bg-white dark:bg-slate-800 p-1 rounded-full shadow-md border border-red-100 dark:border-red-900 z-30">
+                    <Lock size={12} className="text-red-500" />
+                </div>
+            )}
+
             <div className="flex justify-between items-start mb-2">
-                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/50 dark:bg-black/20 ${statusColor}`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/80 dark:bg-black/30 ${statusColor}`}>
                     {task.status}
                 </span>
                 {icon}
             </div>
             
-            <h5 className={`font-bold text-xs leading-snug mb-2 line-clamp-2 ${isCurrent ? 'text-sm text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+            <h5 className={`font-bold text-xs leading-snug mb-2 line-clamp-2 ${isCurrent ? 'text-slate-900 dark:text-white text-sm' : 'text-slate-700 dark:text-slate-300'}`}>
                 {task.title}
             </h5>
 
@@ -141,6 +142,7 @@ const MiniTaskCard: React.FC<{
     );
 };
 
+// Visualizer with Smart Connectors
 const TaskDependencyVisualizer: React.FC<{
     task: Task;
     upstreamTasks: Task[];
@@ -165,6 +167,45 @@ const TaskDependencyVisualizer: React.FC<{
             const currentTopY = currentRect.top - containerRect.top;
             const currentBottomY = currentRect.bottom - containerRect.top;
 
+            const drawSmartConnector = (
+                startX: number, startY: number, 
+                endX: number, endY: number, 
+                isBlocked: boolean, 
+                key: string
+            ) => {
+                const cp1x = startX;
+                const cp1y = startY + (endY - startY) / 2;
+                const cp2x = endX;
+                const cp2y = endY - (endY - startY) / 2;
+                
+                const pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
+                const midX = (startX + endX) / 2;
+                const midY = (startY + endY) / 2;
+
+                const color = isBlocked ? '#94a3b8' : '#10b981'; // Slate vs Green
+                const strokeWidth = isBlocked ? 2 : 3;
+                const dashArray = isBlocked ? "5,5" : "none";
+                const animationClass = !isBlocked ? "animate-flow-pulse" : "";
+
+                return (
+                    <g key={key}>
+                        <path 
+                            d={pathD} 
+                            fill="none" 
+                            stroke={color} 
+                            strokeWidth={strokeWidth} 
+                            strokeDasharray={dashArray}
+                            className={`transition-all duration-500 ease-in-out ${animationClass}`}
+                        />
+                        <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center shadow-sm border z-10 ${isBlocked ? 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-400' : 'bg-emerald-100 border-emerald-200 text-emerald-600'}`}>
+                                {isBlocked ? <Lock size={10} /> : <Check size={10} />}
+                            </div>
+                        </foreignObject>
+                    </g>
+                );
+            };
+
             // 1. Draw Lines from Upstream (Prereqs) -> Current
             upstreamTasks.forEach(t => {
                 const el = document.getElementById(`node-up-${t.id}`);
@@ -173,39 +214,9 @@ const TaskDependencyVisualizer: React.FC<{
                     const startX = rect.left + rect.width / 2 - containerRect.left;
                     const startY = rect.bottom - containerRect.top;
                     
-                    const endX = currentX;
-                    const endY = currentTopY;
-
-                    const cp1x = startX;
-                    const cp1y = startY + (endY - startY) / 2;
-                    const cp2x = endX;
-                    const cp2y = endY - (endY - startY) / 2;
-
-                    const isDone = t.status === 'Done';
-                    const color = isDone ? '#10b981' : '#f43f5e';
-                    
-                    const pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
-                    
-                    const midX = (startX + endX) / 2;
-                    const midY = (startY + endY) / 2;
-
-                    newPaths.push(
-                        <g key={`link-up-${t.id}`}>
-                            <path 
-                                d={pathD} 
-                                fill="none" 
-                                stroke={color} 
-                                strokeWidth="2" 
-                                strokeDasharray={isDone ? "none" : "5,5"}
-                                className="transition-all duration-500 ease-in-out"
-                            />
-                            <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
-                                <div className={`w-5 h-5 rounded-full flex items-center justify-center shadow-sm border ${isDone ? 'bg-emerald-100 border-emerald-200 text-emerald-600' : 'bg-rose-100 border-rose-200 text-rose-600'}`}>
-                                    {isDone ? <Check size={12} strokeWidth={3} /> : <Lock size={10} />}
-                                </div>
-                            </foreignObject>
-                        </g>
-                    );
+                    // Logic: If parent is NOT done, the line is blocked
+                    const isBlocked = t.status !== 'Done';
+                    newPaths.push(drawSmartConnector(startX, startY, currentX, currentTopY, isBlocked, `link-up-${t.id}`));
                 }
             });
 
@@ -217,41 +228,9 @@ const TaskDependencyVisualizer: React.FC<{
                     const endX = rect.left + rect.width / 2 - containerRect.left;
                     const endY = rect.top - containerRect.top;
                     
-                    const startX = currentX;
-                    const startY = currentBottomY;
-
-                    const cp1x = startX;
-                    const cp1y = startY + (endY - startY) / 2;
-                    const cp2x = endX;
-                    const cp2y = endY - (endY - startY) / 2;
-
-                    const isCurrentDone = task.status === 'Done';
-                    const color = isCurrentDone ? '#94a3b8' : '#f43f5e'; 
-                    
-                    const pathD = `M ${startX} ${startY} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${endX} ${endY}`;
-                    
-                    const midX = (startX + endX) / 2;
-                    const midY = (startY + endY) / 2;
-
-                    newPaths.push(
-                        <g key={`link-down-${t.id}`}>
-                            <path 
-                                d={pathD} 
-                                fill="none" 
-                                stroke={color} 
-                                strokeWidth="2" 
-                                strokeDasharray={isCurrentDone ? "none" : "5,5"}
-                                className="transition-all duration-500 ease-in-out"
-                            />
-                            {!isCurrentDone && (
-                                <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
-                                    <div className="w-5 h-5 rounded-full flex items-center justify-center shadow-sm border bg-rose-100 border-rose-200 text-rose-600">
-                                        <Lock size={10} />
-                                    </div>
-                                </foreignObject>
-                            )}
-                        </g>
-                    );
+                    // Logic: If CURRENT is not done, this line is blocked
+                    const isBlocked = task.status !== 'Done';
+                    newPaths.push(drawSmartConnector(currentX, currentBottomY, endX, endY, isBlocked, `link-down-${t.id}`));
                 }
             });
 
@@ -265,6 +244,15 @@ const TaskDependencyVisualizer: React.FC<{
 
     return (
         <div ref={containerRef} className="relative w-full min-h-[600px] py-8 bg-slate-50 dark:bg-slate-900/50 rounded-xl overflow-hidden">
+            <style>{`
+                @keyframes flow-pulse {
+                  0%, 100% { stroke-opacity: 1; stroke-width: 3; }
+                  50% { stroke-opacity: 0.6; stroke-width: 4; }
+                }
+                .animate-flow-pulse {
+                  animation: flow-pulse 2s ease-in-out infinite;
+                }
+            `}</style>
             <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
                 {paths}
             </svg>
@@ -304,6 +292,8 @@ const TaskDependencyVisualizer: React.FC<{
                         <MiniTaskCard 
                             task={task} 
                             type="current" 
+                            // Current task is blocked if ANY upstream is not done
+                            blocked={upstreamTasks.some(t => t.status !== 'Done')}
                         />
                     </div>
                 </div>
@@ -322,7 +312,8 @@ const TaskDependencyVisualizer: React.FC<{
                                     id={`node-down-${t.id}`}
                                     task={t} 
                                     type="downstream" 
-                                    onClick={() => onTaskSelect && onTaskSelect(t)} 
+                                    onClick={() => onTaskSelect && onTaskSelect(t)}
+                                    blocked={task.status !== 'Done'} // Downstream nodes are effectively "blocked" by this task if it's not done
                                 />
                             ))}
                         </div>

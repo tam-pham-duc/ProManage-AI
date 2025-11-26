@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Task } from '../types';
-import { GitGraph, AlertCircle, CheckCircle2, Clock, Lock, Ban } from 'lucide-react';
+import { GitGraph, AlertCircle, CheckCircle2, Clock, Lock, Ban, Check, ArrowRight } from 'lucide-react';
 
 interface ProjectMapViewProps {
   tasks: Task[];
@@ -35,37 +35,110 @@ const X_GAP = 100;
 const Y_GAP = 40;
 const PADDING = 80;
 
+const SmartConnector: React.FC<{ connection: Connection; isHighlighted: boolean; isDimmed: boolean }> = ({ connection, isHighlighted, isDimmed }) => {
+    const { isBlocked, startX, startY, endX, endY, path } = connection;
+    
+    // Midpoint calculation for icon placement
+    const midX = (startX + endX) / 2;
+    const midY = (startY + endY) / 2;
+
+    // Dynamic Styles
+    const strokeColor = isBlocked 
+        ? (isHighlighted ? '#f87171' : '#94a3b8') // Red if highlighted blocked, else slate-400
+        : (isHighlighted ? '#10b981' : '#cbd5e1'); // Green if highlighted done, else slate-300
+    
+    const strokeWidth = isHighlighted ? 3 : 2;
+    const strokeDasharray = isBlocked ? "5,5" : "none";
+    
+    const animationClass = !isBlocked && isHighlighted ? "animate-flow-pulse" : "";
+
+    return (
+        <g className={`transition-opacity duration-300 ${isDimmed ? 'opacity-10' : 'opacity-100'}`}>
+            <path 
+                d={path}
+                fill="none"
+                stroke={strokeColor}
+                strokeWidth={strokeWidth}
+                strokeDasharray={strokeDasharray}
+                className={`transition-all duration-300 ${animationClass}`}
+            />
+            
+            <foreignObject x={midX - 12} y={midY - 12} width="24" height="24">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center border shadow-sm z-10 transition-transform duration-300 ${isHighlighted ? 'scale-125' : ''} ${
+                    isBlocked 
+                        ? 'bg-white dark:bg-slate-800 border-red-200 dark:border-red-900' 
+                        : 'bg-emerald-50 dark:bg-emerald-900/50 border-emerald-200 dark:border-emerald-800'
+                }`}>
+                    {isBlocked ? (
+                        <Lock size={10} className="text-red-500" />
+                    ) : (
+                        <Check size={10} className="text-emerald-600 dark:text-emerald-400" />
+                    )}
+                </div>
+            </foreignObject>
+        </g>
+    );
+};
+
 const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) => {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // --- Color Mapping Helper ---
   const getNodeStyles = (status: string, isBlocked: boolean, priority: string) => {
-    if (isBlocked) return { bg: 'bg-slate-50 dark:bg-slate-900/50', border: 'border-slate-300 dark:border-slate-600', text: 'text-slate-500', iconColor: 'text-slate-400' };
+    // Blocked Overrides
+    if (isBlocked) {
+        return { 
+            bg: 'bg-slate-50 dark:bg-slate-900/50', 
+            border: 'border-red-300 dark:border-red-900/50', 
+            text: 'text-slate-500', 
+            shadow: 'shadow-none',
+            glow: 'ring-1 ring-red-200 dark:ring-red-900/30'
+        };
+    }
     
     switch (status) {
       case 'Done':
-        return { bg: 'bg-emerald-50 dark:bg-emerald-900/20', border: 'border-emerald-500', text: 'text-emerald-900 dark:text-emerald-100', iconColor: 'text-emerald-500' };
+        return { 
+            bg: 'bg-emerald-50 dark:bg-emerald-900/20', 
+            border: 'border-emerald-500', 
+            text: 'text-emerald-900 dark:text-emerald-100',
+            shadow: 'shadow-sm',
+            glow: ''
+        };
       case 'In Progress':
-        return { bg: 'bg-blue-50 dark:bg-blue-900/20', border: 'border-blue-500', text: 'text-blue-900 dark:text-blue-100', iconColor: 'text-blue-500' };
+        return { 
+            bg: 'bg-blue-50 dark:bg-blue-900/20', 
+            border: 'border-blue-500', 
+            text: 'text-blue-900 dark:text-blue-100',
+            shadow: 'shadow-md shadow-blue-100 dark:shadow-blue-900/20',
+            glow: ''
+        };
       default: // To Do
-        if (priority === 'High') return { bg: 'bg-white dark:bg-slate-800', border: 'border-rose-400', text: 'text-slate-900 dark:text-white', iconColor: 'text-rose-500' };
-        return { bg: 'bg-white dark:bg-slate-800', border: 'border-slate-300 dark:border-slate-600', text: 'text-slate-900 dark:text-white', iconColor: 'text-slate-400' };
+        if (priority === 'High') return { 
+            bg: 'bg-white dark:bg-slate-800', 
+            border: 'border-rose-400', 
+            text: 'text-slate-900 dark:text-white',
+            shadow: 'shadow-sm',
+            glow: ''
+        };
+        return { 
+            bg: 'bg-white dark:bg-slate-800', 
+            border: 'border-slate-300 dark:border-slate-600', 
+            text: 'text-slate-900 dark:text-white',
+            shadow: 'shadow-sm',
+            glow: ''
+        };
     }
   };
 
-  // --- Layout Engine (Part 1) ---
+  // --- Layout Engine ---
   const graphNodes = useMemo<GraphNode[]>(() => {
-    // CRITICAL FIX: Filter out invalid tasks immediately to prevent crashes
     const validTasks = (tasks || []).filter(t => t && t.id);
-    
     const nodes: GraphNode[] = [];
     const levels = new Map<string, number>();
     
-    // 1. Initialize levels
     validTasks.forEach(t => levels.set(t.id, 0));
 
-    // 2. Calculate Levels (Longest Path Algorithm / Relaxation)
-    // Run N times to propagate dependency depths (N = num tasks, sufficient for DAG)
     for (let i = 0; i < validTasks.length; i++) {
       let changed = false;
       validTasks.forEach(task => {
@@ -73,7 +146,6 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
         if (deps.length > 0) {
           let maxParentLevel = -1;
           deps.forEach(depId => {
-            // Safety: Only consider parents that exist in our valid set
             if (levels.has(depId)) {
               const parentLevel = levels.get(depId);
               if (typeof parentLevel === 'number') {
@@ -93,7 +165,6 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
       if (!changed) break;
     }
 
-    // 3. Group by Level
     const levelsArray: Task[][] = [];
     validTasks.forEach(task => {
       const lvl = levels.get(task.id) || 0;
@@ -101,21 +172,19 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
       levelsArray[lvl].push(task);
     });
 
-    // 4. Assign Geometry (X, Y)
     const maxRows = Math.max(...levelsArray.map(l => l ? l.length : 0));
     const canvasHeight = Math.max(maxRows * (NODE_HEIGHT + Y_GAP), 800);
 
     levelsArray.forEach((levelTasks, levelIndex) => {
       if (!levelTasks) return;
       
-      // Sort purely for stability (alphabetical)
       levelTasks.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 
       const columnHeight = levelTasks.length * (NODE_HEIGHT + Y_GAP) - Y_GAP;
       const startY = (canvasHeight - columnHeight) / 2 + PADDING;
 
       levelTasks.forEach((task, index) => {
-        const styles = getNodeStyles(task.status, false, task.priority); // 'isBlocked' calc deferred to render time
+        const styles = getNodeStyles(task.status, false, task.priority); 
         
         nodes.push({
           ...task,
@@ -131,28 +200,24 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
     return nodes;
   }, [tasks]);
 
-  // --- Connection Engine (Part 2 - Visualization) ---
+  // --- Connection Engine ---
   const connections = useMemo<Connection[]>(() => {
     const conns: Connection[] = [];
     graphNodes.forEach(node => {
         const deps = node.dependencies || [];
         deps.forEach(depId => {
-            // Safety: Verify parent existence in the layout graph
             const parent = graphNodes.find(n => n.id === depId);
             if (parent) {
-                // Coordinates
                 const startX = parent.x + NODE_WIDTH;
                 const startY = parent.y + NODE_HEIGHT / 2;
                 const endX = node.x;
                 const endY = node.y + NODE_HEIGHT / 2;
 
-                // Bezier Control Points (S-Curve)
                 const cp1x = startX + (X_GAP / 2);
                 const cp2x = endX - (X_GAP / 2);
 
                 const path = `M ${startX} ${startY} C ${cp1x} ${startY}, ${cp2x} ${endY}, ${endX} ${endY}`;
                 
-                // Blocked Logic: Parent is NOT Done
                 const isBlocked = parent.status !== 'Done';
 
                 conns.push({
@@ -169,17 +234,15 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
     return conns;
   }, [graphNodes]);
 
-  // --- Highlight Logic (Traverse Up & Down) ---
+  // --- Highlight Logic ---
   const highlightContext = useMemo(() => {
       if (!hoveredNodeId) return { relatedNodes: new Set(), relatedConnections: new Set() };
 
       const relatedNodes = new Set<string>();
       const relatedConnections = new Set<string>();
       
-      // Add self
       relatedNodes.add(hoveredNodeId);
 
-      // 1. Upstream (Parents) - Recursive
       const traverseUp = (currentId: string) => {
           const node = graphNodes.find(n => n.id === currentId);
           const deps = node?.dependencies || [];
@@ -191,15 +254,12 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                   relatedConnections.add(`${depId}-${currentId}`);
                   traverseUp(depId);
               } else {
-                  // Edge case: already visited node, but still need to highlight the connection
                   relatedConnections.add(`${depId}-${currentId}`);
               }
           });
       };
       traverseUp(hoveredNodeId);
 
-      // 2. Downstream (Children) - Recursive
-      // Need to scan all nodes to see who points to current
       const traverseDown = (currentId: string) => {
           graphNodes.forEach(possibleChild => {
               const deps = possibleChild.dependencies || [];
@@ -218,7 +278,6 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
   }, [hoveredNodeId, graphNodes]);
 
 
-  // Calculate Container Size
   const containerWidth = useMemo(() => {
     const maxX = Math.max(...graphNodes.map(n => n.x), 0);
     return maxX + NODE_WIDTH + PADDING * 2;
@@ -231,6 +290,15 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
 
   return (
     <div className="h-full flex flex-col animate-fade-in">
+      <style>{`
+        @keyframes flow-pulse {
+          0%, 100% { stroke-opacity: 1; stroke-width: 3; }
+          50% { stroke-opacity: 0.6; stroke-width: 4; }
+        }
+        .animate-flow-pulse {
+          animation: flow-pulse 2s ease-in-out infinite;
+        }
+      `}</style>
       <div className="p-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex justify-between items-center shrink-0 z-10 relative">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -244,7 +312,7 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
               <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Done</div>
               <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Active</div>
               <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-400"></div> Pending</div>
-              <div className="flex items-center gap-1"><Ban size={10} className="text-red-500" /> Blocked</div>
+              <div className="flex items-center gap-1"><Lock size={10} className="text-red-500" /> Blocked</div>
            </div>
            <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
            <div className="text-xs font-bold text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg">
@@ -260,53 +328,25 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
         >
             {/* --- SVG Layer (Connectors) --- */}
             <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
-                <defs>
-                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                        <polygon points="0 0, 10 3.5, 0 7" fill="#94a3b8" />
-                    </marker>
-                    <marker id="arrowhead-green" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-                        <polygon points="0 0, 10 3.5, 0 7" fill="#10b981" />
-                    </marker>
-                </defs>
                 {connections.map(conn => {
                     const isHighlighted = highlightContext.relatedConnections.has(conn.id);
                     const isDimmed = hoveredNodeId && !isHighlighted;
-                    const strokeColor = conn.isBlocked 
-                        ? (isHighlighted ? '#f87171' : '#e2e8f0') // Red if highlighted blocked, else light gray
-                        : (isHighlighted ? '#10b981' : '#cbd5e1'); // Green if highlighted done, else slate
                     
                     return (
-                        <g key={conn.id} className={`transition-opacity duration-300 ${isDimmed ? 'opacity-10' : 'opacity-100'}`}>
-                            <path 
-                                d={conn.path}
-                                fill="none"
-                                stroke={strokeColor}
-                                strokeWidth={isHighlighted ? 3 : 2}
-                                strokeDasharray={conn.isBlocked ? "5,5" : "none"}
-                                markerEnd={!conn.isBlocked && isHighlighted ? "url(#arrowhead-green)" : (conn.isBlocked ? "" : "url(#arrowhead)")}
-                                className="transition-all duration-300"
-                            />
-                            {conn.isBlocked && (
-                                <foreignObject x={(conn.startX + conn.endX)/2 - 12} y={(conn.startY + conn.endY)/2 - 12} width="24" height="24">
-                                    <div className="w-6 h-6 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center border border-red-200 dark:border-red-900 shadow-sm z-10">
-                                        <Lock size={12} className="text-red-500" />
-                                    </div>
-                                </foreignObject>
-                            )}
-                        </g>
+                        <SmartConnector 
+                            key={conn.id}
+                            connection={conn}
+                            isHighlighted={isHighlighted}
+                            isDimmed={!!isDimmed}
+                        />
                     );
                 })}
             </svg>
 
             {/* --- Node Layer (Cards) --- */}
             {graphNodes.map(node => {
-                // Calculate Blocked Status relative to parents
                 const deps = node.dependencies || [];
-                
-                // Safe check for blocked status
                 const isBlocked = deps.some(depId => {
-                    // Explicitly check if parent task exists in the full task list before accessing status
-                    // This prevents crashes if a dependency ID refers to a deleted or filtered-out task
                     const parent = tasks.find(t => t && t.id === depId);
                     return parent && parent.status !== 'Done';
                 });
@@ -323,8 +363,8 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                         onMouseEnter={() => setHoveredNodeId(node.id)}
                         onMouseLeave={() => setHoveredNodeId(null)}
                         className={`
-                            absolute rounded-xl p-4 shadow-sm hover:shadow-xl transition-all duration-300 border-l-4 flex flex-col justify-between group cursor-pointer
-                            ${styles.bg} ${styles.border}
+                            absolute rounded-xl p-4 transition-all duration-300 border-l-4 flex flex-col justify-between group cursor-pointer
+                            ${styles.bg} ${styles.border} ${styles.shadow} ${styles.glow}
                             ${isBlocked ? 'opacity-90' : ''}
                             ${isDimmed ? 'opacity-20 blur-[1px] scale-95 grayscale' : 'opacity-100 scale-100'}
                             ${isHighlighted && hoveredNodeId !== node.id ? 'ring-2 ring-indigo-400 ring-offset-2 dark:ring-offset-slate-900 scale-105 z-20' : 'z-10'}
@@ -341,10 +381,13 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                             <h4 className={`font-bold text-sm line-clamp-2 leading-snug ${styles.text} pr-6`}>
                                 {node.title}
                             </h4>
-                            {/* Status Icon Top Right */}
+                            
                             <div className="absolute top-4 right-4">
                                 {isBlocked ? (
-                                    <Ban size={18} className="text-red-400" />
+                                    <div className="relative">
+                                        <Ban size={18} className="text-red-400" />
+                                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                                    </div>
                                 ) : isDone ? (
                                     <CheckCircle2 size={18} className="text-emerald-500" />
                                 ) : (
@@ -378,7 +421,6 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                             )}
                         </div>
                         
-                        {/* Level Pill (Debug/Info) */}
                         {hoveredNodeId === node.id && (
                              <div className="absolute -top-3 left-2 bg-slate-800 text-white text-[9px] px-2 py-0.5 rounded-full shadow-md animate-fade-in">
                                 Level {node.level}
