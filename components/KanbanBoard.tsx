@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban, Play, Square, Timer } from 'lucide-react';
+import { Clock, Plus, CheckSquare, DollarSign, Paperclip, MessageSquare, MoreHorizontal, X, Eye, Layout, Check, AlertCircle, AlarmClock, Hourglass, Ban, Play, Square, Timer, Trash2, Edit2, Palette } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Task, TaskStatus, KanbanColumn as IKanbanColumn } from '../types';
 import { useTimeTracking } from '../context/TimeTrackingContext';
@@ -13,6 +12,8 @@ interface KanbanBoardProps {
   onDropTask: (taskId: string, newStatus: TaskStatus) => void;
   onTaskClick: (task: Task) => void;
   onAddColumn?: (title: string, color: string) => void;
+  onEditColumn?: (columnId: string, title: string, color: string) => void;
+  onDeleteColumn?: (columnId: string) => void;
   isReadOnly?: boolean;
   allTasks?: Task[];
   onDeleteTask?: (taskId: string) => void;
@@ -28,6 +29,17 @@ interface TaskCardProps {
   allTasks?: Task[];
   onDelete?: (taskId: string) => void;
 }
+
+const COLOR_OPTIONS = [
+    { name: 'slate', class: 'bg-slate-500' },
+    { name: 'blue', class: 'bg-blue-500' },
+    { name: 'emerald', class: 'bg-emerald-500' },
+    { name: 'indigo', class: 'bg-indigo-500' },
+    { name: 'purple', class: 'bg-purple-500' },
+    { name: 'rose', class: 'bg-rose-500' },
+    { name: 'amber', class: 'bg-amber-500' },
+    { name: 'cyan', class: 'bg-cyan-500' },
+];
 
 const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragEnd, isDragging, isReadOnly, allTasks = [], onDelete }) => {
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
@@ -374,6 +386,8 @@ interface KanbanColumnProps {
   isReadOnly?: boolean;
   allTasks?: Task[];
   onDeleteTask?: (taskId: string) => void;
+  onEditColumn?: (columnId: string, title: string, color: string) => void;
+  onDeleteColumn?: (columnId: string) => void;
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({ 
@@ -387,22 +401,42 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onDropTask,
   isReadOnly,
   allTasks = [],
-  onDeleteTask
+  onDeleteTask,
+  onEditColumn,
+  onDeleteColumn
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(column.title);
+  const [editColor, setEditColor] = useState(column.color);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+              setShowMenu(false);
+          }
+      };
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // --- Helper: Theme Generator ---
   const getColumnTheme = (title: string, assignedColor?: string) => {
-    const t = title.toLowerCase();
-    let mode = 'slate';
+    // Priority to assigned color if available and not default slate (unless title suggests otherwise but we want user choice to rule)
+    let mode = assignedColor || 'slate';
 
-    if (t.includes('done') || t.includes('complete') || t.includes('closed')) mode = 'emerald';
-    else if (t.includes('progress') || t.includes('active') || t.includes('doing')) mode = 'blue';
-    else if (t.includes('review') || t.includes('qa') || t.includes('test')) mode = 'purple';
-    else if (t.includes('hold') || t.includes('block') || t.includes('wait')) mode = 'rose';
-    else if (assignedColor && assignedColor !== 'slate') mode = assignedColor;
-    else if (t.includes('todo') || t.includes('to do') || t.includes('open') || t.includes('backlog')) mode = 'slate';
-    else mode = 'cyan';
+    // If no assigned color, use heuristics (backward compatibility)
+    if (!assignedColor) {
+        const t = title.toLowerCase();
+        if (t.includes('done') || t.includes('complete') || t.includes('closed')) mode = 'emerald';
+        else if (t.includes('progress') || t.includes('active') || t.includes('doing')) mode = 'blue';
+        else if (t.includes('review') || t.includes('qa') || t.includes('test')) mode = 'purple';
+        else if (t.includes('hold') || t.includes('block') || t.includes('wait')) mode = 'rose';
+        else if (t.includes('todo') || t.includes('to do') || t.includes('open') || t.includes('backlog')) mode = 'slate';
+        else mode = 'cyan';
+    }
 
     switch (mode) {
         case 'blue':
@@ -496,9 +530,15 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       setIsDragOver(false); 
       if (draggedTaskId) {
           onDropTask(draggedTaskId, column.title);
-          // CRITICAL FIX: Force drag end to ensure state is cleared and opacity resets
           onDragEnd();
       } 
+  };
+
+  const handleSaveEdit = () => {
+      if (onEditColumn && editTitle.trim()) {
+          onEditColumn(column.id, editTitle.trim(), editColor);
+          setIsEditing(false);
+      }
   };
 
   return (
@@ -508,29 +548,83 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        flex-1 min-w-[320px] rounded-2xl p-4 flex flex-col h-full transition-all duration-300 border-t-4 border-x border-b border-x-transparent border-b-transparent
+        flex-1 min-w-[320px] rounded-2xl p-4 flex flex-col h-full transition-all duration-300 border-t-4 border-x border-b border-x-transparent border-b-transparent relative
         ${theme.container}
         ${isDragOver ? `bg-opacity-100 ring-2 ${theme.ring} shadow-xl scale-[1.01]` : ''}
       `}
     >
-      <div className="flex items-center justify-between mb-5 px-1">
-        <div className="flex items-center gap-2">
-          <h3 className={`font-bold text-lg tracking-tight ${theme.header}`}>{column.title}</h3>
-          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm ${theme.badge}`}>
-            {tasks.length}
-          </span>
+      {isEditing ? (
+          <div className="mb-4 p-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700">
+              <input 
+                  type="text" 
+                  value={editTitle} 
+                  onChange={(e) => setEditTitle(e.target.value)} 
+                  className="w-full text-sm font-bold mb-2 bg-transparent border-b border-slate-200 dark:border-slate-700 focus:border-indigo-500 outline-none text-slate-900 dark:text-white pb-1"
+                  autoFocus
+              />
+              <div className="flex gap-1 mb-3 flex-wrap">
+                  {COLOR_OPTIONS.map(c => (
+                      <button 
+                          key={c.name}
+                          onClick={() => setEditColor(c.name)}
+                          className={`w-4 h-4 rounded-full ${c.class} ${editColor === c.name ? 'ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-900' : 'opacity-70 hover:opacity-100'}`}
+                      />
+                  ))}
+              </div>
+              <div className="flex gap-2">
+                  <button onClick={handleSaveEdit} className="flex-1 bg-indigo-600 text-white text-xs py-1.5 rounded hover:bg-indigo-700">Save</button>
+                  <button onClick={() => setIsEditing(false)} className="px-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-xs rounded hover:bg-slate-200 dark:hover:bg-slate-600">Cancel</button>
+              </div>
+          </div>
+      ) : (
+        <div className="flex items-center justify-between mb-5 px-1 relative">
+            <div className="flex items-center gap-2">
+            <h3 className={`font-bold text-lg tracking-tight ${theme.header}`}>{column.title}</h3>
+            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm ${theme.badge}`}>
+                {tasks.length}
+            </span>
+            </div>
+            <div className="flex items-center gap-1">
+            {!isReadOnly && (
+                <>
+                    <button 
+                        onClick={onAddTask}
+                        className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
+                    >
+                        <Plus size={18} />
+                    </button>
+                    
+                    <div className="relative" ref={menuRef}>
+                        <button 
+                            onClick={() => setShowMenu(!showMenu)}
+                            className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
+                        >
+                            <MoreHorizontal size={18} />
+                        </button>
+                        {showMenu && (
+                            <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-fade-in">
+                                <button 
+                                    onClick={() => { setIsEditing(true); setShowMenu(false); }}
+                                    className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
+                                >
+                                    <Edit2 size={12} /> Edit Column
+                                </button>
+                                {onDeleteColumn && (
+                                    <button 
+                                        onClick={() => { onDeleteColumn && onDeleteColumn(column.id); setShowMenu(false); }}
+                                        className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                    >
+                                        <Trash2 size={12} /> Delete
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+            </div>
         </div>
-        <div className="flex items-center gap-1">
-           {!isReadOnly && (
-             <button 
-               onClick={onAddTask}
-               className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
-             >
-               <Plus size={18} />
-             </button>
-           )}
-        </div>
-      </div>
+      )}
 
       <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar pb-4">
         {tasks.map(task => (
@@ -566,10 +660,23 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
 const HIDDEN_COLUMNS_KEY = 'promanage_hidden_columns_v1';
 
-const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, onDropTask, onTaskClick, onAddColumn, isReadOnly = false, allTasks = [], onDeleteTask }) => {
+const KanbanBoard: React.FC<KanbanBoardProps> = ({ 
+    tasks, 
+    columns, 
+    onAddTask, 
+    onDropTask, 
+    onTaskClick, 
+    onAddColumn, 
+    onEditColumn,
+    onDeleteColumn,
+    isReadOnly = false, 
+    allTasks = [], 
+    onDeleteTask 
+}) => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
+  const [newColumnColor, setNewColumnColor] = useState('slate');
   
   // Column Visibility State
   const [hiddenColumns, setHiddenColumns] = useState<string[]>(() => {
@@ -615,8 +722,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
 
   const handleAddSubmit = () => {
     if (newColumnTitle.trim() && onAddColumn) {
-      onAddColumn(newColumnTitle.trim(), 'slate');
+      onAddColumn(newColumnTitle.trim(), newColumnColor);
       setNewColumnTitle('');
+      setNewColumnColor('slate');
       setIsAddingColumn(false);
     }
   };
@@ -684,7 +792,10 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
                                         disabled={isDisabled}
                                         className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer'}`}
                                     >
-                                        <span className={`font-medium ${isVisible ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}`}>{col.title}</span>
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-3 h-3 rounded-full bg-${col.color}-500`}></div>
+                                            <span className={`font-medium ${isVisible ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400 dark:text-slate-500'}`}>{col.title}</span>
+                                        </div>
                                         <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isVisible ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300 dark:border-slate-600 bg-transparent'}`}>
                                             {isVisible && <Check size={14} strokeWidth={3} />}
                                         </div>
@@ -727,6 +838,8 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
                 isReadOnly={isReadOnly}
                 allTasks={allTasks}
                 onDeleteTask={onDeleteTask}
+                onEditColumn={onEditColumn}
+                onDeleteColumn={onDeleteColumn}
                 />
             );
           })}
@@ -749,6 +862,18 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, columns, onAddTask, on
                                if (e.key === 'Escape') setIsAddingColumn(false);
                            }}
                         />
+                        
+                        <div className="flex gap-2 mb-4 flex-wrap">
+                            {COLOR_OPTIONS.map(c => (
+                                <button 
+                                    key={c.name}
+                                    onClick={() => setNewColumnColor(c.name)}
+                                    className={`w-6 h-6 rounded-full ${c.class} transition-transform hover:scale-110 ${newColumnColor === c.name ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-800' : ''}`}
+                                    title={c.name}
+                                />
+                            ))}
+                        </div>
+
                         <div className="flex gap-2">
                             <button 
                                 onClick={handleAddSubmit}

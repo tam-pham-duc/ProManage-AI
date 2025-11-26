@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare, Check } from 'lucide-react';
+import { Download, Upload, Database, AlertTriangle, FileJson, User, Sliders, LayoutTemplate, PlusCircle, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Lock, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare, Check, Edit2, Palette } from 'lucide-react';
 import { Task, UserSettings, Tab, TaskPriority, KanbanColumn, Template } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
@@ -19,6 +19,7 @@ interface SettingsViewProps {
   onLogout: () => void;
   columns?: KanbanColumn[];
   onAddColumn?: (title: string, color: string) => void;
+  onEditColumn?: (columnId: string, title: string, color: string) => void;
   onDeleteColumn?: (columnId: string) => void;
   onClose: () => void; 
 }
@@ -237,6 +238,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   onLogout,
   columns = [],
   onAddColumn,
+  onEditColumn,
   onDeleteColumn,
   onClose
 }) => {
@@ -268,6 +270,9 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   // --- Kanban Column Local State ---
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [newColumnColor, setNewColumnColor] = useState('blue');
+  const [editingColumnId, setEditingColumnId] = useState<string | null>(null);
+  const [editColumnTitle, setEditColumnTitle] = useState('');
+  const [editColumnColor, setEditColumnColor] = useState('');
 
   // Sync local state if props change (optional, mostly for initial load)
   useEffect(() => {
@@ -558,6 +563,19 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  const startEditingColumn = (col: KanbanColumn) => {
+      setEditingColumnId(col.id);
+      setEditColumnTitle(col.title);
+      setEditColumnColor(col.color);
+  };
+
+  const saveEditingColumn = () => {
+      if (editingColumnId && onEditColumn && editColumnTitle.trim()) {
+          onEditColumn(editingColumnId, editColumnTitle.trim(), editColumnColor);
+          setEditingColumnId(null);
+      }
+  };
+
   // --- Template Handlers ---
   const handleDeleteTemplate = async (id: string) => {
       if(!window.confirm("Are you sure you want to move this template to trash?")) return;
@@ -682,10 +700,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     { name: 'purple', class: 'bg-purple-500' },
     { name: 'rose', class: 'bg-rose-500' },
     { name: 'amber', class: 'bg-amber-500' },
+    { name: 'cyan', class: 'bg-cyan-500' },
   ];
 
   return (
-    <div className="max-w-5xl mx-auto animate-fade-in space-y-6 h-[calc(100vh-140px)] flex flex-col">
+    <div className="max-w-5xl mx-auto animate-fade-in space-y-6 h-full flex flex-col">
       <div className="flex justify-between items-center">
         <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Settings</h1>
@@ -899,19 +918,56 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">Customize the stages of your workflow.</p>
 
                     <div className="space-y-3 mb-6">
-                       {columns.map((col, index) => (
+                       {columns.map((col) => (
                          <div key={col.id} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-xl group">
                             <GripVertical size={16} className="text-slate-400 cursor-grab" />
-                            <div className={`w-4 h-4 rounded-full bg-${col.color}-500 shadow-sm`}></div>
-                            <span className="flex-1 font-medium text-sm text-slate-700 dark:text-slate-200">{col.title}</span>
-                            {onDeleteColumn && (
-                                <button 
-                                    onClick={() => onDeleteColumn(col.id)}
-                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                    title="Delete Column"
-                                >
-                                    <Trash2 size={16} />
-                                </button>
+                            
+                            {editingColumnId === col.id ? (
+                                <div className="flex-1 flex items-center gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={editColumnTitle}
+                                        onChange={(e) => setEditColumnTitle(e.target.value)}
+                                        className="flex-1 px-2 py-1 text-sm bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded outline-none focus:ring-2 focus:ring-indigo-500"
+                                        autoFocus
+                                    />
+                                    <div className="flex gap-1">
+                                        {colorOptions.map(c => (
+                                            <button 
+                                                key={c.name}
+                                                onClick={() => setEditColumnColor(c.name)}
+                                                className={`w-4 h-4 rounded-full ${c.class} transition-transform hover:scale-110 ${editColumnColor === c.name ? 'ring-2 ring-offset-1 ring-slate-400' : ''}`}
+                                            />
+                                        ))}
+                                    </div>
+                                    <button onClick={saveEditingColumn} className="p-1 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 rounded hover:bg-indigo-200"><Check size={14} /></button>
+                                    <button onClick={() => setEditingColumnId(null)} className="p-1 bg-slate-200 dark:bg-slate-700 text-slate-600 rounded hover:bg-slate-300"><X size={14} /></button>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className={`w-4 h-4 rounded-full bg-${col.color}-500 shadow-sm`}></div>
+                                    <span className="flex-1 font-medium text-sm text-slate-700 dark:text-slate-200">{col.title}</span>
+                                    <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                                        {onEditColumn && (
+                                            <button 
+                                                onClick={() => startEditingColumn(col)}
+                                                className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                                                title="Edit Column"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                        )}
+                                        {onDeleteColumn && (
+                                            <button 
+                                                onClick={() => onDeleteColumn(col.id)}
+                                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                title="Delete Column"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
+                                    </div>
+                                </>
                             )}
                          </div>
                        ))}

@@ -153,7 +153,7 @@ const ProjectHub: React.FC<ProjectHubProps> = ({ projects, onSelectProject, onCr
   };
 
   return (
-    <div className="max-w-7xl mx-auto animate-fade-in pb-10">
+    <div className="max-w-7xl mx-auto animate-fade-in pb-10 h-full">
       
       <WelcomeBanner userName={userName || 'User'} isCompact={false} />
 

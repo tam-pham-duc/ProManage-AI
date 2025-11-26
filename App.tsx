@@ -868,12 +868,71 @@ const App: React.FC = () => {
       setColumns(newCols);
       await updateDoc(doc(db, 'users', currentUser.id), { kanbanColumns: newCols });
   };
+
+  const handleEditColumn = async (columnId: string, newTitle: string, newColor: string) => {
+      if (!currentUser) return;
+      
+      const newCols = columns.map(col => {
+          if (col.id === columnId) {
+              return { ...col, title: newTitle, color: newColor };
+          }
+          return col;
+      });
+      
+      // If title changed, we need to update all tasks in that column to the new status
+      const oldColumn = columns.find(c => c.id === columnId);
+      if (oldColumn && oldColumn.title !== newTitle) {
+          // Update Tasks Locally
+          const updatedTasks = tasks.map(t => {
+              if (t.status === oldColumn.title) {
+                  return { ...t, status: newTitle };
+              }
+              return t;
+          });
+          setTasks(updatedTasks);
+
+          // Update Tasks in Firestore (Batch)
+          // Note: This can be heavy if many tasks. In a real app, use a cloud function or careful batching.
+          // For MVP, we do simple batching.
+          const tasksToUpdate = tasks.filter(t => t.status === oldColumn.title);
+          if (tasksToUpdate.length > 0) {
+              const batch = writeBatch(db);
+              tasksToUpdate.forEach(t => {
+                  const taskRef = doc(db, 'tasks', t.id);
+                  batch.update(taskRef, { status: newTitle });
+              });
+              try {
+                  await batch.commit();
+              } catch (e) {
+                  console.error("Failed to batch update task statuses", e);
+                  notify('error', 'Failed to update tasks for renamed column');
+              }
+          }
+      }
+
+      setColumns(newCols);
+      await updateDoc(doc(db, 'users', currentUser.id), { kanbanColumns: newCols });
+      notify('success', 'Column updated');
+  };
+
   const handleDeleteColumn = async (id: string) => { 
       if(!currentUser) return;
+      // Check if column has tasks
+      const colToDelete = columns.find(c => c.id === id);
+      if (colToDelete) {
+          const hasTasks = tasks.some(t => t.status === colToDelete.title);
+          if (hasTasks) {
+              notify('warning', `Cannot delete "${colToDelete.title}" because it contains tasks. Move them first.`);
+              return;
+          }
+      }
+
       const newCols = columns.filter(c => c.id !== id);
       setColumns(newCols);
       await updateDoc(doc(db, 'users', currentUser.id), { kanbanColumns: newCols });
+      notify('success', 'Column deleted');
   };
+
   const handleCreateTag = (name: string) => {
       const newTag = { id: Date.now().toString(), name, colorClass: TAG_COLORS[0] };
       setAvailableTags([...availableTags, newTag]);
@@ -899,7 +958,7 @@ const App: React.FC = () => {
   const renderContent = () => {
     // Hub logic: if no project selected and not on specific tabs
     if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings' && activeTab !== 'trash') {
-         return <PageTransition key="hub-root"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
+         return <PageTransition key="hub-root" className="overflow-y-auto custom-scrollbar p-4 md:p-6"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
     }
     const NoResultsState = () => (
       <div className="flex flex-col items-center justify-center h-64 text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl animate-fade-in bg-white dark:bg-slate-800/50">
@@ -912,28 +971,28 @@ const App: React.FC = () => {
     return (
       <AnimatePresence mode="wait">
         {activeTab === 'dashboard' && (
-          <PageTransition key="dashboard">
+          <PageTransition key="dashboard" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
             <Dashboard tasks={tasks} projects={projects} columns={columns} currentProject={currentProject} onAddTask={() => openNewTaskModal()} onTaskClick={openEditTaskModal} onNavigate={handleDashboardNavigation} userName={userSettings.userName} onStatusChange={handleDropTask} />
           </PageTransition>
         )}
         
         {activeTab === 'projects' && (
-          <PageTransition key="projects">
+          <PageTransition key="projects" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
             <ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} />
           </PageTransition>
         )}
         
         {activeTab === 'kanban' && (
-          <PageTransition key="kanban">
+          <PageTransition key="kanban" className="overflow-hidden p-4 md:p-6">
             <div className="flex flex-col h-full">
               <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} onDeleteTask={handleDeleteTask} />}
+              {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} onDeleteTask={handleDeleteTask} />}
             </div>
           </PageTransition>
         )}
         
         {activeTab === 'list' && (
-          <PageTransition key="list">
+          <PageTransition key="list" className="overflow-hidden p-4 md:p-6">
             <div className="flex flex-col h-full">
               <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
               {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <ListView tasks={filteredTasks} onTaskClick={openEditTaskModal} onDeleteTask={handleDeleteTask} />}
@@ -942,7 +1001,7 @@ const App: React.FC = () => {
         )}
         
         {activeTab === 'timeline' && (
-          <PageTransition key="timeline">
+          <PageTransition key="timeline" className="overflow-hidden p-4 md:p-6">
             <div className="flex flex-col h-full">
               <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
               {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />}
@@ -951,7 +1010,7 @@ const App: React.FC = () => {
         )}
         
         {activeTab === 'map' && (
-          <PageTransition key="map">
+          <PageTransition key="map" className="overflow-hidden p-4 md:p-6">
             <div className="flex flex-col h-full">
               <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
               {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} />}
@@ -960,7 +1019,7 @@ const App: React.FC = () => {
         )}
         
         {activeTab === 'calendar' && (
-          <PageTransition key="calendar">
+          <PageTransition key="calendar" className="overflow-hidden p-4 md:p-6">
             <div className="flex flex-col h-full">
               <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
               {filteredTasks.length === 0 && tasks.length > 0 ? <NoResultsState /> : <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />}
@@ -969,19 +1028,19 @@ const App: React.FC = () => {
         )}
         
         {activeTab === 'settings' && (
-          <PageTransition key="settings">
-            <SettingsView tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onDeleteColumn={handleDeleteColumn} onClose={() => { if (selectedProjectId) setActiveTab('dashboard'); else setActiveTab('projects'); }} />
+          <PageTransition key="settings" className="overflow-hidden p-4 md:p-6">
+            <SettingsView tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} onClose={() => { if (selectedProjectId) setActiveTab('dashboard'); else setActiveTab('projects'); }} />
           </PageTransition>
         )}
         
         {activeTab === 'trash' && (
-          <PageTransition key="trash">
+          <PageTransition key="trash" className="overflow-hidden p-4 md:p-6">
             <TrashView />
           </PageTransition>
         )}
         
         {activeTab === 'image-gen' && (
-          <PageTransition key="image-gen">
+          <PageTransition key="image-gen" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
             <ImageGenerator />
           </PageTransition>
         )}
@@ -1092,7 +1151,8 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar relative z-10 print:p-0 print:overflow-visible overflow-x-hidden">
+        {/* Main Content Area - The Grid Stack */}
+        <div className="flex-1 relative z-10 grid grid-cols-1 grid-rows-1 overflow-hidden">
           {renderContent()}
         </div>
         
