@@ -422,6 +422,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [editingLog, setEditingLog] = useState<TimeLog | null>(null);
   const [editStartTime, setEditStartTime] = useState('');
   const [editEndTime, setEditEndTime] = useState('');
+  const [editNotes, setEditNotes] = useState('');
 
   // Manual Time Log State
   const [manualStartTime, setManualStartTime] = useState('');
@@ -505,6 +506,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setManualStartTime('');
       setManualEndTime('');
       setManualNotes('');
+      setEditNotes('');
     }
   }, [isOpen]);
 
@@ -621,6 +623,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
           setManualStartTime('');
           setManualEndTime('');
           setManualNotes('');
+          setEditNotes('');
 
           prevTaskIdRef.current = task?.id;
       }
@@ -747,7 +750,13 @@ const TaskModal: React.FC<TaskModalProps> = ({
     } catch (e) { console.error(e); notify('error', 'Failed to delete log'); }
   };
 
-  const handleEditLogClick = (log: TimeLog) => { setEditingLog(log); setEditStartTime(toDateTimeLocal(log.startTime)); setEditEndTime(toDateTimeLocal(log.endTime)); };
+  const handleEditLogClick = (log: TimeLog) => { 
+      setEditingLog(log); 
+      setEditStartTime(toDateTimeLocal(log.startTime)); 
+      setEditEndTime(toDateTimeLocal(log.endTime));
+      setEditNotes(log.notes || '');
+  };
+
   const handleUpdateLog = async () => {
     if (!task || !editingLog) return;
     const start = new Date(editStartTime).getTime();
@@ -755,7 +764,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
     if (isNaN(start) || isNaN(end)) { notify('warning', 'Invalid date/time'); return; }
     if (end <= start) { notify('warning', 'End time must be after start time'); return; }
     const durationSeconds = Math.floor((end - start) / 1000);
-    const updatedLog = { ...editingLog, startTime: start, endTime: end, durationSeconds };
+    const updatedLog = { ...editingLog, startTime: start, endTime: end, durationSeconds, notes: editNotes.trim() };
     const updatedLogs = (task.timeLogs || []).map(l => l.id === editingLog.id ? updatedLog : l);
     const newTotal = updatedLogs.reduce((acc, l) => acc + l.durationSeconds, 0);
     try {
@@ -933,6 +942,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
                         <div>
                             <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">End Time</label>
                             <input type="datetime-local" value={editEndTime} onChange={(e) => setEditEndTime(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">Notes</label>
+                            <input type="text" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Optional notes" />
                         </div>
                     </div>
                     <div className="flex gap-2 mt-6">
