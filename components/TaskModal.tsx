@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown, ListChecks } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown, ListChecks, MoreVertical, Activity } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
@@ -412,7 +412,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 }) => {
   const { notify } = useNotification();
   const { activeTimer, startTimer, stopTimer, formatDuration } = useTimeTracking();
-  const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'flow' | 'timeLogs'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'discussion' | 'activity' | 'flow' | 'timeLogs'>('details');
   
   // Timer state for UI updates
   const [now, setNow] = useState(Date.now());
@@ -450,6 +450,9 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [realtimeActivities, setRealtimeActivities] = useState<ActivityLog[]>([]);
   const [newComment, setNewComment] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [hoveredCommentId, setHoveredCommentId] = useState<string | null>(null);
   
   // Mention State
   const [showMentionList, setShowMentionList] = useState(false);
@@ -560,6 +563,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setManualEndTime('');
       setManualNotes('');
       setEditNotes('');
+      setEditingCommentId(null);
     }
   }, [isOpen]);
 
@@ -570,7 +574,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
             messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
     }
-  }, [activeTab, comments, realtimeActivities]);
+  }, [activeTab, comments]);
 
   // --- FIX 1: Reactive State Synchronization ---
   useEffect(() => {
@@ -629,7 +633,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
             setSubtasks(task.subtasks || []);
             setComments(task.comments || []);
-            // setActivityLog(task.activityLog || []); // Removed, now using realtimeActivities
             setAttachments(task.attachments || []);
             setTags(task.tags || []);
             setDependencies(task.dependencies || []);
@@ -648,7 +651,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
             setAssigneeAvatar('');
             setSubtasks([]);
             setComments([]);
-            // setActivityLog([]);
             setAttachments([]);
             setTags([]);
             setDependencies([]);
@@ -677,6 +679,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
           setManualEndTime('');
           setManualNotes('');
           setEditNotes('');
+          setEditingCommentId(null);
 
           prevTaskIdRef.current = task?.id;
       }
@@ -732,34 +735,23 @@ const TaskModal: React.FC<TaskModalProps> = ({
     setShowMentionList(false); 
   };
 
-  const canDeleteComment = (comment: Comment) => {
+  const canManageComment = (comment: Comment) => {
       if (!currentUserId || !comment.userId) return false;
       if (comment.userId !== currentUserId) return false;
       
       const commentTime = new Date(comment.timestamp).getTime();
-      const fiveMinutes = 5 * 60 * 1000;
+      const tenMinutes = 10 * 60 * 1000;
       
-      return (now - commentTime) < fiveMinutes;
+      return (now - commentTime) < tenMinutes;
   };
 
-  const handleDeleteComment = async (commentId: string) => {
+  const handleEditComment = async (commentId: string, newText: string) => {
       if (!task) return;
-      
-      // Optimistic check first to save DB read if expired locally
-      const commentToDelete = comments.find(c => c.id === commentId);
-      if (commentToDelete) {
-          if (!canDeleteComment(commentToDelete)) {
-              notify('error', "You can only delete comments within 5 minutes of posting.");
-              return;
-          }
+      if (!newText.trim()) {
+          notify('warning', "Comment cannot be empty.");
+          return;
       }
-
-      if (!window.confirm("Delete this comment?")) return;
-
       try {
-          // Since comments are an array of objects, we need to read, filter, and update.
-          // arrayRemove requires the exact object match which we might not have perfectly if dates drift, 
-          // but logically getting fresh doc is safest.
           const taskRef = doc(db, 'tasks', task.id);
           const taskSnap = await getDoc(taskRef);
           
@@ -767,13 +759,56 @@ const TaskModal: React.FC<TaskModalProps> = ({
               const data = taskSnap.data();
               const currentComments = data.comments || [];
               
-              // Double check in case comments changed on server or local clock was off
+              // Verify time limit again
+              const target = currentComments.find((c: Comment) => c.id === commentId);
+              if (!target || !canManageComment(target)) {
+                  notify('error', "Time limit for editing has expired.");
+                  setEditingCommentId(null);
+                  return;
+              }
+
+              const updatedComments = currentComments.map((c: Comment) => {
+                  if (c.id === commentId) return { ...c, text: newText };
+                  return c;
+              });
+              
+              await updateDoc(taskRef, { comments: updatedComments });
+              setComments(updatedComments);
+              setEditingCommentId(null);
+              setEditingCommentText('');
+              notify('success', 'Comment updated');
+          }
+      } catch (e) {
+          console.error("Failed to edit comment:", e);
+          notify('error', 'Failed to update comment');
+      }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+      if (!task) return;
+      
+      const commentToDelete = comments.find(c => c.id === commentId);
+      if (commentToDelete) {
+          if (!canManageComment(commentToDelete)) {
+              notify('error', "Time limit for deletion has expired (10 mins).");
+              return;
+          }
+      }
+
+      if (!window.confirm("Delete this comment?")) return;
+
+      try {
+          const taskRef = doc(db, 'tasks', task.id);
+          const taskSnap = await getDoc(taskRef);
+          
+          if (taskSnap.exists()) {
+              const data = taskSnap.data();
+              const currentComments = data.comments || [];
+              
               const serverComment = currentComments.find((c: Comment) => c.id === commentId);
               if (!serverComment) return;
 
-              // Re-validate time on "server data" (still using client clock but fresh data timestamp)
-              const serverTime = new Date(serverComment.timestamp).getTime();
-              if (Date.now() - serverTime > 5 * 60 * 1000) {
+              if (!canManageComment(serverComment)) {
                    notify('error', "Time limit for deletion has expired.");
                    return;
               }
@@ -781,7 +816,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
               const newComments = currentComments.filter((c: Comment) => c.id !== commentId);
               
               await updateDoc(taskRef, { comments: newComments });
-              setComments(newComments); // Update local state
+              setComments(newComments); 
               notify('success', 'Comment deleted');
           }
       } catch (e) {
@@ -886,7 +921,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
     if (match) {
         const matchIndex = match.index! + (match[0].startsWith(' ') ? 1 : 0);
         const prefix = newComment.slice(0, matchIndex);
-        const mentionTag = `@${memberName} `; // Simplified for display
+        const mentionTag = `@${memberName} `; 
         const newText = prefix + mentionTag + textAfter;
         setNewComment(newText);
         setTimeout(() => { if (commentInputRef.current) { commentInputRef.current.focus(); const newCursorPos = prefix.length + mentionTag.length; commentInputRef.current.setSelectionRange(newCursorPos, newCursorPos); } }, 0);
@@ -956,7 +991,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
       assigneeId: assigneeId || 'UN',
       assigneeAvatar: assigneeAvatar,
       subtasks, comments, 
-      // activityLog is managed by realtime listener and separate service, not saved directly via form
       attachments, tags,
       dependencies,
       estimatedCost: parseFloat(estimatedCost) || 0, 
@@ -966,12 +1000,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
       reminderDays: reminderDays
     });
   };
-
-  // Merge Comments and Real-time Activities
-  const streamItems = useMemo(() => [
-    ...comments.map(c => ({ ...c, source: 'comment' as const })),
-    ...realtimeActivities.map(l => ({ ...l, source: 'log' as const }))
-  ].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()), [comments, realtimeActivities]);
 
   const inputBaseClass = `w-full px-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-950 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-slate-900 dark:text-white font-medium placeholder-slate-400 text-sm ${isReadOnly ? 'opacity-70 cursor-not-allowed' : ''}`;
   const filteredAvailableTags = availableTags.filter(at => at.name.toLowerCase().includes(tagInput.toLowerCase()) && !tags.find(t => t.id === at.id));
@@ -1021,7 +1049,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 ml-4 font-medium">{task ? `ID: ${task.id}` : 'Fill in the details below'}</p>
               </div>
               
-              {/* Template Loader (Create Mode Only) */}
               {!task && !isReadOnly && taskTemplates.length > 0 && (
                   <div className="relative ml-4">
                       <button 
@@ -1077,11 +1104,12 @@ const TaskModal: React.FC<TaskModalProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6">
-          <button onClick={() => setActiveTab('details')} className={`py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Details</button>
-          <button onClick={() => setActiveTab('discussion')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Discussion <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length + realtimeActivities.length}</span></button>
-          {task && (<button onClick={() => setActiveTab('flow')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'flow' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Task Flow <GitBranch size={14} className={activeTab === 'flow' ? 'text-indigo-500' : ''} /></button>)}
-          {task && (<button onClick={() => setActiveTab('timeLogs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'timeLogs' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Time Logs <History size={14} className={activeTab === 'timeLogs' ? 'text-indigo-500' : ''} /></button>)}
+        <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6 overflow-x-auto custom-scrollbar">
+          <button onClick={() => setActiveTab('details')} className={`py-4 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Details</button>
+          <button onClick={() => setActiveTab('discussion')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'discussion' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Discussion <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300 font-bold">{comments.length}</span></button>
+          {task && (<button onClick={() => setActiveTab('activity')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'activity' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Activity</button>)}
+          {task && (<button onClick={() => setActiveTab('flow')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'flow' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Task Flow <GitBranch size={14} className={activeTab === 'flow' ? 'text-indigo-500' : ''} /></button>)}
+          {task && (<button onClick={() => setActiveTab('timeLogs')} className={`py-4 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'timeLogs' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>Time Logs <History size={14} className={activeTab === 'timeLogs' ? 'text-indigo-500' : ''} /></button>)}
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-white dark:bg-slate-800">
@@ -1217,67 +1245,104 @@ const TaskModal: React.FC<TaskModalProps> = ({
               </>
             )}
 
+            {/* DISCUSSION TAB (Chat Only) */}
             {activeTab === 'discussion' && (
                 <div className="h-full flex flex-col min-h-[400px]">
-                    <div className="flex-1 overflow-y-auto space-y-4 mb-4 custom-scrollbar pr-2">
-                        {streamItems.length === 0 ? (
+                    <div className="flex-1 overflow-y-auto space-y-6 mb-4 custom-scrollbar pr-2">
+                        {comments.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
                                 <MessageSquare size={32} className="mb-2" />
-                                <p className="text-sm">No activity yet. Start the discussion!</p>
+                                <p className="text-sm">No comments yet. Start the discussion!</p>
                             </div>
                         ) : (
-                            streamItems.map((item, idx) => {
-                                if (item.source === 'comment') {
-                                    const isMe = item.user === currentUser;
-                                    const deletable = canDeleteComment(item);
-                                    return (
-                                        <div key={item.id} className={`flex gap-3 group ${isMe ? 'justify-end' : 'justify-start'}`}>
-                                            {!isMe && (
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getAvatarColor(item.user)}`}>
-                                                    {getAvatarInitials(item.user)}
-                                                </div>
-                                            )}
-                                            <div className={`relative max-w-[80%] p-3 rounded-2xl text-sm ${isMe ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-slate-100 dark:bg-slate-700/50 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
-                                                <div className="font-bold text-xs mb-1 opacity-80">{item.user}</div>
-                                                <div className="whitespace-pre-wrap">{item.text}</div>
-                                                <div className={`text-[10px] mt-1 text-right ${isMe ? 'text-indigo-200' : 'text-slate-400'}`}>
-                                                    {formatMessageTime(item.timestamp)}
-                                                </div>
-                                                {deletable && (
-                                                    <button 
-                                                        onClick={() => handleDeleteComment(item.id)}
-                                                        className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-red-600"
-                                                        title="Delete (available for 5 mins)"
-                                                    >
-                                                        <Trash2 size={10} />
-                                                    </button>
+                            comments.sort((a,b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).map((comment) => {
+                                const isMe = comment.userId === currentUserId || comment.user === currentUser;
+                                const isEditable = canManageComment(comment);
+                                const isEditing = editingCommentId === comment.id;
+
+                                return (
+                                    <div 
+                                        key={comment.id} 
+                                        className={`flex gap-3 group ${isMe ? 'justify-end' : 'justify-start'}`}
+                                        onMouseEnter={() => setHoveredCommentId(comment.id)}
+                                        onMouseLeave={() => setHoveredCommentId(null)}
+                                    >
+                                        {!isMe && (
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 self-end mb-2 ${getAvatarColor(comment.user)}`}>
+                                                {getAvatarInitials(comment.user)}
+                                            </div>
+                                        )}
+                                        
+                                        <div className={`relative max-w-[80%] group`}>
+                                            {/* Meta Header (Optional, if not ME) */}
+                                            {!isMe && <div className="text-[10px] text-slate-400 mb-1 ml-1">{comment.user}</div>}
+
+                                            {/* Bubble */}
+                                            <div className={`p-3 rounded-2xl text-sm relative shadow-sm ${isMe ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-800 dark:text-slate-200 rounded-bl-sm'}`}>
+                                                {isEditing ? (
+                                                    <div className="min-w-[200px]">
+                                                        <textarea 
+                                                            value={editingCommentText} 
+                                                            onChange={(e) => setEditingCommentText(e.target.value)}
+                                                            className="w-full p-2 bg-white/10 rounded text-white outline-none text-sm resize-none border border-white/20 focus:border-white/50 mb-2"
+                                                            autoFocus
+                                                        />
+                                                        <div className="flex justify-end gap-2">
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => { setEditingCommentId(null); setEditingCommentText(''); }}
+                                                                className="text-xs text-white/70 hover:text-white font-bold"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => handleEditComment(comment.id, editingCommentText)}
+                                                                className="text-xs bg-white text-indigo-600 px-2 py-1 rounded font-bold hover:bg-indigo-50"
+                                                            >
+                                                                Save
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="whitespace-pre-wrap leading-relaxed">{comment.text}</div>
+                                                        <div className={`text-[9px] mt-1 text-right opacity-70 font-medium`}>
+                                                            {formatMessageTime(comment.timestamp)}
+                                                        </div>
+                                                    </>
                                                 )}
                                             </div>
+
+                                            {/* Actions Menu (Only for Owner & Time Limit) */}
+                                            {isMe && isEditable && !isEditing && hoveredCommentId === comment.id && (
+                                                <div className="absolute top-0 right-full mr-2 flex items-center h-full">
+                                                    <div className="bg-white dark:bg-slate-800 shadow-lg border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden flex flex-col py-1 animate-fade-in">
+                                                        <button 
+                                                            onClick={() => { setEditingCommentId(comment.id); setEditingCommentText(comment.text); }}
+                                                            className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 text-left flex items-center gap-2"
+                                                        >
+                                                            <Pencil size={10} /> Edit
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeleteComment(comment.id)}
+                                                            className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 text-left flex items-center gap-2"
+                                                        >
+                                                            <Trash2 size={10} /> Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    );
-                                } else {
-                                    // Activity Log
-                                    const typeColor = item.type === 'status_change' ? 'text-emerald-500' 
-                                                    : item.type === 'priority_change' ? 'text-amber-500'
-                                                    : item.type === 'assign' ? 'text-blue-500'
-                                                    : 'text-slate-400';
-                                    return (
-                                        <div key={item.id} className="flex items-center justify-center gap-2 my-4">
-                                            <div className="h-px bg-slate-200 dark:bg-slate-700 w-12"></div>
-                                            <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wide bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-100 dark:border-slate-700 flex items-center gap-1.5">
-                                                <span className={typeColor}>{item.action}</span> • {item.userName || 'System'} • {formatMessageTime(item.timestamp)}
-                                            </span>
-                                            <div className="h-px bg-slate-200 dark:bg-slate-700 w-12"></div>
-                                        </div>
-                                    );
-                                }
+                                    </div>
+                                );
                             })
                         )}
                         <div ref={messagesEndRef} />
                     </div>
                     
                     {!isReadOnly && (
-                        <div className="relative pt-2 border-t border-slate-100 dark:border-slate-700">
+                        <div className="relative pt-4 border-t border-slate-100 dark:border-slate-700">
                             {showMentionList && filteredMembers.length > 0 && (
                                 <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-40 overflow-y-auto z-50">
                                     {filteredMembers.map((m, i) => (
@@ -1294,21 +1359,21 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                     ))}
                                 </div>
                             )}
-                            <div className="flex gap-2 items-end bg-slate-50 dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                            <div className="flex gap-2 items-end bg-slate-50 dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-500 transition-all shadow-sm">
                                 <textarea 
                                     ref={commentInputRef}
                                     value={newComment}
                                     onChange={handleCommentChange}
                                     onKeyDown={handleCommentKeyDown}
                                     placeholder="Type a message... Use @ to mention"
-                                    className="flex-1 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none max-h-32 min-h-[40px] py-2 px-1 custom-scrollbar"
+                                    className="flex-1 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none max-h-32 min-h-[40px] py-2 px-1 custom-scrollbar placeholder-slate-400"
                                     rows={1}
                                 />
                                 <div className="flex flex-col gap-1 pb-1">
                                     <button 
                                         type="button" 
                                         onClick={() => handleInsertMention('')} 
-                                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"
                                         title="Mention someone"
                                     >
                                         <AtSign size={16} />
@@ -1323,6 +1388,45 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ACTIVITY TAB (System Logs) */}
+            {activeTab === 'activity' && (
+                <div className="h-full overflow-y-auto custom-scrollbar pr-2">
+                    {realtimeActivities.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
+                            <Activity size={32} className="mb-2" />
+                            <p className="text-sm">No activity logged yet.</p>
+                        </div>
+                    ) : (
+                        <div className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-700 space-y-6 py-2">
+                            {realtimeActivities.map((log, idx) => {
+                                const typeColor = log.type === 'status_change' ? 'text-emerald-600 bg-emerald-100' 
+                                                : log.type === 'priority_change' ? 'text-amber-600 bg-amber-100'
+                                                : log.type === 'assign' ? 'text-blue-600 bg-blue-100'
+                                                : 'text-slate-500 bg-slate-100 dark:bg-slate-700 dark:text-slate-300';
+                                
+                                return (
+                                    <div key={log.id} className="relative pl-6">
+                                        <div className={`absolute -left-[21px] top-0 w-4 h-4 rounded-full border-2 border-white dark:border-slate-800 ${log.type === 'status_change' ? 'bg-emerald-500' : 'bg-slate-400'}`}></div>
+                                        
+                                        <div className="flex flex-col gap-1">
+                                            <div className="text-xs text-slate-500 dark:text-slate-400 font-medium flex items-center gap-2">
+                                                <span>{formatMessageTime(log.timestamp)}</span>
+                                                <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                                                <span className="font-bold text-slate-700 dark:text-slate-200">{log.userName || 'System'}</span>
+                                            </div>
+                                            
+                                            <div className="text-sm text-slate-800 dark:text-slate-200 leading-snug">
+                                                <span className="font-semibold capitalize">{log.action}</span> {log.details && <span className="text-slate-600 dark:text-slate-400">- {log.details}</span>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>
