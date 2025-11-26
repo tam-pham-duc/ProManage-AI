@@ -41,6 +41,7 @@ interface SidebarProps {
   isDesktopOpen: boolean;
   currentUserRole?: ProjectRole; 
   userEmail?: string;
+  onOpenSettings?: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -60,7 +61,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCreateProject,
   isDesktopOpen,
   currentUserRole,
-  userEmail
+  userEmail,
+  onOpenSettings
 }) => {
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState('');
@@ -99,7 +101,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'timeline', label: 'Timeline', icon: CalendarClock },
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
-    // Settings moved to bottom logic
   ];
 
   const handleNavClick = (tab: Tab) => {
@@ -303,19 +304,20 @@ const Sidebar: React.FC<SidebarProps> = ({
                 
                 {/* Settings Button */}
                 <button
-                    onClick={() => handleNavClick('settings')}
-                    className={`
-                        w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group font-medium
-                        ${activeTab === 'settings' 
-                            ? 'bg-slate-800 text-white shadow-inner shadow-black/20' 
-                            : 'hover:bg-slate-800/50 hover:text-white text-slate-400'
+                    onClick={() => {
+                        if (onOpenSettings) {
+                            onOpenSettings();
+                            setIsMobileOpen(false);
                         }
+                    }}
+                    className={`
+                        w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group font-medium text-slate-400 hover:bg-slate-800/50 hover:text-white
                     `}
                 >
                     <Settings 
                     size={20} 
-                    strokeWidth={activeTab === 'settings' ? 2.5 : 2} 
-                    className={`transition-colors ${activeTab === 'settings' ? 'text-indigo-400' : 'text-slate-500 group-hover:text-indigo-300'}`} 
+                    strokeWidth={2} 
+                    className={`transition-colors text-slate-500 group-hover:text-indigo-300`} 
                     />
                     <span>Settings</span>
                 </button>
@@ -353,7 +355,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 </div>
             </button>
 
-            <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={() => handleNavClick('settings')}>
+            <div className="flex items-center gap-3 p-3 hover:bg-slate-800 rounded-xl cursor-pointer transition-colors border border-transparent hover:border-slate-700" onClick={onOpenSettings}>
                 <div className="relative shrink-0">
                     {userAvatar && userAvatar.startsWith('http') ? (
                         <img 

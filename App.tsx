@@ -61,7 +61,7 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
 ];
 
 // Views that are part of the Infinity Scroll Workspace
-const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'trash', 'image-gen', 'settings'];
+const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'trash', 'image-gen'];
 
 // Section Wrapper Component
 const Section: React.FC<{ id: string; children: React.ReactNode; className?: string }> = ({ id, children, className = "" }) => (
@@ -135,17 +135,38 @@ const App: React.FC = () => {
   // --- Global Search State ---
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
+  // --- Global Settings Modal State ---
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
   // --- User Settings State ---
   const [userSettings, setUserSettings] = useState<UserSettings>(() => {
     try {
       const saved = localStorage.getItem(SETTINGS_KEY);
-      return saved ? JSON.parse(saved) : {
-        userName: 'Guest',
-        userTitle: 'Viewer',
-        defaultView: 'dashboard'
+      const parsed = saved ? JSON.parse(saved) : {};
+      return {
+        userName: parsed.userName || 'Guest',
+        userTitle: parsed.userTitle || 'Viewer',
+        defaultView: parsed.defaultView || 'dashboard',
+        dateFormat: parsed.dateFormat || 'MM/DD/YYYY',
+        cardDensity: parsed.cardDensity || 'comfortable',
+        soundEnabled: parsed.soundEnabled !== undefined ? parsed.soundEnabled : true,
+        kanbanDisplay: parsed.kanbanDisplay || {
+            showId: false,
+            showAvatar: true,
+            showPriority: true,
+            showTags: true
+        }
       };
     } catch (e) {
-      return { userName: 'Guest', userTitle: 'Viewer', defaultView: 'dashboard' };
+      return { 
+          userName: 'Guest', 
+          userTitle: 'Viewer', 
+          defaultView: 'dashboard',
+          dateFormat: 'MM/DD/YYYY',
+          cardDensity: 'comfortable',
+          soundEnabled: true,
+          kanbanDisplay: { showId: false, showAvatar: true, showPriority: true, showTags: true }
+      };
     }
   });
 
@@ -555,29 +576,33 @@ const App: React.FC = () => {
   };
 
   const handleUpdateProject = async (projectData: Partial<Project>) => {
-      if (!projectToEdit) return;
+      if (!selectedProjectId) return;
+      // Permission check handled by caller or server rules, but good to double check if current user can edit
+      // Assuming simple logic: if you are admin role you can edit. 
       if (userRole !== 'admin') {
           notify('error', "Only admins can update project settings.");
           return;
       }
+      
       try {
-          const projectRef = doc(db, 'projects', projectToEdit.id);
-          let updatedMembers = projectData.members || projectToEdit.members || [];
-          const memberUIDs = updatedMembers.map(m => m.uid).filter((uid): uid is string => uid !== null);
+          const projectRef = doc(db, 'projects', selectedProjectId);
+          // We only update specific fields if passed
+          const updatePayload: any = {};
+          if (projectData.name) updatePayload.name = projectData.name;
+          if (projectData.clientName) updatePayload.clientName = projectData.clientName;
+          if (projectData.address) updatePayload.address = projectData.address;
+          if (projectData.members) {
+              updatePayload.members = projectData.members;
+              updatePayload.memberUIDs = projectData.members.map(m => m.uid).filter((uid): uid is string => uid !== null);
+          }
 
-          await updateDoc(projectRef, {
-              name: projectData.name,
-              clientName: projectData.clientName,
-              address: projectData.address,
-              members: updatedMembers,
-              memberUIDs: memberUIDs
-          });
+          await updateDoc(projectRef, updatePayload);
           
-          if (currentUser) {
+          if (currentUser && currentProject) {
               await logProjectActivity(
-                  projectToEdit.id,
+                  selectedProjectId,
                   'project-update',
-                  projectData.name || projectToEdit.name,
+                  projectData.name || currentProject.name,
                   'updated project',
                   currentUser,
                   'Updated project settings',
@@ -585,12 +610,15 @@ const App: React.FC = () => {
               );
           }
 
-          setIsProjectModalOpen(false);
-          setProjectToEdit(null);
-          notify('success', "Project updated successfully");
+          // If projectToEdit matches, close modal
+          if (projectToEdit?.id === selectedProjectId) {
+              setIsProjectModalOpen(false);
+              setProjectToEdit(null);
+          }
+          
       } catch (e) {
           console.error("Error updating project:", e);
-          notify('error', "Failed to update project");
+          throw e; // Let SettingsView handle error/success toast
       }
   };
 
@@ -941,14 +969,7 @@ const App: React.FC = () => {
 
   // Determine Content to Render based on Navigation state
   const renderContent = () => {
-    if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'settings' && activeTab !== 'trash') {
-         if (activeTab === 'settings') {
-             return (
-               <PageTransition key="settings" className="overflow-hidden p-4 md:p-6">
-                 <SettingsView tasks={[]} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} onClose={() => handleNavigation('projects')} />
-               </PageTransition>
-             );
-         }
+    if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'trash') {
          return <PageTransition key="hub-root" className="overflow-y-auto custom-scrollbar p-4 md:p-6"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
     }
 
@@ -1014,10 +1035,6 @@ const App: React.FC = () => {
             <Section id="trash">
                 <TrashView />
             </Section>
-
-            <Section id="settings">
-                <SettingsView tasks={filteredTasks} setTasks={setTasks} userSettings={userSettings} setUserSettings={setUserSettings} isDarkMode={isDarkMode} toggleDarkMode={toggleDarkMode} onLogout={handleLogout} columns={columns} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} onClose={() => handleNavigation('dashboard')} />
-            </Section>
         </div>
     );
   };
@@ -1046,6 +1063,7 @@ const App: React.FC = () => {
         isDesktopOpen={isSidebarOpen}
         currentUserRole={userRole}
         userEmail={currentUser.email}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
       <main className="flex-1 min-w-0 flex flex-col h-screen overflow-hidden relative transition-all duration-300">
         <div className="absolute inset-0 z-0 print:hidden">
@@ -1162,6 +1180,24 @@ const App: React.FC = () => {
       <ReminderModal 
         isOpen={isReminderModalOpen} onClose={() => setIsReminderModalOpen(false)}
         tasks={reminderTasks} onTaskClick={openEditTaskModal} onSnooze={handleSnooze}
+      />
+
+      <SettingsView 
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        tasks={filteredTasks} 
+        setTasks={setTasks} 
+        userSettings={userSettings} 
+        setUserSettings={setUserSettings} 
+        isDarkMode={isDarkMode} 
+        toggleDarkMode={toggleDarkMode} 
+        onLogout={handleLogout} 
+        columns={columns} 
+        onAddColumn={handleAddColumn} 
+        onEditColumn={handleEditColumn} 
+        onDeleteColumn={handleDeleteColumn}
+        project={currentProject}
+        onUpdateProject={handleUpdateProject}
       />
     </div>
   );

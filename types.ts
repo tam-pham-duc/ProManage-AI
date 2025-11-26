@@ -169,4 +169,13 @@ export interface UserSettings {
   userName: string;
   userTitle: string;
   defaultView: Tab;
+  dateFormat?: 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD';
+  cardDensity?: 'comfortable' | 'compact';
+  soundEnabled?: boolean;
+  kanbanDisplay?: {
+    showId?: boolean;
+    showAvatar?: boolean;
+    showPriority?: boolean;
+    showTags?: boolean;
+  };
 }
