@@ -625,12 +625,12 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        flex-1 min-w-[320px] rounded-2xl p-4 flex flex-col h-full transition-all duration-300 border-t-4 border-2 
+        flex-1 min-w-[320px] rounded-2xl flex flex-col h-full transition-all duration-300 border-t-4 border-2 
         ${theme.container}
         ${isDragOver ? `bg-opacity-100 ring-2 ${theme.ring} shadow-xl scale-[1.01]` : ''}
       `}
     >
-      <div className="flex items-center justify-between mb-5 px-1 relative">
+      <div className="flex items-center justify-between p-4 relative">
             <div className="flex items-center gap-2">
             <h3 className={`font-bold text-lg tracking-tight ${theme.header}`}>{column.title}</h3>
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm ${theme.badge}`}>
@@ -674,7 +674,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             </div>
         </div>
 
-      <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar pb-4">
+      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3 custom-scrollbar">
         {tasks.map(task => (
           <TaskCard 
             key={task.id} 

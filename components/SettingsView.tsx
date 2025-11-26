@@ -1,10 +1,10 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { Download, Upload, Database, FileJson, User, Sliders, LayoutTemplate, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare, Check, Edit2, Volume2, VolumeX, CalendarDays, CreditCard, MapPin, Tags } from 'lucide-react';
+import { Download, Upload, Database, FileJson, User, Sliders, LayoutTemplate, LogOut, Loader2, KanbanSquare, Trash2, GripVertical, Plus, X, Camera, Save, ShieldCheck, RefreshCcw, Activity, Eye, FileText, Briefcase, CheckSquare, Check, Edit2, Volume2, VolumeX, CalendarDays, CreditCard, MapPin, Tags, Cloud, AlertTriangle, HardDrive } from 'lucide-react';
 import { Task, UserSettings, KanbanColumn, Template, Project } from '../types';
 import { auth, db } from '../firebase';
 import { signOut, updateProfile, updatePassword } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc, getDocs, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, setDoc, getDocs, onSnapshot, query, where, writeBatch } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { clearDevData, generateDemoData } from '../services/demoDataService';
 import HealthCheckModal from './HealthCheckModal';
@@ -185,7 +185,12 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   // --- Data Tab State ---
   const fileInputRef = useRef<HTMLInputElement>(null);
   const templateFileInputRef = useRef<HTMLInputElement>(null);
-  const [isImporting, setIsImporting] = useState(false);
+  const userRestoreInputRef = useRef<HTMLInputElement>(null);
+  
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState('');
+  
   const [isResetting, setIsResetting] = useState(false);
   const [isHealthCheckOpen, setIsHealthCheckOpen] = useState(false);
   
@@ -356,60 +361,121 @@ const SettingsView: React.FC<SettingsViewProps> = ({
       }
   };
 
-  // --- Data Management Handlers (Admin Only) ---
-  const handleExport = () => {
-    const dataStr = JSON.stringify(tasks, null, 2);
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = `promanage_backup_${new Date().toISOString().split('T')[0]}.json`;
-    link.href = url;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    notify('success', "Export started");
-  };
-
-  const handleImportClick = () => { fileInputRef.current?.click(); };
-
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const content = e.target?.result as string;
+  // --- Data Management Handlers (User Backup/Restore) ---
+  const handleUserBackup = async () => {
+      setIsBackingUp(true);
       try {
-        const parsedData = JSON.parse(content);
-        if (!Array.isArray(parsedData)) throw new Error("Invalid format");
+          const user = auth.currentUser;
+          if (!user) return;
 
-        if (window.confirm(`Importing will add ${parsedData.length} tasks. Proceed?`)) {
-            setIsImporting(true);
-            const currentUser = auth.currentUser;
-            if (!currentUser) return;
+          // Fetch user's projects
+          const projQ = query(collection(db, 'projects'), where('ownerId', '==', user.uid));
+          const projSnap = await getDocs(projQ);
+          const projects = projSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-            for (const task of parsedData) {
-                const { id, ...taskData } = task; 
-                await addDoc(collection(db, 'tasks'), {
-                    ...taskData,
-                    ownerId: currentUser.uid,
-                    createdAt: serverTimestamp(),
-                    importedAt: new Date().toISOString()
-                });
-            }
-            notify('success', `Imported ${parsedData.length} tasks!`);
-        }
-      } catch (error) {
-        notify('error', "Failed to import data.");
+          // Fetch user's tasks
+          const taskQ = query(collection(db, 'tasks'), where('ownerId', '==', user.uid));
+          const taskSnap = await getDocs(taskQ);
+          const tasks = taskSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+          const backupData = {
+              meta: {
+                  version: "1.0",
+                  date: new Date().toISOString(),
+                  user: user.uid,
+                  type: "full_user_backup"
+              },
+              projects,
+              tasks
+          };
+
+          const dataStr = JSON.stringify(backupData, null, 2);
+          const blob = new Blob([dataStr], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `promanage_backup_${new Date().toISOString().split('T')[0]}.json`;
+          link.href = url;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          notify('success', `Backup downloaded: ${projects.length} Projects, ${tasks.length} Tasks`);
+
+      } catch (e) {
+          console.error("Backup failed:", e);
+          notify('error', 'Backup failed. Please try again.');
       } finally {
-        setIsImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
+          setIsBackingUp(false);
       }
-    };
-    reader.readAsText(file);
   };
 
+  const handleUserRestore = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      if (!window.confirm("This will merge data from the file into your account. Existing items with matching IDs will be updated. Continue?")) {
+          if (userRestoreInputRef.current) userRestoreInputRef.current.value = '';
+          return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+          const content = e.target?.result as string;
+          setIsRestoring(true);
+          setRestoreProgress('Parsing file...');
+
+          try {
+              const data = JSON.parse(content);
+              if (!data.projects || !Array.isArray(data.projects) || !data.tasks || !Array.isArray(data.tasks)) {
+                  throw new Error("Invalid backup file format.");
+              }
+
+              const projects = data.projects;
+              const tasks = data.tasks;
+              const totalItems = projects.length + tasks.length;
+              
+              setRestoreProgress(`Starting restore of ${totalItems} items...`);
+
+              // Helper for batch processing
+              const processBatch = async (items: any[], collectionName: string) => {
+                  const chunks = [];
+                  for (let i = 0; i < items.length; i += 400) {
+                      chunks.push(items.slice(i, i + 400));
+                  }
+
+                  let processedCount = 0;
+                  for (const chunk of chunks) {
+                      const batch = writeBatch(db);
+                      chunk.forEach((item: any) => {
+                          const ref = doc(db, collectionName, item.id);
+                          // Ensure sensitive fields are sanitized if needed, or trust backup
+                          batch.set(ref, item, { merge: true });
+                      });
+                      await batch.commit();
+                      processedCount += chunk.length;
+                      setRestoreProgress(`Restored ${processedCount} / ${items.length} ${collectionName}...`);
+                  }
+              };
+
+              await processBatch(projects, 'projects');
+              await processBatch(tasks, 'tasks');
+
+              notify('success', `Restore complete! ${totalItems} items processed.`);
+              setTimeout(() => window.location.reload(), 1500); // Refresh to load data
+
+          } catch (err: any) {
+              console.error("Restore failed:", err);
+              notify('error', `Restore failed: ${err.message}`);
+          } finally {
+              setIsRestoring(false);
+              setRestoreProgress('');
+              if (userRestoreInputRef.current) userRestoreInputRef.current.value = '';
+          }
+      };
+      reader.readAsText(file);
+  };
+
+  // --- Admin Data Handlers ---
   const handleFactoryReset = async () => {
       if (!window.confirm("WARNING: This will wipe ALL data. Continue?")) return;
       setIsResetting(true);
@@ -553,9 +619,8 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   }
   tabs.push({ id: 'templates', label: 'Templates', icon: LayoutTemplate });
   
-  if (isAdmin) {
-      tabs.push({ id: 'data', label: 'Data Management', icon: Database });
-  }
+  // Data Management is now available to all users
+  tabs.push({ id: 'data', label: 'Data Control', icon: Database });
 
   if (!isOpen) return null;
 
@@ -864,44 +929,92 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
                 )}
 
-                {/* --- TAB 5: DATA MANAGEMENT (ADMIN ONLY) --- */}
-                {activeTab === 'data' && isAdmin && (
+                {/* --- TAB 5: DATA MANAGEMENT (ALL USERS) --- */}
+                {activeTab === 'data' && (
                     <div className="max-w-xl space-y-8 animate-fade-in">
-                    <div>
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Data Management</h2>
-                        <div className="space-y-4">
-                        {/* Admin Tools */}
-                        <div className="p-5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-200 dark:border-red-900/50 ring-1 ring-red-500/20">
-                            <div className="flex items-start gap-4">
-                                <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg shadow-sm text-red-600 dark:text-red-400"><RefreshCcw size={24} /></div>
-                                <div className="flex-1">
-                                <h3 className="font-bold text-red-700 dark:text-red-400 text-sm flex items-center gap-2">Developer Zone <span className="text-[10px] bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-300 px-1.5 py-0.5 rounded uppercase">Admin Only</span></h3>
-                                <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-1 mb-4">Advanced system tools for database maintenance and diagnostics.</p>
-                                <div className="flex flex-wrap gap-3">
-                                    <button onClick={handleFactoryReset} disabled={isResetting} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-red-700 transition-colors shadow-sm active:scale-95 disabled:opacity-70">{isResetting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Factory Reset</button>
-                                    <button onClick={() => setIsHealthCheckOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-slate-900 transition-colors shadow-sm active:scale-95"><Activity size={14} /> Run System Health Check</button>
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">Data Management</h2>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">Manage your personal data, backups, and imports.</p>
+                            
+                            <div className="space-y-4">
+                                {/* Backup & Restore Section */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <div className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg">
+                                                <Cloud size={20} />
+                                            </div>
+                                            <h3 className="font-bold text-slate-900 dark:text-white text-sm">Backup Data</h3>
+                                        </div>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 min-h-[32px]">
+                                            Download a copy of all your projects and tasks.
+                                        </p>
+                                        <button 
+                                            onClick={handleUserBackup} 
+                                            disabled={isBackingUp}
+                                            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+                                        >
+                                            {isBackingUp ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                                            Download JSON
+                                        </button>
+                                    </div>
+
+                                    <div className="p-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                                                <HardDrive size={20} />
+                                            </div>
+                                            <h3 className="font-bold text-slate-900 dark:text-white text-sm">Restore Data</h3>
+                                        </div>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 min-h-[32px]">
+                                            Import projects from a backup file.
+                                        </p>
+                                        {isRestoring ? (
+                                            <div className="w-full py-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-xs font-bold text-slate-500 flex items-center justify-center gap-2 animate-pulse">
+                                                <Loader2 className="animate-spin" size={14} />
+                                                {restoreProgress || 'Restoring...'}
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <input 
+                                                    type="file" 
+                                                    accept=".json" 
+                                                    ref={userRestoreInputRef} 
+                                                    onChange={handleUserRestore} 
+                                                    className="hidden" 
+                                                />
+                                                <button 
+                                                    onClick={() => userRestoreInputRef.current?.click()} 
+                                                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold transition-colors"
+                                                >
+                                                    <Upload size={14} />
+                                                    Upload File
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                                </div>
+
+                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-6"></div>
+
+                                {/* Admin Tools - Only Visible to Admin */}
+                                {isAdmin && (
+                                    <div className="p-5 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-200 dark:border-red-900/50 ring-1 ring-red-500/20">
+                                        <div className="flex items-start gap-4">
+                                            <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg shadow-sm text-red-600 dark:text-red-400"><RefreshCcw size={24} /></div>
+                                            <div className="flex-1">
+                                            <h3 className="font-bold text-red-700 dark:text-red-400 text-sm flex items-center gap-2">Developer Zone <span className="text-[10px] bg-red-200 dark:bg-red-900/50 text-red-800 dark:text-red-300 px-1.5 py-0.5 rounded uppercase">Admin Only</span></h3>
+                                            <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-1 mb-4">Advanced system tools for database maintenance and diagnostics.</p>
+                                            <div className="flex flex-wrap gap-3">
+                                                <button onClick={handleFactoryReset} disabled={isResetting} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-red-700 transition-colors shadow-sm active:scale-95 disabled:opacity-70">{isResetting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Factory Reset</button>
+                                                <button onClick={() => setIsHealthCheckOpen(true)} className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-white border border-transparent rounded-lg text-xs font-medium hover:bg-slate-900 transition-colors shadow-sm active:scale-95"><Activity size={14} /> Run System Health Check</button>
+                                            </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        <div className="h-px bg-slate-100 dark:bg-slate-700 my-6"></div>
-                        {/* Backup/Restore */}
-                        <div className="p-5 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-900/30">
-                            <div className="flex items-start gap-4">
-                                <div className="p-2 bg-white dark:bg-slate-800 rounded-lg shadow-sm text-indigo-500"><Database size={24} /></div>
-                                <div className="flex-1">
-                                <h3 className="font-bold text-slate-900 dark:text-white text-sm">Backup & Restore</h3>
-                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 mb-4">Full system snapshot.</p>
-                                <div className="flex gap-3">
-                                    <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors shadow-sm"><Download size={16} /> Backup Data</button>
-                                    <input type="file" accept=".json" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
-                                    <button onClick={handleImportClick} disabled={isImporting} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 transition-colors shadow-sm">{isImporting ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />} Restore Data</button>
-                                </div>
-                                </div>
-                            </div>
-                        </div>
-                        </div>
-                    </div>
                     </div>
                 )}
 
