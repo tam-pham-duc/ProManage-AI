@@ -1035,7 +1035,7 @@ const App: React.FC = () => {
             <Section id="map">
                 <div className="flex flex-col h-full min-h-[800px]">
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Project Map</h2>
-                    <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} />
+                    <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} columns={columns} />
                 </div>
             </Section>
 

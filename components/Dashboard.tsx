@@ -29,6 +29,7 @@ import { MetricCardProps, Task, Project, Tab, KanbanColumn, ActivityLog } from '
 import WelcomeBanner from './WelcomeBanner';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getColorById } from '../utils/colors';
 
 interface DashboardProps {
   tasks: Task[];
@@ -500,25 +501,18 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
 
   // --- Dynamic Chart Data Calculation ---
   const chartData: ChartSegment[] = useMemo(() => {
-    const getColorClass = (colorName: string) => {
-        const map: Record<string, string> = {
-            slate: 'text-slate-500 print:text-slate-500',
-            blue: 'text-blue-500 print:text-blue-600',
-            emerald: 'text-emerald-500 print:text-emerald-600',
-            indigo: 'text-indigo-500 print:text-indigo-600',
-            purple: 'text-purple-500 print:text-purple-600',
-            rose: 'text-rose-500 print:text-rose-600',
-            amber: 'text-amber-500 print:text-amber-600'
-        };
-        return map[colorName] || 'text-slate-500';
-    };
-
     if (columns.length > 0) {
-        return columns.map(col => ({
-            label: col.title,
-            value: tasks?.filter(t => t && t.status === col.title).length || 0,
-            colorClass: getColorClass(col.color)
-        }));
+        return columns.map(col => {
+            const palette = getColorById(col.color);
+            // Convert bg class (e.g. bg-red-500) to text class (text-red-500) for SVG stroke
+            const strokeClass = palette.dot.replace('bg-', 'text-');
+            
+            return {
+                label: col.title,
+                value: tasks?.filter(t => t && t.status === col.title).length || 0,
+                colorClass: strokeClass
+            };
+        });
     }
 
     return [
@@ -809,14 +803,24 @@ const Dashboard: React.FC<DashboardProps> = ({ tasks, projects = [], columns = [
                     let iconBg = 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400';
                     let borderColor = 'border-slate-100 dark:border-slate-700';
 
-                    if (item.type === 'comment') {
+                    // Try to determine dynamic status color if applicable
+                    if (item.type === 'status_change' || item.details?.includes('Moved to')) {
+                        // Try to match details "Moved to [Status]" with column colors
+                        const statusName = item.details?.replace('Moved to ', '').trim();
+                        const col = columns.find(c => c.title === statusName);
+                        if (col) {
+                            const palette = getColorById(col.color);
+                            iconBg = `${palette.dot} text-white`; // Use dot color for bg, white text
+                            borderColor = palette.dot.replace('bg-', 'border-').replace('500', '200');
+                        } else {
+                            Icon = CheckCircle2;
+                            iconBg = 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
+                            borderColor = 'border-emerald-100 dark:border-emerald-900/30';
+                        }
+                    } else if (item.type === 'comment') {
                         Icon = MessageSquare;
                         iconBg = 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400';
                         borderColor = 'border-blue-100 dark:border-blue-900/30';
-                    } else if (item.type === 'status_change' || (item.action && (item.action.includes('Done') || item.action.includes('completed')))) {
-                        Icon = CheckCircle2;
-                        iconBg = 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400';
-                        borderColor = 'border-emerald-100 dark:border-emerald-900/30';
                     } else if (item.type === 'create') {
                         Icon = Plus;
                         iconBg = 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400';

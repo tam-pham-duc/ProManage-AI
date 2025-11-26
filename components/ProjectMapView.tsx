@@ -1,11 +1,13 @@
 
 import React, { useMemo, useState } from 'react';
-import { Task } from '../types';
+import { Task, KanbanColumn } from '../types';
 import { GitGraph, AlertCircle, CheckCircle2, Clock, Lock, Ban, Check, ArrowRight, Zap } from 'lucide-react';
+import { getColorById } from '../utils/colors';
 
 interface ProjectMapViewProps {
   tasks: Task[];
   onTaskClick: (task: Task) => void;
+  columns: KanbanColumn[];
 }
 
 interface GraphNode extends Task {
@@ -101,7 +103,7 @@ const SmartConnector: React.FC<{ connection: Connection; isHighlighted: boolean;
     );
 };
 
-const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) => {
+const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick, columns = [] }) => {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // --- Layout Engine ---
@@ -280,11 +282,10 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
           <p className="text-sm text-slate-500 dark:text-slate-400">Interactive visualization of task relationships.</p>
         </div>
         <div className="flex items-center gap-3">
+           {/* Legend using dynamic column colors is tricky as user defines them. Fallback to simple icons */}
            <div className="flex items-center gap-3 text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
-              <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Done</div>
-              <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Active</div>
-              <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-slate-400"></div> Pending</div>
               <div className="flex items-center gap-1.5"><Lock size={10} className="text-red-500" /> Blocked</div>
+              <div className="flex items-center gap-1.5"><Check size={10} className="text-emerald-500" /> Done</div>
            </div>
         </div>
       </div>
@@ -324,28 +325,41 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                     return parent && parent.status !== 'Done';
                 });
                 
-                const isDone = node.status === 'Done';
-                const isActive = node.status === 'In Progress';
                 const isHighlighted = highlightContext.relatedNodes.has(node.id);
                 const isDimmed = hoveredNodeId && !isHighlighted;
 
-                // Node Styling Logic
+                // --- Dynamic Coloring based on Status ---
+                // Default styles
                 let borderColor = 'border-slate-200 dark:border-slate-700';
                 let bgColor = 'bg-white dark:bg-slate-800';
+                let statusBadgeClass = 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400';
                 let glowClass = '';
-                
+
+                // Lookup Column Color
+                const matchedColumn = columns.find(c => c.title === node.status);
+                if (matchedColumn) {
+                    const palette = getColorById(matchedColumn.color);
+                    // Apply colors
+                    bgColor = 'bg-white dark:bg-slate-800'; // Keep generic card bg
+                    borderColor = palette.dot.replace('bg-', 'border-').replace('500', '200').replace('600', '200');
+                    statusBadgeClass = `${palette.bg} ${palette.text}`;
+                    
+                    if (isHighlighted) {
+                        // Stronger glow using the dot color
+                        const glowColor = palette.dot.replace('bg-', ''); // e.g. 'red-500'
+                        glowClass = `shadow-[0_0_20px_rgba(var(--color-${glowColor}),0.3)] ring-1 ring-${glowColor} dark:ring-${glowColor}`;
+                        // Note: Tailwind JIT might struggle with dynamic arbitrary values like var, so using fallback ring logic
+                        // Use palette text color for ring as it is usually strong enough
+                        const ringClass = palette.text.replace('text-', 'ring-').split(' ')[0];
+                        glowClass = `shadow-md ${ringClass}`; 
+                    }
+                }
+
+                // Blocked Override (Stronger than status)
                 if (isBlocked) {
                     borderColor = 'border-red-300 dark:border-red-900/50';
                     bgColor = 'bg-slate-50 dark:bg-slate-900/50';
                     if (isHighlighted) glowClass = 'shadow-[0_0_20px_rgba(248,113,113,0.3)] ring-1 ring-red-400 dark:ring-red-900';
-                } else if (isDone) {
-                    borderColor = 'border-emerald-500';
-                    bgColor = 'bg-emerald-50/30 dark:bg-emerald-900/20';
-                    if (isHighlighted) glowClass = 'shadow-[0_0_20px_rgba(16,185,129,0.3)] ring-1 ring-emerald-500 dark:ring-emerald-900';
-                } else if (isActive) {
-                    borderColor = 'border-blue-500';
-                    bgColor = 'bg-blue-50/30 dark:bg-blue-900/20';
-                    if (isHighlighted) glowClass = 'shadow-[0_0_20px_rgba(59,130,246,0.3)] ring-1 ring-blue-500 dark:ring-blue-900';
                 }
 
                 return (
@@ -375,8 +389,8 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                                 <Lock size={16} />
                             </div>
                         )}
-                        {/* Done Badge */}
-                        {!isBlocked && isDone && (
+                        {/* Done Badge (If actually marked Done, overrides blocked visual slightly if logic allows done-while-blocked) */}
+                        {!isBlocked && node.status === 'Done' && (
                             <div className="absolute -top-3 -right-3 z-40 bg-white dark:bg-slate-800 text-emerald-500 p-1.5 rounded-full shadow-md border border-emerald-100 dark:border-emerald-900/50">
                                 <Check size={16} strokeWidth={3} />
                             </div>
@@ -386,10 +400,10 @@ const ProjectMapView: React.FC<ProjectMapViewProps> = ({ tasks, onTaskClick }) =
                         <div className="flex justify-between items-start gap-3">
                             <div>
                                 <div className="flex items-center gap-2 mb-1.5">
-                                    <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md ${isBlocked ? 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400' : isDone ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'}`}>
+                                    <span className={`text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md ${statusBadgeClass}`}>
                                         {node.status}
                                     </span>
-                                    {node.priority === 'High' && !isDone && (
+                                    {node.priority === 'High' && node.status !== 'Done' && (
                                         <AlertCircle size={14} className="text-rose-500 animate-pulse" />
                                     )}
                                 </div>
