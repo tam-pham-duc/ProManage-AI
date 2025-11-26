@@ -19,7 +19,8 @@ import {
   Trash2,
   List,
   Search,
-  AlertCircle
+  AlertCircle,
+  Flag
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
@@ -102,6 +103,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'kanban', label: 'Kanban Board', icon: KanbanSquare },
     { id: 'list', label: 'List View', icon: List },
     { id: 'timeline', label: 'Timeline', icon: CalendarClock },
+    { id: 'milestones', label: 'Milestones', icon: Flag },
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'issues', label: 'Issues List', icon: AlertCircle, badge: openIssuesCount },

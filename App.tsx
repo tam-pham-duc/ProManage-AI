@@ -23,6 +23,7 @@ import CommandPalette from './components/CommandPalette';
 import ImageGenerator from './components/ImageGenerator';
 import ActiveTimerBar from './components/ActiveTimerBar';
 import PageTransition from './components/PageTransition';
+import MilestonesView from './components/MilestonesView';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType, Issue } from './types';
@@ -50,7 +51,7 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
 ];
 
 // Views that are part of the Infinity Scroll Workspace
-const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen'];
+const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen', 'milestones'];
 
 // Section Wrapper Component
 const Section: React.FC<{ id: string; children: React.ReactNode; className?: string }> = ({ id, children, className = "" }) => (
@@ -1022,6 +1023,12 @@ const App: React.FC = () => {
                 <div className="flex flex-col h-full min-h-[600px]">
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Timeline</h2>
                     <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />
+                </div>
+            </Section>
+
+            <Section id="milestones">
+                <div className="flex flex-col h-full min-h-[800px]">
+                    <MilestonesView projectId={selectedProjectId || ''} isReadOnly={userRole === 'guest'} />
                 </div>
             </Section>
 
