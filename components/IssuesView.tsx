@@ -4,6 +4,7 @@ import { Issue, IssueStatus, Task, ProjectMember } from '../types';
 import { AlertTriangle, Plus, Search, CheckCircle2, XCircle, Clock, AlertOctagon, Link as LinkIcon, Trash2, Edit2, AlertCircle } from 'lucide-react';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 import IssueModal from './IssueModal';
+import IssueDetailModal from './IssueDetailModal';
 import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useNotification } from '../context/NotificationContext';
@@ -31,6 +32,10 @@ const IssuesView: React.FC<IssuesViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIssue, setEditingIssue] = useState<Issue | undefined>(undefined);
+  
+  // State for Detail View
+  const [viewingIssue, setViewingIssue] = useState<Issue | null>(null);
+  
   const [filterStatus, setFilterStatus] = useState<string>('All');
 
   const filteredIssues = issues.filter(issue => {
@@ -47,7 +52,6 @@ const IssuesView: React.FC<IssuesViewProps> = ({
 
   const handleDelete = async (id: string) => {
       if (isReadOnly) return;
-      if (!window.confirm("Are you sure you want to delete this issue?")) return;
       try {
           await deleteDoc(doc(db, 'projects', projectId, 'issues', id));
           notify('success', 'Issue deleted');
@@ -57,14 +61,37 @@ const IssuesView: React.FC<IssuesViewProps> = ({
       }
   };
 
-  const handleStatusChange = async (id: string, newStatus: IssueStatus) => {
+  const handleStatusChange = async (e: React.ChangeEvent<HTMLSelectElement>, id: string) => {
+      e.stopPropagation(); // Prevent row click
       if (isReadOnly) return;
       try {
-          await updateDoc(doc(db, 'projects', projectId, 'issues', id), { status: newStatus });
-          notify('success', `Status updated to ${newStatus}`);
+          await updateDoc(doc(db, 'projects', projectId, 'issues', id), { status: e.target.value });
+          notify('success', `Status updated`);
       } catch (e) {
           notify('error', 'Update failed');
       }
+  };
+
+  const handleDetailEdit = (issue: Issue) => {
+      setViewingIssue(null);
+      setEditingIssue(issue);
+      setIsModalOpen(true);
+  };
+
+  const handleOpenRelatedTask = (e: React.MouseEvent, taskId: string) => {
+      e.stopPropagation(); // CRITICAL: Prevent opening the Issue Detail row
+      const targetTask = tasks.find(t => t.id === taskId);
+      if (targetTask) {
+          if (onTaskClick) onTaskClick(targetTask); // Open the existing Task Modal
+      } else {
+          notify('error', "Task not found or has been deleted.");
+      }
+  };
+
+  const stripHtml = (html: string) => {
+      const tmp = document.createElement("DIV");
+      tmp.innerHTML = html || "";
+      return tmp.textContent || tmp.innerText || "";
   };
 
   const getSeverityBadge = (severity: string) => {
@@ -164,7 +191,8 @@ const IssuesView: React.FC<IssuesViewProps> = ({
           <table className="w-full text-left border-separate border-spacing-y-2">
               <thead className="hidden sm:table-header-group sticky top-0 z-10">
                   <tr>
-                      <th className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider w-[40%]">Issue</th>
+                      <th className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider w-[25%]">Issue</th>
+                      <th className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider hidden md:table-cell w-[25%]">Description</th>
                       <th className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">Related Task</th>
                       <th className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">Assignee</th>
                       <th className="px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
@@ -174,7 +202,7 @@ const IssuesView: React.FC<IssuesViewProps> = ({
               <tbody>
                   {filteredIssues.length === 0 ? (
                       <tr>
-                          <td colSpan={5} className="px-6 py-16 text-center text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
+                          <td colSpan={6} className="px-6 py-16 text-center text-slate-400 dark:text-slate-500 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900">
                               <div className="flex flex-col items-center justify-center">
                                   <AlertTriangle size={32} className="mb-2 opacity-20" />
                                   <p>No issues found.</p>
@@ -186,11 +214,13 @@ const IssuesView: React.FC<IssuesViewProps> = ({
                           const relatedTask = tasks.find(t => t.id === issue.relatedTaskId);
                           const assignee = projectMembers.find(m => m.uid === issue.assigneeId);
                           const reporter = projectMembers.find(m => m.uid === issue.reporterId);
+                          const plainDescription = stripHtml(issue.description);
 
                           return (
                               <tr 
                                   key={issue.id} 
-                                  className={`${getStatusTheme(issue.status)} transition-all duration-200 shadow-sm group relative rounded-r-lg overflow-hidden`}
+                                  onClick={() => setViewingIssue(issue)}
+                                  className={`${getStatusTheme(issue.status)} transition-all duration-200 shadow-sm group relative rounded-r-lg overflow-hidden cursor-pointer`}
                               >
                                   <td className="px-4 py-3 first:rounded-l-sm last:rounded-r-lg sm:rounded-none sm:first:rounded-l-none sm:last:rounded-r-lg">
                                       <div className="flex items-start gap-3">
@@ -206,11 +236,17 @@ const IssuesView: React.FC<IssuesViewProps> = ({
                                           </div>
                                       </div>
                                   </td>
+                                  <td className="px-4 py-3 hidden md:table-cell align-middle">
+                                      <p className="truncate max-w-xs text-sm text-gray-500 dark:text-gray-400" title={plainDescription}>
+                                          {plainDescription || '-'}
+                                      </p>
+                                  </td>
                                   <td className="px-4 py-3 hidden sm:table-cell align-middle">
                                       {relatedTask ? (
                                           <button 
-                                            onClick={() => onTaskClick && onTaskClick(relatedTask)}
-                                            className="flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-300 hover:underline bg-white/50 dark:bg-black/20 px-2 py-1 rounded transition-colors max-w-full"
+                                            onClick={(e) => handleOpenRelatedTask(e, issue.relatedTaskId!)}
+                                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-100 hover:bg-indigo-100 hover:text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800 dark:hover:bg-indigo-900/50 transition-colors max-w-full"
+                                            title="View Task Details"
                                           >
                                               <LinkIcon size={12} className="shrink-0" />
                                               <span className="truncate max-w-[120px]">{relatedTask.title}</span>
@@ -234,7 +270,8 @@ const IssuesView: React.FC<IssuesViewProps> = ({
                                   <td className="px-4 py-3 hidden sm:table-cell align-middle">
                                       <select 
                                         value={issue.status}
-                                        onChange={(e) => handleStatusChange(issue.id, e.target.value as IssueStatus)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onChange={(e) => handleStatusChange(e, issue.id)}
                                         disabled={isReadOnly}
                                         className={`text-xs font-bold bg-white/50 dark:bg-black/20 border border-black/5 dark:border-white/10 rounded px-2 py-1 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer transition-colors ${
                                             issue.status === 'Resolved' ? 'text-emerald-700 dark:text-emerald-400' : issue.status === 'Open' ? 'text-red-700 dark:text-red-400' : 'text-slate-700 dark:text-slate-300'
@@ -250,14 +287,14 @@ const IssuesView: React.FC<IssuesViewProps> = ({
                                       {!isReadOnly && (
                                           <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                               <button 
-                                                onClick={() => { setEditingIssue(issue); setIsModalOpen(true); }}
+                                                onClick={(e) => { e.stopPropagation(); setEditingIssue(issue); setIsModalOpen(true); }}
                                                 className="p-1.5 text-gray-500 hover:text-indigo-600 hover:bg-white dark:hover:bg-black/30 rounded-lg transition-colors"
                                                 title="Edit"
                                               >
                                                   <Edit2 size={16} />
                                               </button>
                                               <button 
-                                                onClick={() => handleDelete(issue.id)}
+                                                onClick={(e) => { e.stopPropagation(); if(window.confirm('Delete issue?')) handleDelete(issue.id); }}
                                                 className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-white dark:hover:bg-black/30 rounded-lg transition-colors"
                                                 title="Delete"
                                               >
@@ -282,6 +319,19 @@ const IssuesView: React.FC<IssuesViewProps> = ({
         currentUserId={currentUserId}
         projectMembers={projectMembers}
         tasks={tasks}
+      />
+
+      {/* Read-Only Detail Preview Modal */}
+      <IssueDetailModal
+        isOpen={!!viewingIssue}
+        onClose={() => setViewingIssue(null)}
+        issue={viewingIssue}
+        onEdit={handleDetailEdit}
+        onDelete={(id) => handleDelete(id)}
+        onTaskClick={(task) => { setViewingIssue(null); if(onTaskClick) onTaskClick(task); }}
+        tasks={tasks}
+        projectMembers={projectMembers}
+        isReadOnly={isReadOnly}
       />
     </div>
   );
