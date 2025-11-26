@@ -20,7 +20,8 @@ import {
   List,
   Search,
   AlertCircle,
-  Flag
+  Flag,
+  PieChart
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
@@ -107,6 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'issues', label: 'Issues List', icon: AlertCircle, badge: openIssuesCount },
+    { id: 'time-reports', label: 'Time Reports', icon: PieChart },
   ];
 
   const handleNavClick = (tab: Tab) => {
@@ -298,7 +300,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                 const isActive = activeTab === item.id;
                 const Icon = item.icon;
                 
-                const isDisabled = !selectedProjectId && item.id !== 'dashboard';
+                // Allow Dashboard and Time Reports to be active without a selected project
+                const isDisabled = !selectedProjectId && item.id !== 'dashboard' && item.id !== 'time-reports';
                 
                 return (
                 <button
@@ -324,6 +327,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     
                     {isDesktopOpen && <span>{item.label}</span>}
                     
+                    {/* Badge for Issues */}
                     {item.badge && item.badge > 0 && (
                         isDesktopOpen ? (
                             <span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">

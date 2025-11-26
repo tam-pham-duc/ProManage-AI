@@ -24,6 +24,7 @@ import ImageGenerator from './components/ImageGenerator';
 import ActiveTimerBar from './components/ActiveTimerBar';
 import PageTransition from './components/PageTransition';
 import MilestonesView from './components/MilestonesView';
+import TimeReportsView from './components/TimeReportsView';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType, Issue } from './types';
@@ -52,7 +53,7 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
 ];
 
 // Views that are part of the Infinity Scroll Workspace
-const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen', 'milestones'];
+const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen', 'milestones', 'time-reports'];
 
 // Section Wrapper Component
 const Section: React.FC<{ id: string; children: React.ReactNode; className?: string }> = ({ id, children, className = "" }) => (
@@ -438,7 +439,7 @@ const App: React.FC = () => {
 
   // --- Scroll Logic (Programmatic Only) ---
   useEffect(() => {
-    if (selectedProjectId && scrollContainerRef.current) {
+    if (scrollContainerRef.current) {
         const section = document.getElementById(activeTab);
         if (section) {
             scrollContainerRef.current.scrollTo({
@@ -961,7 +962,7 @@ const App: React.FC = () => {
 
   // Determine Content to Render based on Navigation state
   const renderContent = () => {
-    if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'trash') {
+    if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'trash' && activeTab !== 'time-reports') {
          return <PageTransition key="hub-root" className="overflow-y-auto custom-scrollbar p-4 md:p-6"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
     }
 
@@ -1037,6 +1038,12 @@ const App: React.FC = () => {
                         isReadOnly={userRole === 'guest'}
                         onTaskClick={handleGlobalTaskSelect}
                     />
+                </div>
+            </Section>
+
+            <Section id="time-reports">
+                <div className="flex flex-col h-full min-h-[700px]">
+                    <TimeReportsView projectId={selectedProjectId} projects={projects} />
                 </div>
             </Section>
 
