@@ -448,6 +448,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
   // Subtask State
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('');
+  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
+  const [editingSubtaskText, setEditingSubtaskText] = useState('');
 
   // Discussion State
   const [comments, setComments] = useState<Comment[]>([]);
@@ -575,6 +577,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
       setManualNotes('');
       setEditNotes('');
       setEditingCommentId(null);
+      setEditingSubtaskId(null);
+      setEditingSubtaskText('');
     }
   }, [isOpen]);
 
@@ -700,6 +704,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
           setManualNotes('');
           setEditNotes('');
           setEditingCommentId(null);
+          setEditingSubtaskId(null);
+          setEditingSubtaskText('');
 
           prevTaskIdRef.current = task?.id;
           
@@ -721,6 +727,16 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const handleAddSubtask = (e?: React.FormEvent) => { e?.preventDefault(); if (isReadOnly || !newSubtaskTitle.trim()) return; setSubtasks([...subtasks, { id: Date.now().toString(), title: newSubtaskTitle, completed: false }]); setNewSubtaskTitle(''); };
   const handleDeleteSubtask = (id: string) => { if (isReadOnly) return; setSubtasks(subtasks.filter(st => st.id !== id)); };
   const handleToggleSubtask = (id: string) => { if (isReadOnly) return; setSubtasks(subtasks.map(st => st.id === id ? { ...st, completed: !st.completed } : st)); };
+  const startEditingSubtask = (subtask: Subtask) => { if (isReadOnly) return; setEditingSubtaskId(subtask.id); setEditingSubtaskText(subtask.title); };
+  const saveSubtaskEdit = () => {
+      if (editingSubtaskId && editingSubtaskText.trim()) {
+          setSubtasks(prev => prev.map(st =>
+              st.id === editingSubtaskId ? { ...st, title: editingSubtaskText.trim() } : st
+          ));
+      }
+      setEditingSubtaskId(null);
+      setEditingSubtaskText('');
+  };
   const handleAddAttachment = () => { if (isReadOnly || !newFileName.trim() || !newFileUrl.trim()) return; setAttachments([...attachments, { id: Date.now().toString(), fileName: newFileName, fileUrl: newFileUrl, uploadedAt: new Date().toLocaleString() }]); setNewFileName(''); setNewFileUrl(''); };
   const handleDeleteAttachment = (id: string) => { if (isReadOnly) return; setAttachments(attachments.filter(att => att.id !== id)); };
   const handleAddTag = (tag: Tag) => { if (isReadOnly) return; if (!tags.find(t => t.id === tag.id)) setTags([...tags, tag]); setTagInput(''); setShowTagDropdown(false); };
@@ -1055,8 +1071,8 @@ const TaskModal: React.FC<TaskModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 border border-slate-200 dark:border-slate-700 relative">
+    <div className="fixed inset-0 z-[100] flex items-start md:items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-0 md:p-4 overflow-y-auto">
+      <div className="bg-white dark:bg-slate-800 md:rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col h-full md:h-auto md:max-h-[90vh] transition-all duration-300 border border-slate-200 dark:border-slate-700 relative">
         
         {/* Edit Log Mini Modal Overlay */}
         {editingLog && (
@@ -1086,7 +1102,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
         )}
 
         {/* Header */}
-        <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/80 shrink-0 backdrop-blur-sm">
+        <div className="p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/80 dark:bg-slate-800/80 shrink-0 backdrop-blur-sm sticky top-0 z-10">
             <div className="flex items-center gap-4">
               <div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1098,7 +1114,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
               </div>
               
               {!task && !isReadOnly && taskTemplates.length > 0 && (
-                  <div className="relative ml-4">
+                  <div className="relative ml-4 hidden sm:block">
                       <button 
                         onClick={() => setShowTemplateMenu(!showTemplateMenu)}
                         className="flex items-center gap-1 text-xs font-bold bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors"
@@ -1129,7 +1145,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
 
               {task && !isReadOnly && (
                   <>
-                    <button onClick={() => isTracking ? stopTimer() : startTimer(task)} className={`ml-4 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-bold transition-all border ${isTracking ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200'}`}>
+                    <button onClick={() => isTracking ? stopTimer() : startTimer(task)} className={`ml-4 px-3 py-1.5 rounded-lg hidden sm:flex items-center gap-2 text-xs font-bold transition-all border ${isTracking ? 'bg-red-100 text-red-600 border-red-200 animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200'}`}>
                         {isTracking ? <Square size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" />}
                         {isTracking ? 'STOP' : 'START TIMER'}
                         {(isTracking || (totalTimeSeconds || 0) > 0) && (<span className="ml-1 opacity-80 font-mono">{formatDuration((totalTimeSeconds || 0) + (isTracking ? 0 : 0))}</span>)}
@@ -1138,7 +1154,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     <button 
                         onClick={handleSaveAsTemplate}
                         disabled={isSavingTemplate}
-                        className="ml-2 p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                        className="ml-2 p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors hidden sm:block"
                         title="Save as Template"
                     >
                         {isSavingTemplate ? <Loader2 size={18} className="animate-spin" /> : <LayoutTemplate size={18} />}
@@ -1341,7 +1357,15 @@ const TaskModal: React.FC<TaskModalProps> = ({
                  <div>
                   <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1"><TagIcon size={12} /> Tags</label>
                   <div className="flex flex-wrap gap-2 mb-2">
-                    {tags.map(tag => (<span key={tag.id} className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 ${tag.colorClass}`}>{tag.name}{!isReadOnly && <button type="button" onClick={() => handleRemoveTag(tag.id)} className="hover:bg-black/10 rounded-full p-0.5"><X size={12} /></button>}</span>))}
+                    {tags.map(tag => {
+                        const tagColor = tag.colorClass || 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-300';
+                        return (
+                            <span key={tag.id} className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 ${tagColor}`}>
+                                {tag.name}
+                                {!isReadOnly && <button type="button" onClick={() => handleRemoveTag(tag.id)} className="hover:bg-black/10 rounded-full p-0.5"><X size={12} /></button>}
+                            </span>
+                        )
+                    })}
                   </div>
                   {!isReadOnly && (
                       <div className="relative">
@@ -1362,7 +1386,43 @@ const TaskModal: React.FC<TaskModalProps> = ({
                   </div>
                   {subtasks.length > 0 && (<div className="w-full h-2 bg-slate-100 dark:bg-slate-700 rounded-full mb-4 overflow-hidden"><div className="h-full bg-indigo-500 transition-all duration-300 ease-out" style={{ width: `${subtasks.length > 0 ? Math.round((subtasks.filter(st => st.completed).length / subtasks.length) * 100) : 0}%` }} /></div>)}
                   <div className="space-y-2 mb-4">
-                    {subtasks.map((st) => (<div key={st.id} className="flex items-center gap-3 group p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-600"><button type="button" onClick={() => handleToggleSubtask(st.id)} disabled={isReadOnly} className={`flex-shrink-0 w-5 h-5 rounded border transition-all flex items-center justify-center ${st.completed ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400 bg-white dark:bg-slate-800'}`}>{st.completed && <CheckSquare size={14} />}</button><span className={`flex-1 text-sm font-medium transition-all ${st.completed ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`}>{st.title}</span>{!isReadOnly && <button type="button" onClick={() => handleDeleteSubtask(st.id)} className="text-slate-400 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all p-1"><Trash2 size={16} /></button>}</div>))}
+                    {subtasks.map((st) => (
+                        <div key={st.id} className="flex items-center gap-3 group p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors border border-transparent hover:border-slate-100 dark:hover:border-slate-600">
+                            <button type="button" onClick={() => handleToggleSubtask(st.id)} disabled={isReadOnly} className={`flex-shrink-0 w-5 h-5 rounded border transition-all flex items-center justify-center ${st.completed ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400 bg-white dark:bg-slate-800'}`}>
+                                {st.completed && <CheckSquare size={14} />}
+                            </button>
+                            
+                            {editingSubtaskId === st.id ? (
+                                <input 
+                                    autoFocus
+                                    type="text" 
+                                    value={editingSubtaskText} 
+                                    onChange={(e) => setEditingSubtaskText(e.target.value)}
+                                    onBlur={saveSubtaskEdit}
+                                    onKeyDown={(e) => e.key === 'Enter' && saveSubtaskEdit()}
+                                    className="flex-1 text-sm font-medium bg-white dark:bg-slate-900 border border-indigo-500 rounded px-2 py-1 outline-none text-slate-900 dark:text-white"
+                                />
+                            ) : (
+                                <span 
+                                    className={`flex-1 text-sm font-medium transition-all cursor-text ${st.completed ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-700 dark:text-slate-200'}`} 
+                                    onDoubleClick={() => !isReadOnly && startEditingSubtask(st)}
+                                >
+                                    {st.title}
+                                </span>
+                            )}
+
+                            {!isReadOnly && (
+                                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all">
+                                    <button type="button" onClick={() => startEditingSubtask(st)} className="text-slate-400 dark:text-slate-500 hover:text-indigo-600 p-1 mr-1">
+                                        <Pencil size={14} />
+                                    </button>
+                                    <button type="button" onClick={() => handleDeleteSubtask(st.id)} className="text-slate-400 dark:text-slate-600 hover:text-red-500 p-1">
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ))}
                   </div>
                   {!isReadOnly && (<div className="flex gap-2"><input type="text" value={newSubtaskTitle} onChange={(e) => setNewSubtaskTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddSubtask())} className={inputBaseClass} placeholder="Add an item..." /><button type="button" onClick={handleAddSubtask} disabled={!newSubtaskTitle.trim()} className="px-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl transition-colors disabled:opacity-50"><Plus size={20} /></button></div>)}
                 </div>
@@ -1643,7 +1703,7 @@ const TaskModal: React.FC<TaskModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 shrink-0 backdrop-blur-sm flex justify-between items-center">
+        <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 shrink-0 backdrop-blur-sm flex justify-between items-center sticky bottom-0 z-10">
             <div>
                 {!isReadOnly && canDelete && onDelete && task && (
                     <button 

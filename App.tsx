@@ -41,17 +41,69 @@ const SIDEBAR_KEY = 'promanage_sidebar_open';
 const SNOOZE_KEY = 'app_snooze_until';
 const SUPER_ADMIN_EMAIL = 'admin@dev.com';
 
-const TAG_COLORS = [
-  'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
-  'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300',
-  'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
-  'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-  'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300',
-  'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
-  'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300',
-  'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
-  'bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300',
-  'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300',
+// 50-Color Preset Palette for Tags
+const TAG_PALETTE = [
+  // Reds & Roses
+  { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-800 dark:text-red-300' },
+  { bg: 'bg-red-200 dark:bg-red-900/40', text: 'text-red-900 dark:text-red-200' },
+  { bg: 'bg-rose-100 dark:bg-rose-900/30', text: 'text-rose-800 dark:text-rose-300' },
+  { bg: 'bg-rose-200 dark:bg-rose-900/40', text: 'text-rose-900 dark:text-rose-200' },
+  { bg: 'bg-red-50 dark:bg-red-900/20', text: 'text-red-600 dark:text-red-200' },
+  // Oranges & Ambers
+  { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-800 dark:text-orange-300' },
+  { bg: 'bg-orange-200 dark:bg-orange-900/40', text: 'text-orange-900 dark:text-orange-200' },
+  { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-800 dark:text-amber-300' },
+  { bg: 'bg-amber-200 dark:bg-amber-900/40', text: 'text-amber-900 dark:text-amber-200' },
+  { bg: 'bg-orange-50 dark:bg-orange-900/20', text: 'text-orange-600 dark:text-orange-200' },
+  // Yellows
+  { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-800 dark:text-yellow-300' },
+  { bg: 'bg-yellow-200 dark:bg-yellow-900/40', text: 'text-yellow-900 dark:text-yellow-200' },
+  // Limes
+  { bg: 'bg-lime-100 dark:bg-lime-900/30', text: 'text-lime-800 dark:text-lime-300' },
+  { bg: 'bg-lime-200 dark:bg-lime-900/40', text: 'text-lime-900 dark:text-lime-200' },
+  // Greens & Emeralds
+  { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-800 dark:text-green-300' },
+  { bg: 'bg-green-200 dark:bg-green-900/40', text: 'text-green-900 dark:text-green-200' },
+  { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-800 dark:text-emerald-300' },
+  { bg: 'bg-emerald-200 dark:bg-emerald-900/40', text: 'text-emerald-900 dark:text-emerald-200' },
+  { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-600 dark:text-green-200' },
+  // Teals & Cyans
+  { bg: 'bg-teal-100 dark:bg-teal-900/30', text: 'text-teal-800 dark:text-teal-300' },
+  { bg: 'bg-teal-200 dark:bg-teal-900/40', text: 'text-teal-900 dark:text-teal-200' },
+  { bg: 'bg-cyan-100 dark:bg-cyan-900/30', text: 'text-cyan-800 dark:text-cyan-300' },
+  { bg: 'bg-cyan-200 dark:bg-cyan-900/40', text: 'text-cyan-900 dark:text-cyan-200' },
+  { bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-600 dark:text-teal-200' },
+  // Skies & Blues
+  { bg: 'bg-sky-100 dark:bg-sky-900/30', text: 'text-sky-800 dark:text-sky-300' },
+  { bg: 'bg-sky-200 dark:bg-sky-900/40', text: 'text-sky-900 dark:text-sky-200' },
+  { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-800 dark:text-blue-300' },
+  { bg: 'bg-blue-200 dark:bg-blue-900/40', text: 'text-blue-900 dark:text-blue-200' },
+  { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-600 dark:text-blue-200' },
+  // Indigos
+  { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-800 dark:text-indigo-300' },
+  { bg: 'bg-indigo-200 dark:bg-indigo-900/40', text: 'text-indigo-900 dark:text-indigo-200' },
+  // Violets & Purples
+  { bg: 'bg-violet-100 dark:bg-violet-900/30', text: 'text-violet-800 dark:text-violet-300' },
+  { bg: 'bg-violet-200 dark:bg-violet-900/40', text: 'text-violet-900 dark:text-violet-200' },
+  { bg: 'bg-purple-100 dark:bg-purple-900/30', text: 'text-purple-800 dark:text-purple-300' },
+  { bg: 'bg-purple-200 dark:bg-purple-900/40', text: 'text-purple-900 dark:text-purple-200' },
+  { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-600 dark:text-purple-200' },
+  // Fuchsias & Pinks
+  { bg: 'bg-fuchsia-100 dark:bg-fuchsia-900/30', text: 'text-fuchsia-800 dark:text-fuchsia-300' },
+  { bg: 'bg-fuchsia-200 dark:bg-fuchsia-900/40', text: 'text-fuchsia-900 dark:text-fuchsia-200' },
+  { bg: 'bg-pink-100 dark:bg-pink-900/30', text: 'text-pink-800 dark:text-pink-300' },
+  { bg: 'bg-pink-200 dark:bg-pink-900/40', text: 'text-pink-900 dark:text-pink-200' },
+  // Neutrals (Slates, Grays, Zincs, Stones)
+  { bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-700 dark:text-slate-300' },
+  { bg: 'bg-slate-200 dark:bg-slate-700', text: 'text-slate-800 dark:text-slate-200' },
+  { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-700 dark:text-gray-300' },
+  { bg: 'bg-gray-200 dark:bg-gray-700', text: 'text-gray-800 dark:text-gray-200' },
+  { bg: 'bg-zinc-100 dark:bg-zinc-800', text: 'text-zinc-700 dark:text-zinc-300' },
+  { bg: 'bg-zinc-200 dark:bg-zinc-700', text: 'text-zinc-800 dark:text-zinc-200' },
+  { bg: 'bg-neutral-100 dark:bg-neutral-800', text: 'text-neutral-700 dark:text-neutral-300' },
+  { bg: 'bg-neutral-200 dark:bg-neutral-700', text: 'text-neutral-800 dark:text-neutral-200' },
+  { bg: 'bg-stone-100 dark:bg-stone-800', text: 'text-stone-700 dark:text-stone-300' },
+  { bg: 'bg-stone-200 dark:bg-stone-700', text: 'text-stone-800 dark:text-stone-200' }
 ];
 
 const DEFAULT_COLUMNS: KanbanColumn[] = [
@@ -944,7 +996,10 @@ const App: React.FC = () => {
   };
 
   const handleCreateTag = (name: string) => {
-      const newTag = { id: Date.now().toString(), name, colorClass: TAG_COLORS[0] };
+      const colorObj = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
+      // Combine bg and text for storage
+      const colorClass = `${colorObj.bg} ${colorObj.text}`;
+      const newTag = { id: Date.now().toString(), name, colorClass };
       setAvailableTags([...availableTags, newTag]);
       return newTag;
   };
