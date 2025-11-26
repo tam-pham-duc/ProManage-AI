@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
-import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown, ListChecks, MoreVertical, Activity } from 'lucide-react';
+import { X, Calendar, User, AlertCircle, CheckSquare, Trash2, Plus, MessageSquare, Send, Paperclip, Link as LinkIcon, ExternalLink, Tag as TagIcon, FileText, DollarSign, AtSign, Bell, Lock, Check, Clock, GitBranch, ArrowDown, Zap, Unlock, Palmtree, CheckCircle2, Play, Square, History, Pencil, Save as SaveIcon, MoveRight, UserPlus, AlertTriangle, AlertOctagon, Smile, ArrowRight, Ban, LayoutTemplate, Loader2, Download, ChevronDown, ListChecks, MoreVertical, Activity, Bold, Italic, Underline, Strikethrough, Palette, Highlighter } from 'lucide-react';
 import { Task, TaskStatus, TaskPriority, Subtask, Comment, ActivityLog, Attachment, Tag, KanbanColumn, ProjectMember, TimeLog } from '../types';
 import RichTextEditor from './RichTextEditor';
 import { useTimeTracking } from '../context/TimeTrackingContext';
@@ -63,7 +63,7 @@ const formatMessageTime = (timestampStr: string) => {
     }
 };
 
-// --- Shared Smart Connector Component (Copied Concept from ProjectMapView for consistency) ---
+// --- Shared Smart Connector Component ---
 const SmartConnector: React.FC<{ 
     startX: number; startY: number; endX: number; endY: number; 
     isBlocked: boolean; isHighlighted: boolean; isDimmed: boolean; 
@@ -456,11 +456,14 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const [editingCommentText, setEditingCommentText] = useState('');
   const [hoveredCommentId, setHoveredCommentId] = useState<string | null>(null);
   
+  // Chat Input Rich Text Refs
+  const chatInputRef = useRef<HTMLDivElement>(null);
+
   // Mention State
   const [showMentionList, setShowMentionList] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionHighlightIndex, setMentionHighlightIndex] = useState(0);
-  const commentInputRef = useRef<HTMLTextAreaElement>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null); // Deprecated for chat, used in fallback
 
   // Attachment State
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -697,6 +700,11 @@ const TaskModal: React.FC<TaskModalProps> = ({
           setEditingCommentId(null);
 
           prevTaskIdRef.current = task?.id;
+          
+          // Clean Chat Input on Switch
+          if (chatInputRef.current) {
+              chatInputRef.current.innerHTML = '';
+          }
       }
     }
   }, [isOpen, task, columns, projectMembers, initialDate]);
@@ -718,15 +726,29 @@ const TaskModal: React.FC<TaskModalProps> = ({
   const handleRemoveTag = (tagId: string) => { if (isReadOnly) return; setTags(tags.filter(t => t.id !== tagId)); };
   const handleToggleDependency = (depTaskId: string) => { if (isReadOnly) return; if (dependencies.includes(depTaskId)) { setDependencies(prev => prev.filter(id => id !== depTaskId)); } else { setDependencies(prev => [...prev, depTaskId]); } };
   
+  // --- Rich Text Chat Handler ---
+  const execChatCmd = (command: string, value: string | undefined = undefined) => {
+      document.execCommand(command, false, value);
+      // Keep focus
+      chatInputRef.current?.focus();
+  };
+
+  const handleChatPaste = (e: React.ClipboardEvent) => {
+      e.preventDefault();
+      const text = e.clipboardData.getData('text/plain');
+      document.execCommand('insertText', false, text);
+  };
+
   const handleSendComment = async () => { 
-    if (!newComment.trim()) return; 
-    if (isReadOnly) return; 
+    if (isReadOnly) return;
+    const content = chatInputRef.current?.innerHTML || '';
+    if (!content.trim() || content === '<br>') return;
     
     const comment: Comment = { 
         id: Date.now().toString(), 
         user: currentUser, // this is username string
         userId: currentUserId, // Added userId for deletion check
-        text: newComment, 
+        text: content, 
         timestamp: new Date().toISOString() 
     };
     
@@ -740,14 +762,24 @@ const TaskModal: React.FC<TaskModalProps> = ({
                 comments: arrayUnion(comment)
             });
             
-            if (onTaskComment) onTaskComment(task.id, newComment);
+            if (onTaskComment) onTaskComment(task.id, content);
         } catch(e) {
             console.error("Failed to save comment", e);
         }
     }
     
-    setNewComment(''); 
+    // Clear Input
+    if (chatInputRef.current) {
+        chatInputRef.current.innerHTML = '';
+    }
     setShowMentionList(false); 
+  };
+
+  const handleChatKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSendComment();
+      }
   };
 
   const canManageComment = (comment: Comment) => {
@@ -942,46 +974,6 @@ const TaskModal: React.FC<TaskModalProps> = ({
         notify('error', 'Failed to add time log');
         // Revert
         if (task.timeLogs) setTimeLogs(task.timeLogs);
-    }
-  };
-
-  const handleCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    if (isReadOnly) return;
-    const val = e.target.value;
-    setNewComment(val);
-    e.target.style.height = 'auto';
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-    const cursorPos = e.target.selectionStart;
-    const textBefore = val.slice(0, cursorPos);
-    const match = textBefore.match(/(?:^|\s)@(\w*)$/);
-    if (match) { setMentionQuery(match[1]); setShowMentionList(true); setMentionHighlightIndex(0); } else { setShowMentionList(false); }
-  };
-
-  const handleInsertMention = (memberName: string) => {
-    if (!commentInputRef.current) return;
-    const cursorPos = commentInputRef.current.selectionStart;
-    const textBefore = newComment.slice(0, cursorPos);
-    const textAfter = newComment.slice(cursorPos);
-    const match = textBefore.match(/(?:^|\s)@(\w*)$/);
-    if (match) {
-        const matchIndex = match.index! + (match[0].startsWith(' ') ? 1 : 0);
-        const prefix = newComment.slice(0, matchIndex);
-        const mentionTag = `@${memberName} `; 
-        const newText = prefix + mentionTag + textAfter;
-        setNewComment(newText);
-        setTimeout(() => { if (commentInputRef.current) { commentInputRef.current.focus(); const newCursorPos = prefix.length + mentionTag.length; commentInputRef.current.setSelectionRange(newCursorPos, newCursorPos); } }, 0);
-    } else { setNewComment(prev => prev + `@${memberName} `); }
-    setShowMentionList(false);
-    setMentionQuery('');
-  };
-
-  const handleCommentKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !showMentionList) { e.preventDefault(); handleSendComment(); return; }
-    if (showMentionList && filteredMembers.length > 0) {
-        if (e.key === 'ArrowDown') { e.preventDefault(); setMentionHighlightIndex(prev => (prev + 1) % filteredMembers.length); }
-        else if (e.key === 'ArrowUp') { e.preventDefault(); setMentionHighlightIndex(prev => (prev - 1 + filteredMembers.length) % filteredMembers.length); }
-        else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); handleInsertMention(filteredMembers[mentionHighlightIndex].displayName); }
-        else if (e.key === 'Escape') { e.preventDefault(); setShowMentionList(false); }
     }
   };
 
@@ -1433,7 +1425,10 @@ const TaskModal: React.FC<TaskModalProps> = ({
                                                     </div>
                                                 ) : (
                                                     <>
-                                                        <div className="whitespace-pre-wrap leading-relaxed">{comment.text}</div>
+                                                        <div 
+                                                            className="whitespace-pre-wrap leading-relaxed rich-text-content"
+                                                            dangerouslySetInnerHTML={{ __html: comment.text }}
+                                                        />
                                                         <div className={`text-[9px] mt-1 text-right opacity-70 font-medium`}>
                                                             {formatMessageTime(comment.timestamp)}
                                                         </div>
@@ -1469,49 +1464,39 @@ const TaskModal: React.FC<TaskModalProps> = ({
                     </div>
                     
                     {!isReadOnly && (
-                        <div className="relative pt-4 border-t border-slate-100 dark:border-slate-700">
-                            {showMentionList && filteredMembers.length > 0 && (
-                                <div className="absolute bottom-full left-0 mb-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-40 overflow-y-auto z-50">
-                                    {filteredMembers.map((m, i) => (
-                                        <button
-                                            key={m.uid || i}
-                                            onMouseDown={(e) => { e.preventDefault(); handleInsertMention(m.displayName); }}
-                                            className={`w-full text-left px-4 py-2 text-sm flex items-center gap-2 ${i === mentionHighlightIndex ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700'}`}
-                                        >
-                                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${m.avatar ? '' : getAvatarColor(m.displayName)}`}>
-                                                {m.avatar ? <img src={m.avatar} className="w-full h-full object-cover rounded-full" /> : getAvatarInitials(m.displayName)}
-                                            </div>
-                                            {m.displayName}
-                                        </button>
-                                    ))}
+                        <div className="relative pt-2 border-t border-slate-100 dark:border-slate-700">
+                            {/* New Rich Text Chat Input */}
+                            <div className="border border-slate-300 dark:border-slate-600 rounded-xl overflow-hidden bg-white dark:bg-slate-800 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent">
+                                {/* Mini Toolbar */}
+                                <div className="flex gap-1 p-1.5 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700">
+                                    <button type="button" onMouseDown={(e) => { e.preventDefault(); execChatCmd('bold'); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400" title="Bold"><Bold size={14} /></button>
+                                    <button type="button" onMouseDown={(e) => { e.preventDefault(); execChatCmd('italic'); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400" title="Italic"><Italic size={14} /></button>
+                                    <button type="button" onMouseDown={(e) => { e.preventDefault(); execChatCmd('underline'); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400" title="Underline"><Underline size={14} /></button>
+                                    <button type="button" onMouseDown={(e) => { e.preventDefault(); execChatCmd('strikeThrough'); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400" title="Strike"><Strikethrough size={14} /></button>
+                                    <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1 self-center"></div>
+                                    <button type="button" onMouseDown={(e) => { e.preventDefault(); execChatCmd('foreColor', '#EF4444'); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-red-500 font-bold" title="Red Text">A</button>
+                                    <button type="button" onMouseDown={(e) => { e.preventDefault(); execChatCmd('foreColor', '#3B82F6'); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-blue-500 font-bold" title="Blue Text">A</button>
+                                    <button type="button" onMouseDown={(e) => { e.preventDefault(); execChatCmd('hiliteColor', '#FEF08A'); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded text-slate-500 dark:text-slate-400" title="Highlight"><Highlighter size={14} /></button>
                                 </div>
-                            )}
-                            <div className="flex gap-2 items-end bg-slate-50 dark:bg-slate-900 p-2 rounded-xl border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-500 transition-all shadow-sm">
-                                <textarea 
-                                    ref={commentInputRef}
-                                    value={newComment}
-                                    onChange={handleCommentChange}
-                                    onKeyDown={handleCommentKeyDown}
-                                    placeholder="Type a message... Use @ to mention"
-                                    className="flex-1 bg-transparent border-none outline-none text-sm text-slate-900 dark:text-white resize-none max-h-32 min-h-[40px] py-2 px-1 custom-scrollbar placeholder-slate-400"
-                                    rows={1}
-                                />
-                                <div className="flex flex-col gap-1 pb-1">
-                                    <button 
-                                        type="button" 
-                                        onClick={() => handleInsertMention('')} 
-                                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                                        title="Mention someone"
-                                    >
-                                        <AtSign size={16} />
-                                    </button>
+                                
+                                {/* Content Editable Area */}
+                                <div className="relative">
+                                    <div 
+                                        ref={chatInputRef}
+                                        contentEditable
+                                        onPaste={handleChatPaste}
+                                        onKeyDown={handleChatKeyDown}
+                                        className="w-full p-3 outline-none min-h-[60px] max-h-[150px] overflow-y-auto text-sm text-slate-800 dark:text-slate-200 empty:before:content-[attr(placeholder)] empty:before:text-slate-400 empty:before:pointer-events-none"
+                                        placeholder="Type a message... (Shift+Enter for new line)"
+                                    />
+                                    
+                                    {/* Send Button (Floating) */}
                                     <button 
                                         type="button"
                                         onClick={handleSendComment}
-                                        disabled={!newComment.trim()}
-                                        className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
+                                        className="absolute bottom-2 right-2 p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all active:scale-95 flex items-center justify-center z-10"
                                     >
-                                        <Send size={16} />
+                                        <Send size={14} />
                                     </button>
                                 </div>
                             </div>
