@@ -160,10 +160,10 @@ export interface ProjectDocument {
   name: string;
   content?: string; // For Wiki (HTML)
   url?: string; // For File
-  isPinned: boolean;
+  isPinned?: boolean;
   createdBy: string;
   createdAt: any; // Timestamp
-  updatedAt: any;
+  updatedAt?: any;
 }
 
 export interface KanbanColumn {
