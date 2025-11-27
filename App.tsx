@@ -26,6 +26,7 @@ import PageTransition from './components/PageTransition';
 import MilestonesView from './components/MilestonesView';
 import TimeReportsView from './components/TimeReportsView';
 import DocumentsView from './components/DocumentsView';
+import GuestView from './components/GuestView';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType, Issue } from './types';
@@ -86,6 +87,15 @@ const normalizeTaskData = (task: Partial<Task>): Partial<Task> => {
 };
 
 const App: React.FC = () => {
+  // --- Guest Access Check ---
+  const urlParams = new URLSearchParams(window.location.search);
+  const guestToken = urlParams.get('guest');
+
+  // If guest token exists, bypass standard app logic and render GuestView
+  if (guestToken) {
+      return <GuestView token={guestToken} />;
+  }
+
   const { notify } = useNotification();
   
   // --- Auth State ---
@@ -585,6 +595,10 @@ const App: React.FC = () => {
           if (projectData.members) {
               updatePayload.members = projectData.members;
               updatePayload.memberUIDs = projectData.members.map(m => m.uid).filter((uid): uid is string => uid !== null);
+          }
+          // Handle Share Config Update (from ProjectModal)
+          if (projectData.shareConfig) {
+              updatePayload.shareConfig = projectData.shareConfig;
           }
 
           await updateDoc(projectRef, updatePayload);

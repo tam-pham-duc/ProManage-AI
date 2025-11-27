@@ -181,6 +181,15 @@ export interface ProjectMember {
   status?: 'active' | 'pending';
 }
 
+export interface ShareConfig {
+  isEnabled: boolean;
+  token: string;
+  showTimeline: boolean;
+  showFinancials: boolean;
+  showMilestones: boolean;
+  updatedAt: any;
+}
+
 export interface Project {
   id: string;
   ownerId: string;
@@ -193,6 +202,7 @@ export interface Project {
   memberUIDs?: string[];
   isDeleted?: boolean;
   deletedAt?: string;
+  shareConfig?: ShareConfig;
 }
 
 export interface Template {

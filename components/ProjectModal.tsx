@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Briefcase, User, MapPin, Plus, Trash2, Shield, Mail, Loader2, Clock, Ban, Save, ChevronDown, ArrowRight, ArrowLeft, Check, LayoutTemplate } from 'lucide-react';
+import { X, Briefcase, User, MapPin, Plus, Trash2, Shield, Mail, Loader2, Clock, Ban, Save, ChevronDown, ArrowRight, ArrowLeft, Check, LayoutTemplate, Share2, Globe, Copy, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Project, ProjectMember, ProjectRole } from '../types';
 import { db } from '../firebase';
-import { collection, query, where, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import { saveProjectAsTemplate, getTemplates } from '../services/templateService';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
@@ -29,7 +29,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
   const [currentStep, setCurrentStep] = useState(1);
   
   // Tab State (Editing)
-  const [activeTab, setActiveTab] = useState<'details' | 'members'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'members' | 'sharing'>('details');
   
   // Form Data
   const [name, setName] = useState('');
@@ -44,6 +44,13 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
   const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   
+  // Sharing State
+  const [shareEnabled, setShareEnabled] = useState(false);
+  const [shareToken, setShareToken] = useState('');
+  const [shareShowTimeline, setShareShowTimeline] = useState(true);
+  const [shareShowFinancials, setShareShowFinancials] = useState(false);
+  const [shareShowMilestones, setShareShowMilestones] = useState(true);
+
   // Save State
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -69,11 +76,35 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
         setClientName(project.clientName);
         setAddress(project.address);
         setLocalMembers(project.members || []);
+        
+        // Load Share Config
+        if (project.shareConfig) {
+            setShareEnabled(project.shareConfig.isEnabled);
+            setShareToken(project.shareConfig.token);
+            setShareShowTimeline(project.shareConfig.showTimeline);
+            setShareShowFinancials(project.shareConfig.showFinancials);
+            setShareShowMilestones(project.shareConfig.showMilestones);
+        } else {
+            // Default sharing settings for existing projects without config
+            setShareEnabled(false);
+            setShareToken(Math.random().toString(36).substring(2) + Date.now().toString(36));
+            setShareShowTimeline(true);
+            setShareShowFinancials(false);
+            setShareShowMilestones(true);
+        }
       } else {
         // CREATE MODE: Reset Data
         setName('');
         setClientName('');
         setAddress('');
+        
+        // Default sharing settings for new projects
+        setShareEnabled(false);
+        setShareToken(Math.random().toString(36).substring(2) + Date.now().toString(36));
+        setShareShowTimeline(true);
+        setShareShowFinancials(false);
+        setShareShowMilestones(true);
+
         // Fetch templates
         getTemplates('project').then(templates => {
             if (isMounted.current) setAvailableTemplates(templates);
@@ -181,6 +212,19 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
       setLocalMembers(prev => prev.map(m => m.email === email ? { ...m, role: newRole } : m));
   };
 
+  const handleRegenerateToken = () => {
+      if (window.confirm("This will invalidate the existing link. Continue?")) {
+          setShareToken(Math.random().toString(36).substring(2) + Date.now().toString(36));
+      }
+  };
+
+  const handleCopyLink = () => {
+      const url = `${window.location.origin}?guest=${shareToken}`;
+      navigator.clipboard.writeText(url).then(() => {
+          notify('success', 'Link copied to clipboard');
+      });
+  };
+
   // Wizard Navigation
   const handleNextStep = () => {
       if (!name.trim()) {
@@ -208,7 +252,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
     try {
         const memberUIDs = localMembers.map(m => m.uid).filter((uid): uid is string => uid !== null);
         
-        const projectPayload = {
+        const projectPayload: any = {
           name,
           clientName: clientName || 'Internal',
           address: address || 'Remote',
@@ -216,9 +260,19 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
           memberUIDs
         };
 
-        if (project) {
+        if (isEditMode) {
+            // Add share config only in edit mode
+            projectPayload.shareConfig = {
+                isEnabled: shareEnabled,
+                token: shareToken,
+                showTimeline: shareShowTimeline,
+                showFinancials: shareShowFinancials,
+                showMilestones: shareShowMilestones,
+                updatedAt: serverTimestamp()
+            };
+
             // Edit Existing
-            const projectRef = doc(db, 'projects', project.id);
+            const projectRef = doc(db, 'projects', project!.id);
             await updateDoc(projectRef, projectPayload);
             notify('success', "Project updated successfully.");
             setTimeout(() => {
@@ -443,6 +497,94 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
     </div>
   );
 
+  const renderSharingFields = () => (
+    <div className="space-y-6">
+        <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div>
+                <h3 className="font-bold text-slate-900 dark:text-white">Public Guest Link</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Allow external read-only access via unique link.</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" className="sr-only peer" checked={shareEnabled} onChange={(e) => setShareEnabled(e.target.checked)} />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+            </label>
+        </div>
+
+        {shareEnabled && (
+            <div className="space-y-6 animate-fade-in">
+                <div>
+                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase mb-2">Share Link</label>
+                    <div className="flex gap-2">
+                        <div className="flex-1 relative">
+                            <input 
+                                type="text" 
+                                readOnly 
+                                value={`${window.location.origin}?guest=${shareToken}`}
+                                className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-600 dark:text-slate-300 font-mono outline-none"
+                            />
+                        </div>
+                        <button 
+                            type="button"
+                            onClick={handleCopyLink}
+                            className="p-2.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-lg hover:bg-indigo-100 transition-colors"
+                            title="Copy Link"
+                        >
+                            <Copy size={18} />
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={handleRegenerateToken}
+                            className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg transition-colors"
+                            title="Regenerate Token"
+                        >
+                            <RefreshCw size={18} />
+                        </button>
+                    </div>
+                    <p className="text-[10px] text-orange-500 mt-2 flex items-center gap-1">
+                        <AlertTriangle size={10} /> Warning: Regenerating the token will invalidate any existing shared links.
+                    </p>
+                </div>
+
+                <div className="p-4 border border-slate-200 dark:border-slate-700 rounded-xl">
+                    <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Guest Permissions</h4>
+                    <div className="space-y-3">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                checked={shareShowTimeline} 
+                                onChange={(e) => setShareShowTimeline(e.target.checked)}
+                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Show Timeline & Gantt</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                checked={shareShowMilestones} 
+                                onChange={(e) => setShareShowMilestones(e.target.checked)}
+                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                            />
+                            <span className="text-sm text-slate-700 dark:text-slate-300">Show Milestones</span>
+                        </label>
+                        <label className="flex items-center gap-3 cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                checked={shareShowFinancials} 
+                                onChange={(e) => setShareShowFinancials(e.target.checked)}
+                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                            />
+                            <div className="flex flex-col">
+                                <span className="text-sm text-slate-700 dark:text-slate-300">Show Financials & Budget</span>
+                                <span className="text-[10px] text-slate-400">Includes estimated costs, actual costs, and variance.</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        )}
+    </div>
+  );
+
   // --- Main Render ---
 
   return (
@@ -475,13 +617,18 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
 
         {/* EDIT MODE: Tabs */}
         {isEditMode && (
-            <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6 shrink-0">
-                <button onClick={() => setActiveTab('details')} className={`py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
+            <div className="flex border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 px-6 gap-6 shrink-0 overflow-x-auto">
+                <button onClick={() => setActiveTab('details')} className={`py-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${activeTab === 'details' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
                     Details
                 </button>
-                <button onClick={() => setActiveTab('members')} className={`py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'members' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
+                <button onClick={() => setActiveTab('members')} className={`py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'members' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
                     Members <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full text-xs text-slate-700 dark:text-slate-300">{localMembers.length}</span>
                 </button>
+                {canManageRoles && (
+                    <button onClick={() => setActiveTab('sharing')} className={`py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${activeTab === 'sharing' ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}>
+                        Sharing
+                    </button>
+                )}
             </div>
         )}
 
@@ -492,6 +639,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({ isOpen, onClose, onSubmit, 
                  <form id="projectForm" onSubmit={handleSave} className="h-full">
                      {activeTab === 'details' && renderDetailsFields()}
                      {activeTab === 'members' && renderMembersFields()}
+                     {activeTab === 'sharing' && renderSharingFields()}
                  </form>
              ) : (
                  // Wizard Mode Layout

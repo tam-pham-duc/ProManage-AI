@@ -7,6 +7,7 @@ import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
 interface TimelineProps {
   tasks: Task[];
   onTaskClick?: (task: Task) => void;
+  isReadOnly?: boolean;
 }
 
 type ViewMode = 'Day' | 'Week' | 'Month';
@@ -67,14 +68,15 @@ interface TimelineTaskCardProps {
   priority: string;
   hasDependencies?: boolean;
   onClick?: (task: Task) => void;
+  isReadOnly?: boolean;
 }
 
 const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({ 
-    task, left, width, top, isOverdue, isDueToday, status, priority, hasDependencies, onClick 
+    task, left, width, top, isOverdue, isDueToday, status, priority, hasDependencies, onClick, isReadOnly 
 }) => {
   
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if ((e.key === 'Enter' || e.key === ' ') && !isReadOnly) {
       e.preventDefault();
       e.stopPropagation();
       if (onClick) onClick(task);
@@ -108,17 +110,18 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
   return (
     <div
       role="button"
-      tabIndex={0}
+      tabIndex={isReadOnly ? -1 : 0}
       aria-label={ariaLabel}
       title={`${task.title} (${status})`}
       onKeyDown={handleKeyDown}
       onClick={(e) => {
         e.stopPropagation();
-        if (onClick) onClick(task);
+        if (onClick && !isReadOnly) onClick(task);
       }}
       className={`
-          absolute h-8 rounded-md border flex items-center text-sm font-bold cursor-pointer hover:brightness-95 hover:scale-[1.01] transition-all shadow-sm group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800 overflow-hidden
+          absolute h-8 rounded-md border flex items-center text-sm font-bold hover:brightness-95 hover:scale-[1.01] transition-all shadow-sm group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800 overflow-hidden
           ${bgClass}
+          ${isReadOnly ? 'cursor-default' : 'cursor-pointer'}
       `}
       style={{
           left: `${left}px`,
@@ -165,14 +168,14 @@ interface TimelineRowProps {
   nowTs: number;
   todayDateString: string;
   onTaskClick?: (task: Task) => void;
+  isReadOnly?: boolean;
 }
 
-const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineStartTimestamp, windowEndTimestamp, pixelsPerDay, nowTs, todayDateString, onTaskClick }) => {
+const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineStartTimestamp, windowEndTimestamp, pixelsPerDay, nowTs, todayDateString, onTaskClick, isReadOnly }) => {
   
   // Helper to calculate positioning numbers (returns primitives)
   const getTaskCoords = (task: ProcessedTask, laneIdx: number) => {
       // Normalize to midnight local time to align with grid headers
-      // This prevents tasks from bleeding into the next day due to hour differences
       const startDay = new Date(task.startTs);
       startDay.setHours(0, 0, 0, 0);
       
@@ -209,7 +212,6 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
     <div className="flex border-b border-slate-100 dark:border-slate-700/50 relative z-10 group/row" role="row">
         {/* Sticky Left Column: Assignee Info */}
         {/* z-40 ensures it sits above the tasks (z-10/z-20/z-30) within this row context */}
-        {/* Solid background required to cover tasks sliding underneath */}
         <div 
             className="sticky left-0 z-40 w-64 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 p-4 flex items-center gap-3 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.05)] transition-colors focus:outline-none" 
             role="rowheader"
@@ -259,6 +261,7 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
                           priority={task.priority}
                           hasDependencies={hasDependencies}
                           onClick={onTaskClick} 
+                          isReadOnly={isReadOnly}
                         />
                     );
                 })
@@ -269,7 +272,7 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
 });
 
 
-const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
+const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick, isReadOnly }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('Day');
   
   // Initialize start date to Today (start of day)
@@ -657,6 +660,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
                       onTaskClick={onTaskClick}
                       nowTs={nowTs}
                       todayDateString={todayDateString}
+                      isReadOnly={isReadOnly}
                     />
                 ))}
 
