@@ -117,7 +117,7 @@ const TimelineTaskCard: React.FC<TimelineTaskCardProps> = React.memo(({
         if (onClick) onClick(task);
       }}
       className={`
-          absolute h-8 rounded-lg border flex items-center text-sm font-bold cursor-pointer hover:brightness-95 hover:scale-[1.01] transition-all shadow-sm group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800 overflow-hidden
+          absolute h-8 rounded-md border flex items-center text-sm font-bold cursor-pointer hover:brightness-95 hover:scale-[1.01] transition-all shadow-sm group focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 dark:focus:ring-offset-slate-800 overflow-hidden
           ${bgClass}
       `}
       style={{
@@ -171,14 +171,28 @@ const TimelineRow: React.FC<TimelineRowProps> = React.memo(({ group, timelineSta
   
   // Helper to calculate positioning numbers (returns primitives)
   const getTaskCoords = (task: ProcessedTask, laneIdx: number) => {
-      const diffTime = task.startTs - timelineStartTimestamp;
-      const startOffsetDays = diffTime / (1000 * 60 * 60 * 24);
+      // Normalize to midnight local time to align with grid headers
+      // This prevents tasks from bleeding into the next day due to hour differences
+      const startDay = new Date(task.startTs);
+      startDay.setHours(0, 0, 0, 0);
       
-      const durationTime = Math.abs(task.dueTs - task.startTs);
-      const durationDays = Math.ceil(durationTime / (1000 * 60 * 60 * 24)) + 1;
+      const dueDay = new Date(task.dueTs);
+      dueDay.setHours(0, 0, 0, 0);
+      
+      const timelineStartDay = new Date(timelineStartTimestamp);
+      timelineStartDay.setHours(0, 0, 0, 0);
 
-      const left = startOffsetDays * pixelsPerDay;
-      const width = Math.max(durationDays * pixelsPerDay, 4);
+      // Calculate strictly based on days difference
+      const diffTime = startDay.getTime() - timelineStartDay.getTime();
+      const startOffsetDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      
+      const durationTime = dueDay.getTime() - startDay.getTime();
+      // Inclusive duration: start=due means 1 day
+      const durationDays = Math.round(durationTime / (1000 * 60 * 60 * 24)) + 1;
+
+      // Apply visual padding (2px gap on each side of the grid cell)
+      const left = (startOffsetDays * pixelsPerDay) + 2;
+      const width = Math.max((durationDays * pixelsPerDay) - 4, 4); // Ensure min width
       const top = (laneIdx * 38) + 6;
       
       const isOverdue = task.dueTs < nowTs && task.status !== 'Done';
