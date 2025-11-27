@@ -39,6 +39,7 @@ import { sanitizeFirestoreData } from './utils/dataUtils';
 import { auth, db } from './firebase';
 import { onAuthStateChanged, User as FirebaseUser, signOut, sendEmailVerification } from 'firebase/auth';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, writeBatch, or } from 'firebase/firestore';
+import { AnimatePresence } from 'framer-motion';
 
 const THEME_KEY = 'promanage_theme_v1';
 const SETTINGS_KEY = 'promanage_settings_v1';
@@ -54,18 +55,8 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
   { id: 'col-3', title: 'Done', color: 'emerald' },
 ];
 
-// Views that are part of the Infinity Scroll Workspace
+// Views that are part of the Infinity Scroll Workspace (Legacy list, kept for reference if needed)
 const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen', 'milestones', 'time-reports', 'documents'];
-
-// Section Wrapper Component
-const Section: React.FC<{ id: string; children: React.ReactNode; className?: string }> = ({ id, children, className = "" }) => (
-  <section 
-    id={id} 
-    className={`h-full w-full overflow-y-auto relative bg-slate-50 dark:bg-slate-950 pt-6 px-4 md:px-6 pb-20 border-b border-slate-200 dark:border-slate-800 ${className}`}
-  >
-     {children}
-  </section>
-);
 
 // Helper to normalize task data for state updates
 const normalizeTaskData = (task: Partial<Task>): Partial<Task> => {
@@ -214,9 +205,6 @@ const App: React.FC = () => {
 
   // Banner State
   const [showBanner, setShowBanner] = useState(true);
-
-  // Scroll Refs
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // --- Permission Logic Hook ---
   const currentProject = projects.find(p => p.id === selectedProjectId);
@@ -448,19 +436,6 @@ const App: React.FC = () => {
       else localStorage.removeItem(PROJECT_KEY);
   }, [selectedProjectId]);
 
-  // --- Scroll Logic (Programmatic Only) ---
-  useEffect(() => {
-    if (scrollContainerRef.current) {
-        const section = document.getElementById(activeTab);
-        if (section) {
-            scrollContainerRef.current.scrollTo({
-                top: section.offsetTop,
-                behavior: 'smooth'
-            });
-        }
-    }
-  }, [activeTab, selectedProjectId]);
-
   const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
 
   const handleLogout = async () => {
@@ -487,7 +462,7 @@ const App: React.FC = () => {
 
   const handleSelectProject = (projectId: string | null) => {
       setSelectedProjectId(projectId);
-      setActiveTab('dashboard'); // Reset to top of scroll
+      setActiveTab('dashboard'); // Reset to dashboard when entering project
       setIsProjectSettingsOpen(false);
   };
 
@@ -578,8 +553,6 @@ const App: React.FC = () => {
 
   const handleUpdateProject = async (projectData: Partial<Project>) => {
       if (!selectedProjectId) return;
-      // Permission check handled by caller or server rules, but good to double check if current user can edit
-      // Assuming simple logic: if you are admin role you can edit. 
       if (userRole !== 'admin') {
           notify('error', "Only admins can update project settings.");
           return;
@@ -587,7 +560,6 @@ const App: React.FC = () => {
       
       try {
           const projectRef = doc(db, 'projects', selectedProjectId);
-          // We only update specific fields if passed
           const updatePayload: any = {};
           if (projectData.name) updatePayload.name = projectData.name;
           if (projectData.clientName) updatePayload.clientName = projectData.clientName;
@@ -596,7 +568,6 @@ const App: React.FC = () => {
               updatePayload.members = projectData.members;
               updatePayload.memberUIDs = projectData.members.map(m => m.uid).filter((uid): uid is string => uid !== null);
           }
-          // Handle Share Config Update (from ProjectModal)
           if (projectData.shareConfig) {
               updatePayload.shareConfig = projectData.shareConfig;
           }
@@ -615,7 +586,6 @@ const App: React.FC = () => {
               );
           }
 
-          // If projectToEdit matches, close modal
           if (projectToEdit?.id === selectedProjectId) {
               setIsProjectModalOpen(false);
               setProjectToEdit(null);
@@ -623,7 +593,7 @@ const App: React.FC = () => {
           
       } catch (e) {
           console.error("Error updating project:", e);
-          throw e; // Let SettingsView handle error/success toast
+          throw e;
       }
   };
 
@@ -989,118 +959,180 @@ const App: React.FC = () => {
 
   // Determine Content to Render based on Navigation state
   const renderContent = () => {
+    const gridContainerClass = "w-full h-full grid grid-cols-1 grid-rows-1 overflow-hidden";
+
+    // 1. Project Hub (No Project Selected)
     if (!selectedProjectId && activeTab !== 'projects' && activeTab !== 'trash' && activeTab !== 'time-reports') {
-         return <PageTransition key="hub-root" className="overflow-y-auto custom-scrollbar p-4 md:p-6"><ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} /></PageTransition>;
+         return (
+            <div className={gridContainerClass}>
+                <AnimatePresence mode="popLayout" initial={false}>
+                    <PageTransition key="hub-root" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
+                        <ProjectHub 
+                            projects={projects} 
+                            onSelectProject={handleSelectProject} 
+                            userName={userSettings.userName} 
+                            onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} 
+                            onDeleteProject={handleDeleteProject} 
+                            currentUserId={currentUser?.id} 
+                        />
+                    </PageTransition>
+                </AnimatePresence>
+            </div>
+         );
     }
 
     if (activeTab === 'projects') {
         return (
-          <PageTransition key="projects" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
-            <ProjectHub projects={projects} onSelectProject={handleSelectProject} userName={userSettings.userName} onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} onDeleteProject={handleDeleteProject} currentUserId={currentUser?.id} />
-          </PageTransition>
+            <div className={gridContainerClass}>
+                <AnimatePresence mode="popLayout" initial={false}>
+                    <PageTransition key="projects" className="overflow-y-auto custom-scrollbar p-4 md:p-6">
+                        <ProjectHub 
+                            projects={projects} 
+                            onSelectProject={handleSelectProject} 
+                            userName={userSettings.userName} 
+                            onCreateProject={() => { setProjectToEdit(null); setIsProjectModalOpen(true); }} 
+                            onDeleteProject={handleDeleteProject} 
+                            currentUserId={currentUser?.id} 
+                        />
+                    </PageTransition>
+                </AnimatePresence>
+            </div>
         );
     }
 
-    // PROJECT WORKSPACE: ELEVATOR STACK
-    // Render all main views in a single scrollable container
+    // PROJECT WORKSPACE: STACKED GRID
     return (
-        <div 
-            id="main-scroll-container" 
-            ref={scrollContainerRef} 
-            className="flex-1 h-full w-full overflow-hidden relative scroll-smooth bg-slate-50 dark:bg-slate-950"
-        >
-            <Section id="dashboard">
-                <Dashboard tasks={tasks} projects={projects} columns={columns} currentProject={currentProject} onAddTask={() => openNewTaskModal()} onTaskClick={openEditTaskModal} onNavigate={(tab, status) => { if(status) { setFilterStatus(status); } handleNavigation(tab); }} userName={userSettings.userName} onStatusChange={handleDropTask} />
-            </Section>
+        <div className={gridContainerClass}>
+            <AnimatePresence mode="popLayout" initial={false}>
+                
+                {activeTab === 'dashboard' && (
+                    <PageTransition key="dashboard" className="overflow-y-auto custom-scrollbar p-6">
+                        <Dashboard 
+                            tasks={tasks} 
+                            projects={projects} 
+                            columns={columns} 
+                            currentProject={currentProject} 
+                            onAddTask={() => openNewTaskModal()} 
+                            onTaskClick={openEditTaskModal} 
+                            onNavigate={(tab, status) => { if(status) { setFilterStatus(status); } handleNavigation(tab); }} 
+                            userName={userSettings.userName} 
+                            onStatusChange={handleDropTask} 
+                        />
+                    </PageTransition>
+                )}
 
-            <Section id="kanban">
-                <div className="flex flex-col h-full min-h-[800px]">
-                    <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-                    <KanbanBoard 
-                        tasks={filteredTasks} 
-                        columns={columns} 
-                        onAddTask={() => openNewTaskModal()} 
-                        onDropTask={handleDropTask} 
-                        onTaskClick={openEditTaskModal} 
-                        onAddColumn={handleAddColumn} 
-                        onEditColumn={handleEditColumn} 
-                        onDeleteColumn={handleDeleteColumn}
-                        onReorderColumns={handleReorderColumns} 
-                        isReadOnly={userRole === 'guest'} 
-                        allTasks={tasks} 
-                        onDeleteTask={handleDeleteTask} 
-                        issues={issues} 
-                    />
-                </div>
-            </Section>
+                {activeTab === 'kanban' && (
+                    <PageTransition key="kanban" className="overflow-hidden">
+                        <div className="h-full flex flex-col p-6 overflow-hidden">
+                            <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
+                            <KanbanBoard 
+                                tasks={filteredTasks} 
+                                columns={columns} 
+                                onAddTask={() => openNewTaskModal()} 
+                                onDropTask={handleDropTask} 
+                                onTaskClick={openEditTaskModal} 
+                                onAddColumn={handleAddColumn} 
+                                onEditColumn={handleEditColumn} 
+                                onDeleteColumn={handleDeleteColumn}
+                                onReorderColumns={handleReorderColumns} 
+                                isReadOnly={userRole === 'guest'} 
+                                allTasks={tasks} 
+                                onDeleteTask={handleDeleteTask} 
+                                issues={issues} 
+                            />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="list">
-                <div className="flex flex-col h-full min-h-[600px]">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">List View</h2>
-                    <ListView tasks={filteredTasks} onTaskClick={openEditTaskModal} onDeleteTask={handleDeleteTask} />
-                </div>
-            </Section>
+                {activeTab === 'list' && (
+                    <PageTransition key="list" className="overflow-y-auto custom-scrollbar p-6">
+                        <div className="flex flex-col h-full min-h-[600px]">
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">List View</h2>
+                            <ListView tasks={filteredTasks} onTaskClick={openEditTaskModal} onDeleteTask={handleDeleteTask} />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="timeline">
-                <div className="flex flex-col h-full min-h-[600px]">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Timeline</h2>
-                    <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />
-                </div>
-            </Section>
+                {activeTab === 'timeline' && (
+                    <PageTransition key="timeline" className="overflow-y-auto custom-scrollbar p-6">
+                        <div className="flex flex-col h-full min-h-[600px]">
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Timeline</h2>
+                            <Timeline tasks={filteredTasks} onTaskClick={openEditTaskModal} />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="milestones">
-                <div className="flex flex-col h-full min-h-[800px]">
-                    <MilestonesView projectId={selectedProjectId || ''} isReadOnly={userRole === 'guest'} />
-                </div>
-            </Section>
+                {activeTab === 'milestones' && (
+                    <PageTransition key="milestones" className="overflow-y-auto custom-scrollbar p-6">
+                        <div className="flex flex-col h-full min-h-[800px]">
+                            <MilestonesView projectId={selectedProjectId || ''} isReadOnly={userRole === 'guest'} />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="map">
-                <div className="flex flex-col h-full min-h-[800px]">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Project Map</h2>
-                    <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} columns={columns} />
-                </div>
-            </Section>
+                {activeTab === 'map' && (
+                    <PageTransition key="map" className="overflow-y-auto custom-scrollbar p-6">
+                        <div className="flex flex-col h-full min-h-[800px]">
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Project Map</h2>
+                            <ProjectMapView tasks={filteredTasks} onTaskClick={openEditTaskModal} columns={columns} />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="calendar">
-                <div className="flex flex-col h-full min-h-[700px]">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4 px-2">Calendar</h2>
-                    <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />
-                </div>
-            </Section>
+                {activeTab === 'calendar' && (
+                    <PageTransition key="calendar" className="overflow-y-auto custom-scrollbar p-6">
+                        <div className="flex flex-col h-full min-h-[700px]">
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">Calendar</h2>
+                            <CalendarView tasks={filteredTasks} onTaskClick={openEditTaskModal} onAddTask={openNewTaskModal} />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="issues">
-                <div className="flex flex-col h-full min-h-[700px]">
-                    <IssuesView 
-                        issues={issues} 
-                        projectId={selectedProjectId || ''} 
-                        tasks={tasks} 
-                        projectMembers={currentProject?.members || []}
-                        currentUserId={currentUser?.id || ''}
-                        isReadOnly={userRole === 'guest'}
-                        onTaskClick={handleGlobalTaskSelect}
-                    />
-                </div>
-            </Section>
+                {activeTab === 'issues' && (
+                    <PageTransition key="issues" className="overflow-y-auto custom-scrollbar p-6">
+                        <div className="flex flex-col h-full min-h-[700px]">
+                            <IssuesView 
+                                issues={issues} 
+                                projectId={selectedProjectId || ''} 
+                                tasks={tasks} 
+                                projectMembers={currentProject?.members || []}
+                                currentUserId={currentUser?.id || ''}
+                                isReadOnly={userRole === 'guest'}
+                                onTaskClick={handleGlobalTaskSelect}
+                            />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="documents">
-                <div className="flex flex-col h-full min-h-[700px]">
-                    <DocumentsView projectId={selectedProjectId} />
-                </div>
-            </Section>
+                {activeTab === 'documents' && (
+                    <PageTransition key="documents" className="overflow-hidden p-6">
+                        <div className="flex flex-col h-full">
+                            <DocumentsView projectId={selectedProjectId} />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="time-reports">
-                <div className="flex flex-col h-full min-h-[700px]">
-                    <TimeReportsView projectId={selectedProjectId} projects={projects} />
-                </div>
-            </Section>
+                {activeTab === 'time-reports' && (
+                    <PageTransition key="time-reports" className="overflow-y-auto custom-scrollbar p-6">
+                        <div className="flex flex-col h-full min-h-[700px]">
+                            <TimeReportsView projectId={selectedProjectId} projects={projects} />
+                        </div>
+                    </PageTransition>
+                )}
 
-            <Section id="image-gen">
-                <ImageGenerator />
-            </Section>
+                {activeTab === 'image-gen' && (
+                    <PageTransition key="image-gen" className="overflow-y-auto custom-scrollbar p-6">
+                        <ImageGenerator />
+                    </PageTransition>
+                )}
 
-            <Section id="trash">
-                <TrashView />
-            </Section>
+                {activeTab === 'trash' && (
+                    <PageTransition key="trash" className="overflow-y-auto custom-scrollbar p-6">
+                        <TrashView />
+                    </PageTransition>
+                )}
+
+            </AnimatePresence>
         </div>
     );
   };
@@ -1208,7 +1240,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Main Content Area - Replaced Grid Stack with Flex for Infinity Scroll or Single Page */}
+        {/* Main Content Area - Grid Transition */}
         <div className="flex-1 relative z-10 overflow-hidden">
           {renderContent()}
         </div>
@@ -1253,7 +1285,7 @@ const App: React.FC = () => {
       <SettingsView 
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        tasks={filteredTasks} 
+        tasks={tasks} 
         setTasks={setTasks} 
         userSettings={userSettings} 
         setUserSettings={setUserSettings} 

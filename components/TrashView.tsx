@@ -1,17 +1,18 @@
 
 import React, { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, AlertTriangle, Search, Folder, CheckSquare, Clock, Calendar, Archive, AlertOctagon, LayoutTemplate } from 'lucide-react';
+import { Trash2, RefreshCw, AlertTriangle, Folder, CheckSquare, Clock, LayoutTemplate, FileText, Link as LinkIcon, File } from 'lucide-react';
 import { auth, db } from '../firebase';
-import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { Project, Task, Template } from '../types';
+import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, collectionGroup } from 'firebase/firestore';
+import { Project, Task, Template, ProjectDocument } from '../types';
 import { useNotification } from '../context/NotificationContext';
 
 const TrashView: React.FC = () => {
   const { notify } = useNotification();
-  const [activeTab, setActiveTab] = useState<'projects' | 'tasks' | 'templates'>('projects');
+  const [activeTab, setActiveTab] = useState<'projects' | 'tasks' | 'templates' | 'documents'>('projects');
   const [deletedProjects, setDeletedProjects] = useState<Project[]>([]);
   const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
   const [deletedTemplates, setDeletedTemplates] = useState<Template[]>([]);
+  const [deletedDocs, setDeletedDocs] = useState<ProjectDocument[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Helper to safely parse timestamps (Universal Date Parser)
@@ -54,11 +55,17 @@ const TrashView: React.FC = () => {
     );
 
     // Query Deleted Templates
-    // Assuming templates have createdBy field which is the user UID
     const qTemplates = query(
       collection(db, 'templates'),
       where('createdBy', '==', user.uid),
       where('isDeleted', '==', true)
+    );
+
+    // Query Deleted Documents (Across all projects using Collection Group)
+    const qDocs = query(
+        collectionGroup(db, 'documents'),
+        where('createdBy', '==', user.uid),
+        where('isDeleted', '==', true)
     );
 
     const unsubProjects = onSnapshot(qProjects, (snap) => {
@@ -89,21 +96,33 @@ const TrashView: React.FC = () => {
         return dateB - dateA;
       });
       setDeletedTemplates(data);
-      setLoading(false);
+    });
+
+    const unsubDocs = onSnapshot(qDocs, (snap) => {
+        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as ProjectDocument));
+        data.sort((a, b) => {
+            const dateA = parseDate(a.deletedAt)?.getTime() || 0;
+            const dateB = parseDate(b.deletedAt)?.getTime() || 0;
+            return dateB - dateA;
+        });
+        setDeletedDocs(data);
+        setLoading(false);
     });
 
     return () => {
       unsubProjects();
       unsubTasks();
       unsubTemplates();
+      unsubDocs();
     };
   }, []);
 
-  const getRetentionInfo = (deletedAt: any, type: 'project' | 'task' | 'template') => {
+  const getRetentionInfo = (deletedAt: any, type: 'project' | 'task' | 'template' | 'document') => {
     const date = parseDate(deletedAt);
     if (!date) return { days: 0, isUrgent: false };
 
-    const limit = type === 'project' || type === 'template' ? 30 : 14;
+    // 30 days for Projects/Templates/Documents, 14 days for Tasks
+    const limit = type === 'task' ? 14 : 30;
     const diffTime = new Date().getTime() - date.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 3600 * 24));
     const remaining = limit - diffDays;
@@ -114,10 +133,17 @@ const TrashView: React.FC = () => {
     };
   };
 
-  const handleRestore = async (id: string, type: 'project' | 'task' | 'template') => {
+  const handleRestore = async (item: any, type: 'project' | 'task' | 'template' | 'document') => {
     try {
-      const collectionName = type === 'project' ? 'projects' : type === 'task' ? 'tasks' : 'templates';
-      await updateDoc(doc(db, collectionName, id), {
+      let ref;
+      if (type === 'document') {
+          ref = doc(db, 'projects', item.projectId, 'documents', item.id);
+      } else {
+          const collectionName = type === 'project' ? 'projects' : type === 'task' ? 'tasks' : 'templates';
+          ref = doc(db, collectionName, item.id);
+      }
+      
+      await updateDoc(ref, {
         isDeleted: false,
         deletedAt: null
       });
@@ -128,12 +154,19 @@ const TrashView: React.FC = () => {
     }
   };
 
-  const handlePermanentDelete = async (id: string, type: 'project' | 'task' | 'template') => {
+  const handlePermanentDelete = async (item: any, type: 'project' | 'task' | 'template' | 'document') => {
     if (!window.confirm("This action cannot be undone. Delete permanently?")) return;
     
     try {
-      const collectionName = type === 'project' ? 'projects' : type === 'task' ? 'tasks' : 'templates';
-      await deleteDoc(doc(db, collectionName, id));
+      let ref;
+      if (type === 'document') {
+          ref = doc(db, 'projects', item.projectId, 'documents', item.id);
+      } else {
+          const collectionName = type === 'project' ? 'projects' : type === 'task' ? 'tasks' : 'templates';
+          ref = doc(db, collectionName, item.id);
+      }
+
+      await deleteDoc(ref);
       notify('success', 'Item permanently deleted.');
     } catch (error) {
       console.error(error);
@@ -148,6 +181,15 @@ const TrashView: React.FC = () => {
       <p className="text-xs opacity-60 mt-1">Items are auto-deleted after retention period.</p>
     </div>
   );
+
+  const getDocIcon = (type: string) => {
+      switch(type) {
+          case 'folder': return <Folder size={24} className="text-amber-400 fill-amber-400/20" />;
+          case 'wiki': return <FileText size={24} className="text-blue-500" />;
+          case 'file': return <LinkIcon size={24} className="text-slate-400" />;
+          default: return <File size={24} className="text-slate-400" />;
+      }
+  };
 
   return (
     <div className="max-w-5xl mx-auto animate-fade-in pb-10 h-full flex flex-col">
@@ -167,7 +209,7 @@ const TrashView: React.FC = () => {
         {/* Info Badge */}
         <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-medium border border-blue-100 dark:border-blue-800">
           <Clock size={14} />
-          <span>Retention: Projects/Templates (30 days), Tasks (14 days).</span>
+          <span>Retention: Projects/Docs (30 days), Tasks (14 days).</span>
         </div>
       </div>
 
@@ -181,7 +223,7 @@ const TrashView: React.FC = () => {
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
           }`}
         >
-          Deleted Projects ({deletedProjects.length})
+          Projects ({deletedProjects.length})
         </button>
         <button
           onClick={() => setActiveTab('tasks')}
@@ -191,7 +233,17 @@ const TrashView: React.FC = () => {
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
           }`}
         >
-          Deleted Tasks ({deletedTasks.length})
+          Tasks ({deletedTasks.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('documents')}
+          className={`pb-3 px-4 text-sm font-bold transition-all border-b-2 whitespace-nowrap ${
+            activeTab === 'documents' 
+              ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' 
+              : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+          }`}
+        >
+          Documents ({deletedDocs.length})
         </button>
         <button
           onClick={() => setActiveTab('templates')}
@@ -201,7 +253,7 @@ const TrashView: React.FC = () => {
               : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
           }`}
         >
-          Deleted Templates ({deletedTemplates.length})
+          Templates ({deletedTemplates.length})
         </button>
       </div>
 
@@ -237,13 +289,13 @@ const TrashView: React.FC = () => {
 
                     <div className="flex items-center gap-2 self-end sm:self-center">
                       <button 
-                        onClick={() => handleRestore(project.id, 'project')}
+                        onClick={() => handleRestore(project, 'project')}
                         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-xs font-bold"
                       >
                         <RefreshCw size={14} /> Restore
                       </button>
                       <button 
-                        onClick={() => handlePermanentDelete(project.id, 'project')}
+                        onClick={() => handlePermanentDelete(project, 'project')}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                         title="Delete Forever"
                       >
@@ -286,13 +338,62 @@ const TrashView: React.FC = () => {
 
                     <div className="flex items-center gap-2 self-end sm:self-center">
                       <button 
-                        onClick={() => handleRestore(task.id, 'task')}
+                        onClick={() => handleRestore(task, 'task')}
                         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-xs font-bold"
                       >
                         <RefreshCw size={14} /> Restore
                       </button>
                       <button 
-                        onClick={() => handlePermanentDelete(task.id, 'task')}
+                        onClick={() => handlePermanentDelete(task, 'task')}
+                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        title="Delete Forever"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* DOCUMENTS LIST */}
+        {activeTab === 'documents' && (
+          <div className="space-y-3">
+            {deletedDocs.length === 0 ? renderEmptyState('documents') : (
+              deletedDocs.map(docItem => {
+                if (!docItem) return null;
+                const retention = getRetentionInfo(docItem.deletedAt, 'document');
+                return (
+                  <div key={docItem.id} className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:border-red-200 dark:hover:border-red-900/50 transition-colors">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
+                        {getDocIcon(docItem.type)}
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900 dark:text-white">{docItem.name || 'Untitled Document'}</h3>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          <span className="uppercase tracking-wider font-medium">{docItem.type}</span>
+                          <span>•</span>
+                          <span>Deleted {parseDate(docItem.deletedAt)?.toLocaleDateString() || 'Unknown'}</span>
+                        </div>
+                        <div className={`mt-2 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold border ${retention.isUrgent ? 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'}`}>
+                          {retention.isUrgent && <AlertTriangle size={10} />}
+                          {retention.days} days remaining
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <button 
+                        onClick={() => handleRestore(docItem, 'document')}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-xs font-bold"
+                      >
+                        <RefreshCw size={14} /> Restore
+                      </button>
+                      <button 
+                        onClick={() => handlePermanentDelete(docItem, 'document')}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                         title="Delete Forever"
                       >
@@ -339,13 +440,13 @@ const TrashView: React.FC = () => {
 
                     <div className="flex items-center gap-2 self-end sm:self-center">
                       <button 
-                        onClick={() => handleRestore(template.id, 'template')}
+                        onClick={() => handleRestore(template, 'template')}
                         className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors text-xs font-bold"
                       >
                         <RefreshCw size={14} /> Restore
                       </button>
                       <button 
-                        onClick={() => handlePermanentDelete(template.id, 'template')}
+                        onClick={() => handlePermanentDelete(template, 'template')}
                         className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                         title="Delete Forever"
                       >

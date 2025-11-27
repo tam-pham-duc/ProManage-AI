@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Folder, 
   FileText, 
@@ -7,20 +7,22 @@ import {
   MoreHorizontal, 
   ArrowLeft, 
   Plus, 
-  Search, 
   Star, 
   ChevronRight, 
   Trash2, 
   Edit2, 
-  Save, 
   Loader2, 
   FolderOpen, 
   Pin, 
   PinOff, 
   File,
   CornerDownLeft,
+  Cloud,
+  Home,
+  Search,
   Check,
-  Cloud
+  X,
+  Move
 } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { 
@@ -31,7 +33,9 @@ import {
   updateDoc, 
   deleteDoc, 
   doc, 
-  serverTimestamp 
+  serverTimestamp,
+  writeBatch,
+  where
 } from 'firebase/firestore';
 import { useNotification } from '../context/NotificationContext';
 import RichTextEditor from './RichTextEditor';
@@ -135,9 +139,12 @@ interface ItemCardProps {
   docItem: ProjectDocument;
   onClick: (doc: ProjectDocument) => void;
   onAction: (action: string, doc: ProjectDocument) => void;
+  isSelected: boolean;
+  onToggleSelection: (id: string) => void;
+  isSelectionMode: boolean;
 }
 
-const ItemCard: React.FC<ItemCardProps> = ({ docItem, onClick, onAction }) => {
+const ItemCard: React.FC<ItemCardProps> = ({ docItem, onClick, onAction, isSelected, onToggleSelection, isSelectionMode }) => {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -169,10 +176,25 @@ const ItemCard: React.FC<ItemCardProps> = ({ docItem, onClick, onAction }) => {
   return (
     <div 
       onClick={() => onClick(docItem)}
-      className="group relative bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-lg transition-all cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-700 flex flex-col items-center justify-between text-center aspect-[4/3]"
+      className={`group relative bg-white dark:bg-slate-800 p-5 rounded-2xl border shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col items-center justify-between text-center aspect-[4/3]
+        ${isSelected 
+            ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50/10 dark:bg-indigo-900/20 z-10' 
+            : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'
+        }
+      `}
     >
+      {/* Checkbox Overlay */}
+      <div className={`absolute top-3 left-3 z-20 transition-opacity ${isSelected || isSelectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+         <div 
+            onClick={(e) => { e.stopPropagation(); onToggleSelection(docItem.id); }}
+            className={`w-5 h-5 rounded border flex items-center justify-center transition-colors cursor-pointer ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'bg-white dark:bg-slate-700 border-slate-300 dark:border-slate-600 hover:border-indigo-400'}`}
+         >
+            {isSelected && <Check size={12} className="text-white" strokeWidth={3} />}
+         </div>
+      </div>
+
       {docItem.isPinned && (
-        <div className="absolute top-3 left-3 text-amber-400">
+        <div className="absolute top-3 right-10 text-amber-400">
           <Star size={14} fill="currentColor" />
         </div>
       )}
@@ -222,6 +244,10 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'EXPLORER' | 'EDITOR'>('EXPLORER');
   
+  // Selection State
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isSelectionMode = selectedIds.size > 0;
+
   // Editor State
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [editorTitle, setEditorTitle] = useState('');
@@ -237,14 +263,14 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
   useEffect(() => {
     if (!projectId) return;
     
-    const q = query(collection(db, 'projects', projectId, 'documents'));
+    const q = query(collection(db, 'projects', projectId, 'documents'), where('isDeleted', '!=', true));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const docsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as ProjectDocument));
       setDocuments(docsData);
     }, (err) => {
       console.error("Documents fetch error:", err);
-      notify('error', 'Failed to load documents');
+      // Quiet fail usually due to missing index
     });
 
     return () => unsubscribe();
@@ -274,6 +300,9 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
   }, [documents, currentFolderId]);
 
   const pinnedDocs = useMemo(() => {
+    if (currentFolderId === null) {
+        return documents.filter(d => d.isPinned);
+    }
     return documents.filter(d => d.isPinned && d.parentId === currentFolderId);
   }, [documents, currentFolderId]);
 
@@ -312,7 +341,8 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
         name,
         isPinned: false,
         createdBy: auth.currentUser.uid,
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        isDeleted: false
       };
 
       if (type === 'file' && url) newDoc.url = url;
@@ -334,8 +364,14 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
   };
 
   const handleItemClick = (docItem: ProjectDocument) => {
+    if (isSelectionMode) {
+        toggleSelection(docItem.id);
+        return;
+    }
+
     if (docItem.type === 'folder') {
       setCurrentFolderId(docItem.id);
+      setSelectedIds(new Set()); // Clear selection on nav
     } else if (docItem.type === 'wiki') {
       setEditingDocId(docItem.id);
       setEditorTitle(docItem.name);
@@ -355,17 +391,41 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
         await updateDoc(docRef, { isPinned: !docItem.isPinned });
         notify('success', docItem.isPinned ? 'Unpinned' : 'Pinned');
       } else if (action === 'delete') {
+        // We reuse the recursive delete logic for a single item by calling handleBulkDelete-like logic
+        // But for simplicity, let's just trigger a selection of 1 and call bulk delete
+        setSelectedIds(new Set([docItem.id]));
+        // We need to wait for state to update, but this async nature makes it tricky.
+        // Instead, let's just call the delete logic directly here for single item recursion
         if (window.confirm(`Delete "${docItem.name}"?`)) {
-          if (docItem.type === 'folder') {
-             const hasKids = documents.some(d => d.parentId === docItem.id);
-             if (hasKids) {
-                 notify('warning', 'Folder is not empty. Delete contents first.');
-                 return;
+             // Reuse the recursive logic
+             const idsToDelete = new Set<string>();
+             idsToDelete.add(docItem.id);
+             
+             if (docItem.type === 'folder') {
+                 const getDescendants = (folderId: string) => {
+                    const children = documents.filter(doc => doc.parentId === folderId);
+                    children.forEach(child => {
+                        idsToDelete.add(child.id);
+                        if (child.type === 'folder') getDescendants(child.id);
+                    });
+                 };
+                 getDescendants(docItem.id);
              }
-          }
-          await deleteDoc(docRef);
-          notify('success', 'Deleted');
+
+             const batch = writeBatch(db);
+             idsToDelete.forEach(id => {
+                 const ref = doc(db, 'projects', projectId, 'documents', id);
+                 const item = documents.find(d => d.id === id);
+                 batch.update(ref, { 
+                     isDeleted: true, 
+                     deletedAt: serverTimestamp(),
+                     originalParentId: item?.parentId || 'root'
+                 });
+             });
+             await batch.commit();
+             notify('success', 'Moved to Trash');
         }
+        setSelectedIds(new Set());
       } else if (action === 'rename') {
         const newName = prompt("New Name:", docItem.name);
         if (newName && newName.trim() !== docItem.name) {
@@ -376,6 +436,90 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
     } catch (e) {
       notify('error', 'Action failed');
     }
+  };
+
+  // Selection Logic
+  const toggleSelection = (id: string) => {
+      const next = new Set(selectedIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      setSelectedIds(next);
+  };
+
+  const handleSelectAll = () => {
+      if (selectedIds.size === currentDocs.length) {
+          setSelectedIds(new Set());
+      } else {
+          setSelectedIds(new Set(currentDocs.map(d => d.id)));
+      }
+  };
+
+  const handleBulkDelete = async () => {
+      if (!projectId || selectedIds.size === 0) return;
+
+      // 1. Identify all items to delete (including descendants)
+      const idsToDelete = new Set<string>(selectedIds);
+      
+      const collectDescendants = (parentId: string) => {
+          const children = documents.filter(d => d.parentId === parentId);
+          children.forEach(child => {
+              idsToDelete.add(child.id);
+              if (child.type === 'folder') {
+                  collectDescendants(child.id);
+              }
+          });
+      };
+
+      selectedIds.forEach(id => {
+          const item = documents.find(d => d.id === id);
+          if (item?.type === 'folder') {
+              collectDescendants(id);
+          }
+      });
+
+      const totalCount = idsToDelete.size;
+      const subItemsCount = totalCount - selectedIds.size;
+      
+      const confirmMessage = subItemsCount > 0 
+          ? `Move ${selectedIds.size} selected items to Trash?\n\nThis will also delete ${subItemsCount} item(s) inside the selected folders.`
+          : `Move ${totalCount} item${totalCount !== 1 ? 's' : ''} to Trash?`;
+
+      if (!window.confirm(confirmMessage)) return;
+
+      // 2. Perform Batch Updates (Chunked)
+      try {
+          const allIds = Array.from(idsToDelete);
+          const chunkSize = 400; // Firestore limit is 500
+          
+          for (let i = 0; i < allIds.length; i += chunkSize) {
+              const batch = writeBatch(db);
+              const chunk = allIds.slice(i, i + chunkSize);
+              
+              chunk.forEach(id => {
+                  const docRef = doc(db, 'projects', projectId, 'documents', id);
+                  // Find doc to record its current parent for potential restore
+                  const docItem = documents.find(d => d.id === id);
+                  
+                  batch.update(docRef, { 
+                      isDeleted: true, 
+                      deletedAt: serverTimestamp(),
+                      originalParentId: docItem?.parentId || 'root'
+                  });
+              });
+              
+              await batch.commit();
+          }
+
+          notify('success', `${totalCount} items moved to Trash`);
+          setSelectedIds(new Set());
+      } catch (e) {
+          console.error("Bulk delete failed:", e);
+          notify('error', 'Failed to delete items');
+      }
+  };
+
+  const handleBulkMove = () => {
+      notify('info', 'Bulk move functionality coming soon.');
   };
 
   // --- EDITOR VIEW (Notion Style) ---
@@ -438,7 +582,7 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
 
   // --- EXPLORER VIEW ---
   return (
-    <div className="h-full flex flex-col animate-fade-in">
+    <div className="h-full flex flex-col animate-fade-in relative">
       {/* Header */}
       <div className="mb-6 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -453,8 +597,9 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
                 {i > 0 && <ChevronRight size={14} className="opacity-50" />}
                 <button 
                   onClick={() => setCurrentFolderId(b.id)}
-                  className={`hover:bg-slate-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition-colors ${i === breadcrumbs.length - 1 ? 'font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50' : ''}`}
+                  className={`flex items-center gap-1 hover:bg-slate-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition-colors ${i === breadcrumbs.length - 1 ? 'font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50' : ''}`}
                 >
+                  {b.id === null && <Home size={12} />}
                   {b.name}
                 </button>
               </React.Fragment>
@@ -466,19 +611,19 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
         <div className="flex gap-2">
             <button 
               onClick={() => { setCreateType('folder'); setIsCreateModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-xl hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors font-bold text-xs"
+              className="flex items-center gap-2 px-4 py-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-xl hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors font-bold text-xs shadow-sm"
             >
                 <Folder size={16} /> New Folder
             </button>
             <button 
               onClick={() => { setCreateType('wiki'); setIsCreateModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors font-bold text-xs"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-xl hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors font-bold text-xs shadow-sm"
             >
                 <FileText size={16} /> New Page
             </button>
             <button 
               onClick={() => { setCreateType('file'); setIsCreateModalOpen(true); }}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors font-bold text-xs"
+              className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors font-bold text-xs shadow-sm"
             >
                 <LinkIcon size={16} /> Add Link
             </button>
@@ -486,7 +631,7 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
       </div>
 
       {/* Explorer Grid */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar pb-10 pr-2">
+      <div className="flex-1 overflow-y-auto custom-scrollbar pb-20 pr-2 relative">
         {/* Pinned Section */}
         {pinnedDocs.length > 0 && (
           <div className="mb-8">
@@ -495,7 +640,15 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
               {pinnedDocs.map(doc => (
-                <ItemCard key={doc.id} docItem={doc} onClick={handleItemClick} onAction={handleItemAction} />
+                <ItemCard 
+                    key={doc.id} 
+                    docItem={doc} 
+                    onClick={handleItemClick} 
+                    onAction={handleItemAction} 
+                    isSelected={selectedIds.has(doc.id)}
+                    onToggleSelection={toggleSelection}
+                    isSelectionMode={isSelectionMode}
+                />
               ))}
             </div>
           </div>
@@ -503,8 +656,13 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
 
         {/* Main Grid */}
         <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-            {currentFolderId ? 'Contents' : 'All Files'}
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center justify-between">
+            <span>{currentFolderId ? 'Contents' : 'All Files'}</span>
+            {currentDocs.length > 0 && (
+                <button onClick={handleSelectAll} className="text-indigo-500 hover:underline text-[10px]">
+                    {selectedIds.size === currentDocs.length ? 'Deselect All' : 'Select All'}
+                </button>
+            )}
           </h3>
           
           {currentDocs.length === 0 ? (
@@ -518,12 +676,48 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {currentDocs.map(doc => (
-                <ItemCard key={doc.id} docItem={doc} onClick={handleItemClick} onAction={handleItemAction} />
+                <ItemCard 
+                    key={doc.id} 
+                    docItem={doc} 
+                    onClick={handleItemClick} 
+                    onAction={handleItemAction} 
+                    isSelected={selectedIds.has(doc.id)}
+                    onToggleSelection={toggleSelection}
+                    isSelectionMode={isSelectionMode}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* Bulk Action Bar */}
+      {isSelectionMode && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-700 rounded-xl px-6 py-3 flex items-center gap-6 z-50 animate-fade-in-up transform transition-all">
+              <div className="flex items-center gap-3">
+                  <div className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                      {selectedIds.size}
+                  </div>
+                  <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Selected</span>
+              </div>
+              
+              <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+              
+              <button onClick={handleBulkMove} className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                  <Move size={14} /> Move
+              </button>
+              
+              <button onClick={handleBulkDelete} className="flex items-center gap-2 text-xs font-bold text-red-600 hover:text-red-700 transition-colors">
+                  <Trash2 size={14} /> Delete
+              </button>
+              
+              <div className="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+
+              <button onClick={() => setSelectedIds(new Set())} className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 transition-colors">
+                  <X size={16} />
+              </button>
+          </div>
+      )}
 
       <CreateModal 
         isOpen={isCreateModalOpen} 

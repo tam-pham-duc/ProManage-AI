@@ -155,15 +155,18 @@ export type DocumentType = 'folder' | 'file' | 'wiki';
 export interface ProjectDocument {
   id: string;
   projectId: string;
-  parentId: string | null; // null for root level
+  parentId: string | null; // 'root' or null
   type: DocumentType;
   name: string;
-  content?: string; // For Wiki (HTML)
-  url?: string; // For File
+  content?: string; // HTML content for Wiki
+  url?: string; // Link for File
   isPinned?: boolean;
-  createdBy: string;
-  createdAt: any; // Timestamp
+  createdAt: any;
   updatedAt?: any;
+  createdBy?: string;
+  isDeleted?: boolean;
+  deletedAt?: any;
+  originalParentId?: string;
 }
 
 export interface KanbanColumn {
