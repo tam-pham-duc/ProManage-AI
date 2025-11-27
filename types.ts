@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export type Tab = 'dashboard' | 'kanban' | 'list' | 'timeline' | 'milestones' | 'map' | 'calendar' | 'issues' | 'settings' | 'image-gen' | 'projects' | 'trash' | 'time-reports';
+export type Tab = 'dashboard' | 'kanban' | 'list' | 'timeline' | 'milestones' | 'map' | 'calendar' | 'issues' | 'settings' | 'image-gen' | 'projects' | 'trash' | 'time-reports' | 'documents';
 
 export interface MetricCardProps {
   title: string;
@@ -148,6 +148,22 @@ export interface Milestone {
   targetDate: string; // ISO string
   createdAt: any;
   achievedAt?: any;
+}
+
+export type DocumentType = 'folder' | 'file' | 'wiki';
+
+export interface ProjectDocument {
+  id: string;
+  projectId: string;
+  parentId: string | null; // null for root level
+  type: DocumentType;
+  name: string;
+  content?: string; // For Wiki (HTML)
+  url?: string; // For File
+  isPinned: boolean;
+  createdBy: string;
+  createdAt: any; // Timestamp
+  updatedAt: any;
 }
 
 export interface KanbanColumn {

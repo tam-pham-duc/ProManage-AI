@@ -21,7 +21,8 @@ import {
   Search,
   AlertCircle,
   Flag,
-  PieChart
+  PieChart,
+  FolderOpen
 } from 'lucide-react';
 import { Tab, Project, ProjectRole } from '../types';
 import { getAvatarInitials, getAvatarColor } from '../utils/avatarUtils';
@@ -108,6 +109,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'map', label: 'Project Map', icon: GitGraph },
     { id: 'calendar', label: 'Calendar', icon: Calendar },
     { id: 'issues', label: 'Issues List', icon: AlertCircle, badge: openIssuesCount },
+    { id: 'documents', label: 'Documents', icon: FolderOpen },
     { id: 'time-reports', label: 'Time Reports', icon: PieChart },
   ];
 

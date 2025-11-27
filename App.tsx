@@ -25,6 +25,7 @@ import ActiveTimerBar from './components/ActiveTimerBar';
 import PageTransition from './components/PageTransition';
 import MilestonesView from './components/MilestonesView';
 import TimeReportsView from './components/TimeReportsView';
+import DocumentsView from './components/DocumentsView';
 import { NotificationProvider, useNotification } from './context/NotificationContext';
 import { TimeTrackingProvider } from './context/TimeTrackingContext';
 import { Tab, Task, TaskStatus, ActivityLog, UserSettings, Tag, User, KanbanColumn, Project, ProjectMember, ProjectRole, ActivityType, Issue } from './types';
@@ -53,7 +54,7 @@ const DEFAULT_COLUMNS: KanbanColumn[] = [
 ];
 
 // Views that are part of the Infinity Scroll Workspace
-const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen', 'milestones', 'time-reports'];
+const WORKSPACE_VIEWS: Tab[] = ['dashboard', 'kanban', 'list', 'timeline', 'map', 'calendar', 'issues', 'trash', 'image-gen', 'milestones', 'time-reports', 'documents'];
 
 // Section Wrapper Component
 const Section: React.FC<{ id: string; children: React.ReactNode; className?: string }> = ({ id, children, className = "" }) => (
@@ -1064,6 +1065,12 @@ const App: React.FC = () => {
                         isReadOnly={userRole === 'guest'}
                         onTaskClick={handleGlobalTaskSelect}
                     />
+                </div>
+            </Section>
+
+            <Section id="documents">
+                <div className="flex flex-col h-full min-h-[700px]">
+                    <DocumentsView projectId={selectedProjectId} />
                 </div>
             </Section>
 
