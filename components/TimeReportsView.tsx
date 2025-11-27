@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, PieChart, Clock, Users, Briefcase, Download, Calendar, ChevronDown, User, Layers, FileText, Search, Activity, BarChart3, Zap, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Task, TimeLog, Project } from '../types';
 import { getAvatarColor, getAvatarInitials } from '../utils/avatarUtils';
@@ -260,18 +260,60 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
   useEffect(() => {
       const fetchMetadata = async () => {
           try {
-              // Users
-              const usersSnap = await getDocs(collection(db, 'users'));
-              const usersMap: Record<string, any> = {};
-              const uOptions = usersSnap.docs.map(doc => {
-                  const d = doc.data();
-                  const info = { name: d.username || d.displayName || d.email, email: d.email, avatar: d.avatar };
-                  usersMap[doc.id] = info;
-                  return { id: doc.id, label: info.name };
-              });
+              const currentUser = auth.currentUser;
+              if (!currentUser) return;
+              const isSuperAdmin = currentUser.email === 'admin@dev.com';
+
+              let usersMap: Record<string, any> = {};
+              let uOptions: FilterOption[] = [];
+
+              if (isSuperAdmin) {
+                  // Super Admin: Fetch ALL users from DB
+                  const usersSnap = await getDocs(collection(db, 'users'));
+                  uOptions = usersSnap.docs.map(doc => {
+                      const d = doc.data();
+                      const info = { name: d.username || d.displayName || d.email, email: d.email, avatar: d.avatar };
+                      usersMap[doc.id] = info;
+                      return { id: doc.id, label: info.name };
+                  });
+              } else {
+                  // Regular User: Fetch ONLY relevant users (Colleagues)
+                  // Using the 'projects' prop which is already filtered for access in App.tsx
+                  const uniqueMembers = new Map<string, any>();
+                  
+                  // Add self
+                  uniqueMembers.set(currentUser.uid, {
+                      name: currentUser.displayName || 'Me',
+                      email: currentUser.email,
+                      avatar: currentUser.photoURL
+                  });
+
+                  // Add members from all accessible projects
+                  projects.forEach(p => {
+                      if (p.members) {
+                          p.members.forEach(m => {
+                              if (m.uid && !uniqueMembers.has(m.uid)) {
+                                  uniqueMembers.set(m.uid, {
+                                      name: m.displayName,
+                                      email: m.email,
+                                      avatar: m.avatar
+                                  });
+                              }
+                          });
+                      }
+                  });
+
+                  uniqueMembers.forEach((info, uid) => {
+                      usersMap[uid] = info;
+                      uOptions.push({ id: uid, label: info.name });
+                  });
+              }
+
+              // Sort alphabetically
+              uOptions.sort((a, b) => a.label.localeCompare(b.label));
               setUserOptions([{ id: 'all', label: 'All Employees' }, ...uOptions]);
 
-              // Projects
+              // Projects Metadata
               const projectMap: Record<string, string> = {};
               let pOptions: FilterOption[] = [];
               
@@ -301,6 +343,7 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
 
   // --- Effect: Fetch Logs (After Metadata) ---
   useEffect(() => {
+      // Wait for metadata to be populated to ensure names are mapped correctly
       if (Object.keys(metadata.users).length === 0 && Object.keys(metadata.projects).length === 0) return;
 
       const fetchLogs = async () => {
@@ -319,6 +362,11 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
                   const task = taskDoc.data();
                   if (task.isDeleted) return;
                   if (filterProject !== 'all' && !isProjectMode && task.projectId !== filterProject) return;
+
+                  // Logic for Global Mode Restricted Access:
+                  // Only process tasks if the user has access to the project (metadata.projects has it)
+                  // Or if user is Super Admin (implied by having all projects in metadata)
+                  if (!isProjectMode && !metadata.projects[task.projectId]) return;
 
                   if (task.timeLogs && Array.isArray(task.timeLogs)) {
                       task.timeLogs.forEach((l: any) => {
@@ -527,9 +575,26 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
           {/* View Actions */}
           <div className="flex items-center gap-2 shrink-0">
               <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
-                  <button onClick={() => setGroupBy('none')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'none' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>Flat</button>
-                  <button onClick={() => setGroupBy('user')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'user' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>User</button>
-                  {!isProjectMode && <button onClick={() => setGroupBy('project')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'project' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>Project</button>}
+                  <button 
+                    onClick={() => setGroupBy('none')} 
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${groupBy === 'none' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                  >
+                    Flat
+                  </button>
+                  <button 
+                    onClick={() => setGroupBy('user')} 
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${groupBy === 'user' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                  >
+                    User
+                  </button>
+                  {!isProjectMode && (
+                    <button 
+                        onClick={() => setGroupBy('project')} 
+                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${groupBy === 'project' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                    >
+                        Project
+                    </button>
+                  )}
               </div>
               <button onClick={handleExport} disabled={filteredLogs.length === 0} className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"><Download size={18} /></button>
           </div>
