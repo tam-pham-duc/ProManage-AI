@@ -457,7 +457,7 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
       count: filteredLogs.length
   }), [filteredLogs, analytics]);
 
-  const groupedLogs = useMemo(() => {
+  const groupedLogs = useMemo<Record<string, FlatTimeLog[]>>(() => {
       if (groupBy === 'none') return { 'All Logs': filteredLogs };
       const groups: Record<string, FlatTimeLog[]> = {};
       filteredLogs.forEach(log => {
@@ -672,14 +672,14 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
       {/* Data Table */}
       <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
           <div className="flex-1 overflow-auto custom-scrollbar">
-              <table className="w-full text-left border-collapse">
+              <table className="w-full text-left border-collapse table-fixed">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 sticky top-0 z-10 shadow-sm">
                       <tr>
                           <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32">Date</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employee</th>
-                          {!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Project</th>}
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Task / Notes</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Duration</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-48">Employee</th>
+                          {!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-40">Project</th>}
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-auto">Task / Notes</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center w-32">Duration</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -700,24 +700,24 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
                               )}
                               {(logs as FlatTimeLog[]).map(log => (
                                   <tr key={log.logId} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors group">
-                                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-mono">{log.date.toLocaleDateString()}</td>
+                                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-mono truncate">{log.date.toLocaleDateString()}</td>
                                       <td className="px-6 py-4">
-                                          <div className="flex items-center gap-3">
-                                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${getAvatarColor(log.user.name)}`}>{getAvatarInitials(log.user.name)}</div>
-                                              <div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{log.user.name}</div></div>
+                                          <div className="flex items-center gap-3 overflow-hidden">
+                                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0 ${getAvatarColor(log.user.name)}`}>{getAvatarInitials(log.user.name)}</div>
+                                              <div className="min-w-0"><div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{log.user.name}</div></div>
                                           </div>
                                       </td>
                                       {!isProjectMode && (
-                                          <td className="px-6 py-4"><span className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800">{log.project.name}</span></td>
+                                          <td className="px-6 py-4"><span className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800 truncate block max-w-full">{log.project.name}</span></td>
                                       )}
                                       <td className="px-6 py-4">
-                                          <div className="flex flex-col">
-                                              <span className="text-sm font-bold text-slate-800 dark:text-white truncate max-w-[300px]">{log.task.title}</span>
-                                              {log.notes && <span className="text-xs text-slate-500 italic flex items-center gap-1 mt-0.5"><FileText size={10}/> {log.notes}</span>}
+                                          <div className="flex flex-col min-w-0">
+                                              <span className="text-sm font-bold text-slate-800 dark:text-white truncate">{log.task.title}</span>
+                                              {log.notes && <span className="text-xs text-slate-500 italic flex items-center gap-1 mt-0.5 truncate"><FileText size={10}/> {log.notes}</span>}
                                               <span className="text-[10px] text-slate-400 mt-0.5 font-mono">{new Date(log.time.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.time.end).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                                           </div>
                                       </td>
-                                      <td className="px-6 py-4 text-right">
+                                      <td className="px-6 py-4 text-center">
                                           <span className="font-mono font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{(log.time.duration / 3600).toFixed(2)}h</span>
                                       </td>
                                   </tr>
