@@ -189,7 +189,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onClick, onDragStart, onDragE
       onDragEnd={onDragEnd}
       onClick={onClick}
       className={`
-        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-all duration-200 group relative select-none flex flex-col justify-between min-h-[120px]
+        p-4 rounded-xl border-y border-r border-l-[4px] shadow-sm transition-all duration-200 group relative select-none flex flex-col justify-between min-h-[120px] h-fit flex-shrink-0 overflow-hidden
         ${dragClass}
         ${isBlocked 
             ? 'bg-stripes-gray border-slate-300 dark:border-slate-600 opacity-90 border-l-slate-500' 
@@ -733,7 +733,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             </div>
         </div>
 
-      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4 custom-scrollbar">
         {tasks.map(task => {
             const taskIssues = issues.filter(i => i.relatedTaskId === task.id && i.status !== 'Resolved' && i.status !== "Won't Fix");
             return (
