@@ -26,6 +26,7 @@ interface SettingsViewProps {
   onAddColumn?: (title: string, color: string) => void;
   onEditColumn?: (columnId: string, title: string, color: string) => void;
   onDeleteColumn?: (columnId: string) => void;
+  onReorderColumns?: (columns: KanbanColumn[]) => void;
   project?: Project | null;
   onUpdateProject?: (projectData: Partial<Project>) => Promise<void>;
 }
@@ -161,6 +162,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   onAddColumn,
   onEditColumn,
   onDeleteColumn,
+  onReorderColumns,
   project,
   onUpdateProject
 }) => {
@@ -204,6 +206,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({
   // --- Kanban Column Local State ---
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [newColumnColor, setNewColumnColor] = useState('blue-1');
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   // --- Project Status Local State ---
   const [projectStatuses, setProjectStatuses] = useState<any[]>(DEFAULT_STATUSES);
@@ -515,6 +518,33 @@ const SettingsView: React.FC<SettingsViewProps> = ({
     }
   };
 
+  // Drag and Drop Handlers for Columns
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+      setDraggedColIndex(index);
+      e.dataTransfer.effectAllowed = "move";
+      // Optional: Create a better drag image if needed, default browser ghost is usually fine
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+      e.preventDefault(); // Necessary to allow dropping
+      e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
+      e.preventDefault();
+      if (draggedColIndex === null || draggedColIndex === dropIndex) return;
+
+      // Reorder logic
+      const newColumns = [...columns];
+      const [draggedItem] = newColumns.splice(draggedColIndex, 1);
+      newColumns.splice(dropIndex, 0, draggedItem);
+
+      if (onReorderColumns) {
+          onReorderColumns(newColumns);
+      }
+      setDraggedColIndex(null);
+  };
+
   // --- Project Status Handlers ---
   const handleAddStatus = async () => {
       if (!newStatusLabel.trim() || !auth.currentUser) return;
@@ -784,10 +814,17 @@ const SettingsView: React.FC<SettingsViewProps> = ({
                     <div className="bg-slate-50 dark:bg-slate-900/50 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2"><KanbanSquare size={18} className="text-purple-500" /> Kanban Columns</h3>
                         <div className="space-y-3 mb-4">
-                            {columns.map((col) => {
+                            {columns.map((col, index) => {
                                 return (
-                                <div key={col.id} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl group">
-                                    <GripVertical size={16} className="text-slate-400 cursor-grab" />
+                                <div 
+                                    key={col.id} 
+                                    className={`flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl group transition-all ${draggedColIndex === index ? 'opacity-50 border-dashed border-indigo-400' : ''}`}
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, index)}
+                                    onDragOver={(e) => handleDragOver(e, index)}
+                                    onDrop={(e) => handleDrop(e, index)}
+                                >
+                                    <GripVertical size={16} className="text-slate-400 cursor-move hover:text-slate-600" />
                                     <ColorPicker 
                                         selectedColorId={col.color} 
                                         onChange={(newColor) => onEditColumn && onEditColumn(col.id, col.title, newColor)} 

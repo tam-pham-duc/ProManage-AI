@@ -18,6 +18,7 @@ interface KanbanBoardProps {
   onAddColumn?: (title: string, color: string) => void;
   onEditColumn?: (columnId: string, title: string, color: string) => void;
   onDeleteColumn?: (columnId: string) => void;
+  onReorderColumns?: (columns: IKanbanColumn[]) => void;
   isReadOnly?: boolean;
   allTasks?: Task[];
   onDeleteTask?: (taskId: string) => void;
@@ -406,6 +407,9 @@ interface KanbanColumnProps {
   onEditRequest?: (column: IKanbanColumn) => void;
   onDeleteColumn?: (columnId: string) => void;
   issues?: Issue[];
+  onColumnDragStart?: (e: React.DragEvent, columnId: string) => void;
+  onColumnDrop?: (columnId: string) => void;
+  isColumnDragging?: boolean;
 }
 
 const KanbanColumn: React.FC<KanbanColumnProps> = ({ 
@@ -422,7 +426,10 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
   onDeleteTask,
   onEditRequest,
   onDeleteColumn,
-  issues = []
+  issues = [],
+  onColumnDragStart,
+  onColumnDrop,
+  isColumnDragging
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -626,14 +633,41 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
       if (isReadOnly) return;
       e.preventDefault(); 
       setIsDragOver(false); 
+      
+      // Check for column reorder drop
+      const type = e.dataTransfer.getData('type');
+      if (type === 'COLUMN' && onColumnDrop) {
+          onColumnDrop(column.id);
+          return;
+      }
+
       if (draggedTaskId) {
           onDropTask(draggedTaskId, column.title);
           onDragEnd();
       } 
   };
 
+  const handleColumnDragStart = (e: React.DragEvent) => {
+      if (isReadOnly) {
+          e.preventDefault();
+          return;
+      }
+      // Ensure drag is initiated from the header area
+      const target = e.target as HTMLElement;
+      if (!target.closest('.column-header-handle') || target.tagName === 'BUTTON') {
+          e.preventDefault();
+          return;
+      }
+      
+      if (onColumnDragStart) {
+          onColumnDragStart(e, column.id);
+      }
+  };
+
   return (
     <div 
+      draggable={!isReadOnly}
+      onDragStart={handleColumnDragStart}
       onDragOver={handleDragOver}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -642,10 +676,11 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
         flex-1 min-w-[320px] rounded-2xl flex flex-col h-full transition-all duration-300 border-t-4 border-2 
         ${theme.container}
         ${isDragOver ? `bg-opacity-100 ring-2 ${theme.ring} shadow-xl scale-[1.01]` : ''}
+        ${isColumnDragging ? 'opacity-50 border-dashed' : ''}
       `}
     >
-      <div className="flex items-center justify-between p-4 relative">
-            <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between p-4 relative column-header-handle cursor-grab active:cursor-grabbing">
+            <div className="flex items-center gap-2 pointer-events-none">
             <h3 className={`font-bold text-lg tracking-tight ${theme.header}`}>{column.title}</h3>
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm ${theme.badge}`}>
                 {tasks.length}
@@ -655,8 +690,9 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
             {!isReadOnly && (
                 <>
                     <button 
-                        onClick={onAddTask}
+                        onClick={(e) => { e.stopPropagation(); onAddTask(); }}
                         className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
+                        onMouseDown={(e) => e.stopPropagation()} // Prevent drag start on button click
                     >
                         <Plus size={18} />
                     </button>
@@ -664,8 +700,9 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                     {(onEditRequest || onDeleteColumn) && (
                         <div className="relative" ref={menuRef}>
                             <button 
-                                onClick={() => setShowMenu(!showMenu)}
+                                onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
                                 className={`p-1.5 rounded-lg transition-colors ${theme.addButton}`}
+                                onMouseDown={(e) => e.stopPropagation()}
                             >
                                 <MoreHorizontal size={18} />
                             </button>
@@ -673,7 +710,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                 <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden animate-fade-in">
                                     {onEditRequest && (
                                         <button
-                                            onClick={() => { onEditRequest(column); setShowMenu(false); }}
+                                            onClick={(e) => { e.stopPropagation(); onEditRequest(column); setShowMenu(false); }}
                                             className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2"
                                         >
                                             <Edit2 size={12} /> Edit Column
@@ -681,7 +718,7 @@ const KanbanColumn: React.FC<KanbanColumnProps> = ({
                                     )}
                                     {onDeleteColumn && (
                                         <button 
-                                            onClick={() => { onDeleteColumn && onDeleteColumn(column.id); setShowMenu(false); }}
+                                            onClick={(e) => { e.stopPropagation(); onDeleteColumn && onDeleteColumn(column.id); setShowMenu(false); }}
                                             className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
                                         >
                                             <Trash2 size={12} /> Delete
@@ -743,6 +780,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
     onAddColumn, 
     onEditColumn,
     onDeleteColumn,
+    onReorderColumns,
     isReadOnly = false, 
     allTasks = [], 
     onDeleteTask,
@@ -750,6 +788,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
 }) => {
   const { triggerCelebration } = useCelebration();
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
   const [isAddingColumn, setIsAddingColumn] = useState(false);
   const [newColumnTitle, setNewColumnTitle] = useState('');
   const [columnToEdit, setColumnToEdit] = useState<IKanbanColumn | null>(null);
@@ -783,6 +822,7 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
   const handleDragStart = (e: React.DragEvent, taskId: string) => {
     if (isReadOnly) return;
     
+    e.stopPropagation(); // Stop propagation to prevent column drag
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', taskId);
     
@@ -806,6 +846,30 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
           }
       }
       onDropTask(taskId, newStatus);
+  };
+
+  // --- Column Reorder Handlers ---
+  const handleColumnDragStart = (e: React.DragEvent, columnId: string) => {
+      if (isReadOnly) return;
+      setDraggedColumnId(columnId);
+      e.dataTransfer.setData('type', 'COLUMN');
+      e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleColumnDrop = (targetColId: string) => {
+      if (!draggedColumnId || draggedColumnId === targetColId) return;
+      
+      const oldIndex = columns.findIndex(c => c.id === draggedColumnId);
+      const newIndex = columns.findIndex(c => c.id === targetColId);
+      
+      if (oldIndex === -1 || newIndex === -1) return;
+      
+      const newCols = [...columns];
+      const [moved] = newCols.splice(oldIndex, 1);
+      newCols.splice(newIndex, 0, moved);
+      
+      if (onReorderColumns) onReorderColumns(newCols);
+      setDraggedColumnId(null);
   };
 
   const handleAddSubmit = () => {
@@ -936,6 +1000,9 @@ const KanbanBoard: React.FC<KanbanBoardProps> = ({
                 onEditRequest={onEditColumn ? setColumnToEdit : undefined}
                 onDeleteColumn={onDeleteColumn}
                 issues={issues}
+                onColumnDragStart={handleColumnDragStart}
+                onColumnDrop={handleColumnDrop}
+                isColumnDragging={draggedColumnId === col.id}
                 />
             );
           })}
