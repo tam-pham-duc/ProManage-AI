@@ -702,11 +702,11 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
               <table className="w-full text-left border-collapse table-fixed min-w-[1000px]">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 sticky top-0 z-10 shadow-sm">
                       <tr>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32">Date</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-1/5">Employee</th>
-                          {!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-1/5">Project</th>}
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-auto">Task / Notes</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32 text-center">Duration</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[15%] text-center">Date</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[20%] text-left">Employee</th>
+                          {!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[20%] text-left">Project</th>}
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-left">Task / Notes</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-[10%] text-center">Hours</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -727,17 +727,17 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
                               )}
                               {(logs as FlatTimeLog[]).map(log => (
                                   <tr key={log.logId} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors group">
-                                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-mono truncate">{log.date.toLocaleDateString()}</td>
-                                      <td className="px-6 py-4">
+                                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-mono truncate text-center">{log.date.toLocaleDateString()}</td>
+                                      <td className="px-6 py-4 truncate">
                                           <div className="flex items-center gap-3 overflow-hidden">
                                               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0 ${getAvatarColor(log.user.name)}`}>{getAvatarInitials(log.user.name)}</div>
                                               <div className="min-w-0"><div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{log.user.name}</div></div>
                                           </div>
                                       </td>
                                       {!isProjectMode && (
-                                          <td className="px-6 py-4"><span className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800 truncate block w-fit max-w-full">{log.project.name}</span></td>
+                                          <td className="px-6 py-4 truncate"><span className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800 truncate block w-fit max-w-full">{log.project.name}</span></td>
                                       )}
-                                      <td className="px-6 py-4">
+                                      <td className="px-6 py-4 text-left">
                                           <div className="flex flex-col min-w-0">
                                               <span className="text-sm font-bold text-slate-800 dark:text-white truncate">{log.task.title}</span>
                                               {log.notes && <span className="text-xs text-slate-500 italic flex items-center gap-1 mt-0.5 truncate"><FileText size={10} className="shrink-0"/> {log.notes}</span>}

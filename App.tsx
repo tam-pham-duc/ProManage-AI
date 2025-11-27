@@ -933,6 +933,18 @@ const App: React.FC = () => {
       notify('success', 'Column deleted');
   };
 
+  const handleReorderColumns = async (newOrder: KanbanColumn[]) => {
+      if (!currentUser) return;
+      setColumns(newOrder);
+      try {
+          await updateDoc(doc(db, 'users', currentUser.id), { kanbanColumns: newOrder });
+          notify('success', 'Column order updated');
+      } catch (e) {
+          console.error("Failed to save column order:", e);
+          notify('error', 'Failed to save column order');
+      }
+  };
+
   const handleCreateTag = (name: string) => {
       const colorObj = TAG_PALETTE[Math.floor(Math.random() * TAG_PALETTE.length)];
       // Combine bg and text for storage
@@ -989,7 +1001,21 @@ const App: React.FC = () => {
             <Section id="kanban">
                 <div className="flex flex-col h-full min-h-[800px]">
                     <FilterBar searchQuery={searchQuery} setSearchQuery={setSearchQuery} filterPriority={filterPriority} setFilterPriority={setFilterPriority} filterStatus={filterStatus} setFilterStatus={setFilterStatus} onReset={resetFilters} columns={columns} />
-                    <KanbanBoard tasks={filteredTasks} columns={columns} onAddTask={() => openNewTaskModal()} onDropTask={handleDropTask} onTaskClick={openEditTaskModal} onAddColumn={handleAddColumn} onEditColumn={handleEditColumn} onDeleteColumn={handleDeleteColumn} isReadOnly={userRole === 'guest'} allTasks={tasks} onDeleteTask={handleDeleteTask} issues={issues} />
+                    <KanbanBoard 
+                        tasks={filteredTasks} 
+                        columns={columns} 
+                        onAddTask={() => openNewTaskModal()} 
+                        onDropTask={handleDropTask} 
+                        onTaskClick={openEditTaskModal} 
+                        onAddColumn={handleAddColumn} 
+                        onEditColumn={handleEditColumn} 
+                        onDeleteColumn={handleDeleteColumn}
+                        onReorderColumns={handleReorderColumns} 
+                        isReadOnly={userRole === 'guest'} 
+                        allTasks={tasks} 
+                        onDeleteTask={handleDeleteTask} 
+                        issues={issues} 
+                    />
                 </div>
             </Section>
 
@@ -1217,6 +1243,7 @@ const App: React.FC = () => {
         onAddColumn={handleAddColumn} 
         onEditColumn={handleEditColumn} 
         onDeleteColumn={handleDeleteColumn}
+        onReorderColumns={handleReorderColumns}
         project={currentProject}
         onUpdateProject={handleUpdateProject}
       />
