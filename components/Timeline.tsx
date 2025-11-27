@@ -440,7 +440,9 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
               let placed = false;
               for (let lane of lanes) {
                   const lastTask = lane[lane.length - 1];
-                  if (task.startTs >= lastTask.dueTs) {
+                  // Strict overlap check: New task must start strictly AFTER the previous one ends.
+                  // If they are equal (e.g. both Oct 5), visually they overlap because due date is inclusive.
+                  if (task.startTs > lastTask.dueTs) {
                       lane.push(task);
                       placed = true;
                       break;
