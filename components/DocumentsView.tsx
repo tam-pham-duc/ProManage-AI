@@ -22,7 +22,9 @@ import {
   Search,
   Check,
   X,
-  Move
+  Move,
+  Copy,
+  CornerUpLeft
 } from 'lucide-react';
 import { db, auth } from '../firebase';
 import { 
@@ -134,6 +136,104 @@ const CreateModal: React.FC<CreateModalProps> = ({ isOpen, onClose, onSubmit, in
   );
 };
 
+// --- Move/Copy To Modal Component ---
+interface MoveToModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (targetFolderId: string | null) => void;
+  actionType: 'move' | 'copy';
+  sourceDoc: ProjectDocument | null;
+  allDocs: ProjectDocument[];
+}
+
+const MoveToModal: React.FC<MoveToModalProps> = ({ isOpen, onClose, onConfirm, actionType, sourceDoc, allDocs }) => {
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null); // null = root
+
+  if (!isOpen) return null;
+
+  // Filter folders only
+  const folders = allDocs.filter(d => d.type === 'folder').sort((a, b) => a.name.localeCompare(b.name));
+
+  // Helper to check if a folder is a descendant of source (to prevent circular moves)
+  const isDescendant = (parentId: string, checkId: string): boolean => {
+    let curr = allDocs.find(d => d.id === checkId);
+    while (curr && curr.parentId) {
+      if (curr.parentId === parentId) return true;
+      curr = allDocs.find(d => d.id === curr.parentId);
+    }
+    return false;
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+      <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[80vh]">
+        <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 flex justify-between items-center">
+          <h3 className="font-bold text-slate-900 dark:text-white capitalize">{actionType} to...</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"><X size={20} /></button>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+            <button
+              onClick={() => setSelectedTargetId(null)}
+              disabled={sourceDoc?.parentId === null && actionType === 'move'}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors text-left
+                ${selectedTargetId === null 
+                  ? 'bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800' 
+                  : 'hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
+                }
+                ${sourceDoc?.parentId === null && actionType === 'move' ? 'opacity-50 cursor-not-allowed' : ''}
+              `}
+            >
+                <Home size={20} className="text-slate-500 dark:text-slate-400" />
+                <span className="font-bold text-slate-700 dark:text-slate-200 text-sm">Home (Root)</span>
+                {selectedTargetId === null && <Check size={16} className="ml-auto text-indigo-600 dark:text-indigo-400" />}
+            </button>
+
+            <div className="mt-2 space-y-1">
+              {folders.map(folder => {
+                // Circular check logic for move
+                const isSelf = sourceDoc?.id === folder.id;
+                const isCurrentParent = sourceDoc?.parentId === folder.id;
+                const isInvalid = actionType === 'move' && (isSelf || isDescendant(sourceDoc?.id || '', folder.id) || isCurrentParent);
+
+                return (
+                  <button
+                    key={folder.id}
+                    onClick={() => !isInvalid && setSelectedTargetId(folder.id)}
+                    disabled={isInvalid}
+                    className={`w-full flex items-center gap-3 p-3 rounded-lg transition-colors text-left
+                      ${selectedTargetId === folder.id 
+                        ? 'bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800' 
+                        : 'hover:bg-slate-50 dark:hover:bg-slate-800 border border-transparent'
+                      }
+                      ${isInvalid ? 'opacity-40 cursor-not-allowed' : ''}
+                    `}
+                  >
+                      <Folder size={20} className="text-amber-400 fill-amber-400/20" />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-bold text-slate-700 dark:text-slate-200 text-sm truncate block">{folder.name}</span>
+                      </div>
+                      {selectedTargetId === folder.id && <Check size={16} className="ml-auto text-indigo-600 dark:text-indigo-400" />}
+                  </button>
+                );
+              })}
+            </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/50 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 text-slate-600 dark:text-slate-300 font-bold text-sm hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">Cancel</button>
+          <button 
+            onClick={() => onConfirm(selectedTargetId)} 
+            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-sm shadow-lg transition-all"
+          >
+            {actionType === 'move' ? 'Move Here' : 'Copy Here'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- Item Card Component ---
 interface ItemCardProps {
   docItem: ProjectDocument;
@@ -142,10 +242,13 @@ interface ItemCardProps {
   isSelected: boolean;
   onToggleSelection: (id: string) => void;
   isSelectionMode: boolean;
+  onDragStart: (e: React.DragEvent, doc: ProjectDocument) => void;
+  onDrop: (e: React.DragEvent, targetDoc: ProjectDocument) => void;
 }
 
-const ItemCard: React.FC<ItemCardProps> = ({ docItem, onClick, onAction, isSelected, onToggleSelection, isSelectionMode }) => {
+const ItemCard: React.FC<ItemCardProps> = ({ docItem, onClick, onAction, isSelected, onToggleSelection, isSelectionMode, onDragStart, onDrop }) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -173,13 +276,44 @@ const ItemCard: React.FC<ItemCardProps> = ({ docItem, onClick, onAction, isSelec
     onAction(action, docItem);
   };
 
+  // Drag & Drop Handlers
+  const handleDragOver = (e: React.DragEvent) => {
+      if (docItem.type === 'folder') {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDragOver(true);
+      }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+  };
+
+  const handleDropInternal = (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      if (docItem.type === 'folder') {
+          onDrop(e, docItem);
+      }
+  };
+
   return (
     <div 
+      draggable
+      onDragStart={(e) => onDragStart(e, docItem)}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDropInternal}
       onClick={() => onClick(docItem)}
       className={`group relative bg-white dark:bg-slate-800 p-5 rounded-2xl border shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col items-center justify-between text-center aspect-[4/3]
         ${isSelected 
             ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50/10 dark:bg-indigo-900/20 z-10' 
-            : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'
+            : isDragOver 
+                ? 'border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 scale-105 z-20'
+                : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'
         }
       `}
     >
@@ -207,9 +341,15 @@ const ItemCard: React.FC<ItemCardProps> = ({ docItem, onClick, onAction, isSelec
           <MoreHorizontal size={18} />
         </button>
         {showMenu && (
-          <div className="absolute right-0 top-full mt-1 w-36 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-20 overflow-hidden text-left animate-fade-in">
+          <div className="absolute right-0 top-full mt-1 w-40 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-20 overflow-hidden text-left animate-fade-in">
             <button onClick={(e) => handleAction(e, 'togglePin')} className="w-full text-left px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
               {docItem.isPinned ? <PinOff size={12} /> : <Pin size={12} />} {docItem.isPinned ? 'Unpin' : 'Pin'}
+            </button>
+            <button onClick={(e) => handleAction(e, 'move')} className="w-full text-left px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+              <Move size={12} /> Move to...
+            </button>
+            <button onClick={(e) => handleAction(e, 'copy')} className="w-full text-left px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
+              <Copy size={12} /> Make a Copy
             </button>
             <button onClick={(e) => handleAction(e, 'rename')} className="w-full text-left px-3 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2">
               <Edit2 size={12} /> Rename
@@ -258,6 +398,17 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createType, setCreateType] = useState<DocumentType>('folder');
+  
+  // Move/Copy Modal State
+  const [moveToModal, setMoveToModal] = useState<{
+      isOpen: boolean;
+      type: 'move' | 'copy';
+      doc: ProjectDocument | null;
+  }>({ isOpen: false, type: 'move', doc: null });
+
+  // Drag State
+  const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
+  const [dragOverBreadcrumbId, setDragOverBreadcrumbId] = useState<string | null>(null);
 
   // Data Fetching
   useEffect(() => {
@@ -391,39 +542,9 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
         await updateDoc(docRef, { isPinned: !docItem.isPinned });
         notify('success', docItem.isPinned ? 'Unpinned' : 'Pinned');
       } else if (action === 'delete') {
-        // We reuse the recursive delete logic for a single item by calling handleBulkDelete-like logic
-        // But for simplicity, let's just trigger a selection of 1 and call bulk delete
         setSelectedIds(new Set([docItem.id]));
-        // We need to wait for state to update, but this async nature makes it tricky.
-        // Instead, let's just call the delete logic directly here for single item recursion
         if (window.confirm(`Delete "${docItem.name}"?`)) {
-             // Reuse the recursive logic
-             const idsToDelete = new Set<string>();
-             idsToDelete.add(docItem.id);
-             
-             if (docItem.type === 'folder') {
-                 const getDescendants = (folderId: string) => {
-                    const children = documents.filter(doc => doc.parentId === folderId);
-                    children.forEach(child => {
-                        idsToDelete.add(child.id);
-                        if (child.type === 'folder') getDescendants(child.id);
-                    });
-                 };
-                 getDescendants(docItem.id);
-             }
-
-             const batch = writeBatch(db);
-             idsToDelete.forEach(id => {
-                 const ref = doc(db, 'projects', projectId, 'documents', id);
-                 const item = documents.find(d => d.id === id);
-                 batch.update(ref, { 
-                     isDeleted: true, 
-                     deletedAt: serverTimestamp(),
-                     originalParentId: item?.parentId || 'root'
-                 });
-             });
-             await batch.commit();
-             notify('success', 'Moved to Trash');
+             handleBulkDelete(new Set([docItem.id]));
         }
         setSelectedIds(new Set());
       } else if (action === 'rename') {
@@ -432,10 +553,116 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
           await updateDoc(docRef, { name: newName.trim() });
           notify('success', 'Renamed');
         }
+      } else if (action === 'move') {
+          setMoveToModal({ isOpen: true, type: 'move', doc: docItem });
+      } else if (action === 'copy') {
+          setMoveToModal({ isOpen: true, type: 'copy', doc: docItem });
       }
     } catch (e) {
       notify('error', 'Action failed');
     }
+  };
+
+  // --- Move Logic ---
+  const handleMoveDocument = async (docId: string, targetParentId: string | null) => {
+      if (!projectId) return;
+      
+      // Circular check for folders
+      const sourceDoc = documents.find(d => d.id === docId);
+      if (!sourceDoc) return;
+
+      if (sourceDoc.type === 'folder' && targetParentId) {
+          // Check if targetParentId is a descendant of docId
+          let curr = documents.find(d => d.id === targetParentId);
+          while (curr && curr.parentId) {
+              if (curr.id === docId) { // Found self in ancestry of target
+                  notify('error', 'Cannot move a folder into itself or its children.');
+                  return;
+              }
+              curr = documents.find(d => d.id === curr.parentId);
+          }
+          // Check direct parent (root case handled by loop end)
+          if (curr && curr.id === docId) {
+              notify('error', 'Cannot move a folder into itself or its children.');
+              return;
+          }
+      }
+
+      if (sourceDoc.parentId === targetParentId) return; // No change
+
+      try {
+          await updateDoc(doc(db, 'projects', projectId, 'documents', docId), {
+              parentId: targetParentId,
+              updatedAt: serverTimestamp()
+          });
+          notify('success', `Moved "${sourceDoc.name}"`);
+      } catch (e) {
+          notify('error', 'Move failed');
+      }
+  };
+
+  // --- Copy Logic ---
+  const handleCopyDocument = async (sourceDoc: ProjectDocument, targetParentId: string | null) => {
+      if (!projectId || !auth.currentUser) return;
+
+      try {
+          const newDocData = {
+              ...sourceDoc,
+              name: `Copy of ${sourceDoc.name}`,
+              parentId: targetParentId,
+              createdAt: serverTimestamp(),
+              createdBy: auth.currentUser.uid,
+              updatedAt: serverTimestamp()
+          };
+          delete (newDocData as any).id; // Remove original ID
+
+          await addDoc(collection(db, 'projects', projectId, 'documents'), newDocData);
+          notify('success', 'Document copied');
+      } catch (e) {
+          notify('error', 'Copy failed');
+      }
+  };
+
+  const handleMoveToModalConfirm = (targetFolderId: string | null) => {
+      const { type, doc } = moveToModal;
+      if (!doc) return;
+
+      if (type === 'move') {
+          handleMoveDocument(doc.id, targetFolderId);
+      } else {
+          handleCopyDocument(doc, targetFolderId);
+      }
+      setMoveToModal({ isOpen: false, type: 'move', doc: null });
+  };
+
+  // --- Drag & Drop Logic ---
+  const onDragStart = (e: React.DragEvent, docItem: ProjectDocument) => {
+      e.dataTransfer.setData('text/plain', docItem.id);
+      e.dataTransfer.effectAllowed = 'move';
+      setDraggedDocId(docItem.id);
+  };
+
+  const onDropOnFolder = (e: React.DragEvent, targetDoc: ProjectDocument) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const sourceId = e.dataTransfer.getData('text/plain');
+      
+      if (sourceId && sourceId !== targetDoc.id) {
+          handleMoveDocument(sourceId, targetDoc.id);
+      }
+      setDraggedDocId(null);
+  };
+
+  const onDropOnBreadcrumb = (e: React.DragEvent, targetId: string | null) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const sourceId = e.dataTransfer.getData('text/plain');
+      setDragOverBreadcrumbId(null);
+
+      if (sourceId && sourceId !== targetId) {
+          handleMoveDocument(sourceId, targetId);
+      }
+      setDraggedDocId(null);
   };
 
   // Selection Logic
@@ -454,11 +681,12 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
       }
   };
 
-  const handleBulkDelete = async () => {
-      if (!projectId || selectedIds.size === 0) return;
+  const handleBulkDelete = async (idsOverride?: Set<string>) => {
+      const idsToProcess = idsOverride || selectedIds;
+      if (!projectId || idsToProcess.size === 0) return;
 
       // 1. Identify all items to delete (including descendants)
-      const idsToDelete = new Set<string>(selectedIds);
+      const idsToDelete = new Set<string>(idsToProcess);
       
       const collectDescendants = (parentId: string) => {
           const children = documents.filter(d => d.parentId === parentId);
@@ -470,21 +698,24 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
           });
       };
 
-      selectedIds.forEach(id => {
+      idsToProcess.forEach(id => {
           const item = documents.find(d => d.id === id);
           if (item?.type === 'folder') {
               collectDescendants(id);
           }
       });
 
-      const totalCount = idsToDelete.size;
-      const subItemsCount = totalCount - selectedIds.size;
-      
-      const confirmMessage = subItemsCount > 0 
-          ? `Move ${selectedIds.size} selected items to Trash?\n\nThis will also delete ${subItemsCount} item(s) inside the selected folders.`
-          : `Move ${totalCount} item${totalCount !== 1 ? 's' : ''} to Trash?`;
+      // Only prompt if this is a user-initiated bulk action via button (not recursive single delete call)
+      if (!idsOverride) {
+          const totalCount = idsToDelete.size;
+          const subItemsCount = totalCount - idsToProcess.size;
+          
+          const confirmMessage = subItemsCount > 0 
+              ? `Move ${idsToProcess.size} selected items to Trash?\n\nThis will also delete ${subItemsCount} item(s) inside the selected folders.`
+              : `Move ${totalCount} item${totalCount !== 1 ? 's' : ''} to Trash?`;
 
-      if (!window.confirm(confirmMessage)) return;
+          if (!window.confirm(confirmMessage)) return;
+      }
 
       // 2. Perform Batch Updates (Chunked)
       try {
@@ -510,7 +741,7 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
               await batch.commit();
           }
 
-          notify('success', `${totalCount} items moved to Trash`);
+          if (!idsOverride) notify('success', 'Items moved to Trash');
           setSelectedIds(new Set());
       } catch (e) {
           console.error("Bulk delete failed:", e);
@@ -519,6 +750,8 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
   };
 
   const handleBulkMove = () => {
+      // Since MoveToModal handles single item currently, we'd need to upgrade it for bulk
+      // For now, let's just notify user it's single item only or implement later
       notify('info', 'Bulk move functionality coming soon.');
   };
 
@@ -590,14 +823,21 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
             <FolderOpen className="text-indigo-500" size={28} />
             Documents
           </h1>
-          {/* Breadcrumbs */}
+          {/* Breadcrumbs (Droppable) */}
           <div className="flex items-center gap-1 mt-2 text-sm text-slate-500 dark:text-slate-400 overflow-x-auto hide-scrollbar whitespace-nowrap">
             {breadcrumbs.map((b, i) => (
-              <React.Fragment key={b.id || 'home'}>
+              <React.Fragment key={b.id || 'root'}>
                 {i > 0 && <ChevronRight size={14} className="opacity-50" />}
                 <button 
                   onClick={() => setCurrentFolderId(b.id)}
-                  className={`flex items-center gap-1 hover:bg-slate-100 dark:hover:bg-slate-800 px-2 py-1 rounded transition-colors ${i === breadcrumbs.length - 1 ? 'font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50' : ''}`}
+                  onDragOver={(e) => { e.preventDefault(); setDragOverBreadcrumbId(b.id || 'root'); }}
+                  onDragLeave={() => setDragOverBreadcrumbId(null)}
+                  onDrop={(e) => onDropOnBreadcrumb(e, b.id)}
+                  className={`
+                    flex items-center gap-1 px-2 py-1 rounded transition-colors border border-transparent
+                    ${dragOverBreadcrumbId === (b.id || 'root') ? 'bg-indigo-100 border-indigo-300 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'hover:bg-slate-100 dark:hover:bg-slate-800'}
+                    ${i === breadcrumbs.length - 1 ? 'font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50' : ''}
+                  `}
                 >
                   {b.id === null && <Home size={12} />}
                   {b.name}
@@ -648,6 +888,8 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
                     isSelected={selectedIds.has(doc.id)}
                     onToggleSelection={toggleSelection}
                     isSelectionMode={isSelectionMode}
+                    onDragStart={onDragStart}
+                    onDrop={onDropOnFolder}
                 />
               ))}
             </div>
@@ -684,6 +926,8 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
                     isSelected={selectedIds.has(doc.id)}
                     onToggleSelection={toggleSelection}
                     isSelectionMode={isSelectionMode}
+                    onDragStart={onDragStart}
+                    onDrop={onDropOnFolder}
                 />
               ))}
             </div>
@@ -707,7 +951,7 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
                   <Move size={14} /> Move
               </button>
               
-              <button onClick={handleBulkDelete} className="flex items-center gap-2 text-xs font-bold text-red-600 hover:text-red-700 transition-colors">
+              <button onClick={() => handleBulkDelete()} className="flex items-center gap-2 text-xs font-bold text-red-600 hover:text-red-700 transition-colors">
                   <Trash2 size={14} /> Delete
               </button>
               
@@ -724,6 +968,15 @@ const DocumentsView: React.FC<DocumentsViewProps> = ({ projectId }) => {
         onClose={() => setIsCreateModalOpen(false)} 
         onSubmit={handleCreate} 
         initialType={createType}
+      />
+
+      <MoveToModal
+        isOpen={moveToModal.isOpen}
+        onClose={() => setMoveToModal({ ...moveToModal, isOpen: false })}
+        onConfirm={handleMoveToModalConfirm}
+        actionType={moveToModal.type}
+        sourceDoc={moveToModal.doc}
+        allDocs={documents}
       />
     </div>
   );

@@ -1048,7 +1048,14 @@ const App: React.FC = () => {
                     <PageTransition key="list" className="overflow-y-auto custom-scrollbar p-6">
                         <div className="flex flex-col h-full min-h-[600px]">
                             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">List View</h2>
-                            <ListView tasks={filteredTasks} onTaskClick={openEditTaskModal} onDeleteTask={handleDeleteTask} />
+                            <ListView 
+                                tasks={filteredTasks} 
+                                columns={columns}
+                                projectMembers={currentProject?.members || []}
+                                currentUser={currentUser}
+                                onTaskClick={openEditTaskModal} 
+                                onDeleteTask={handleDeleteTask} 
+                            />
                         </div>
                     </PageTransition>
                 )}
