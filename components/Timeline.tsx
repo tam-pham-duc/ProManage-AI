@@ -440,10 +440,7 @@ const Timeline: React.FC<TimelineProps> = ({ tasks, onTaskClick }) => {
               let placed = false;
               for (let lane of lanes) {
                   const lastTask = lane[lane.length - 1];
-                  // FIX: Ensure next task starts strictly after the previous task's due date is fully over
-                  // Adding a small buffer (24h) ensures they don't overlap visually on the same day cell
-                  // Using > comparison logic against dueTs where dueTs is the day *start* of the due date
-                  if (task.startTs > lastTask.dueTs) {
+                  if (task.startTs >= lastTask.dueTs) {
                       lane.push(task);
                       placed = true;
                       break;

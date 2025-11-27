@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Loader2, PieChart, Clock, Users, Briefcase, Download, Calendar, ChevronDown, User, Layers, FileText, Search, Activity, BarChart3, Zap, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
-import { db, auth } from '../firebase';
+import { db } from '../firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Task, TimeLog, Project } from '../types';
 import { getAvatarColor, getAvatarInitials } from '../utils/avatarUtils';
@@ -260,60 +260,18 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
   useEffect(() => {
       const fetchMetadata = async () => {
           try {
-              const currentUser = auth.currentUser;
-              if (!currentUser) return;
-              const isSuperAdmin = currentUser.email === 'admin@dev.com';
-
-              let usersMap: Record<string, any> = {};
-              let uOptions: FilterOption[] = [];
-
-              if (isSuperAdmin) {
-                  // Super Admin: Fetch ALL users from DB
-                  const usersSnap = await getDocs(collection(db, 'users'));
-                  uOptions = usersSnap.docs.map(doc => {
-                      const d = doc.data();
-                      const info = { name: d.username || d.displayName || d.email, email: d.email, avatar: d.avatar };
-                      usersMap[doc.id] = info;
-                      return { id: doc.id, label: info.name };
-                  });
-              } else {
-                  // Regular User: Fetch ONLY relevant users (Colleagues)
-                  // Using the 'projects' prop which is already filtered for access in App.tsx
-                  const uniqueMembers = new Map<string, any>();
-                  
-                  // Add self
-                  uniqueMembers.set(currentUser.uid, {
-                      name: currentUser.displayName || 'Me',
-                      email: currentUser.email,
-                      avatar: currentUser.photoURL
-                  });
-
-                  // Add members from all accessible projects
-                  projects.forEach(p => {
-                      if (p.members) {
-                          p.members.forEach(m => {
-                              if (m.uid && !uniqueMembers.has(m.uid)) {
-                                  uniqueMembers.set(m.uid, {
-                                      name: m.displayName,
-                                      email: m.email,
-                                      avatar: m.avatar
-                                  });
-                              }
-                          });
-                      }
-                  });
-
-                  uniqueMembers.forEach((info, uid) => {
-                      usersMap[uid] = info;
-                      uOptions.push({ id: uid, label: info.name });
-                  });
-              }
-
-              // Sort alphabetically
-              uOptions.sort((a, b) => a.label.localeCompare(b.label));
+              // Users
+              const usersSnap = await getDocs(collection(db, 'users'));
+              const usersMap: Record<string, any> = {};
+              const uOptions = usersSnap.docs.map(doc => {
+                  const d = doc.data();
+                  const info = { name: d.username || d.displayName || d.email, email: d.email, avatar: d.avatar };
+                  usersMap[doc.id] = info;
+                  return { id: doc.id, label: info.name };
+              });
               setUserOptions([{ id: 'all', label: 'All Employees' }, ...uOptions]);
 
-              // Projects Metadata
+              // Projects
               const projectMap: Record<string, string> = {};
               let pOptions: FilterOption[] = [];
               
@@ -343,7 +301,6 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
 
   // --- Effect: Fetch Logs (After Metadata) ---
   useEffect(() => {
-      // Wait for metadata to be populated to ensure names are mapped correctly
       if (Object.keys(metadata.users).length === 0 && Object.keys(metadata.projects).length === 0) return;
 
       const fetchLogs = async () => {
@@ -362,11 +319,6 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
                   const task = taskDoc.data();
                   if (task.isDeleted) return;
                   if (filterProject !== 'all' && !isProjectMode && task.projectId !== filterProject) return;
-
-                  // Logic for Global Mode Restricted Access:
-                  // Only process tasks if the user has access to the project (metadata.projects has it)
-                  // Or if user is Super Admin (implied by having all projects in metadata)
-                  if (!isProjectMode && !metadata.projects[task.projectId]) return;
 
                   if (task.timeLogs && Array.isArray(task.timeLogs)) {
                       task.timeLogs.forEach((l: any) => {
@@ -457,7 +409,7 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
       count: filteredLogs.length
   }), [filteredLogs, analytics]);
 
-  const groupedLogs = useMemo<Record<string, FlatTimeLog[]>>(() => {
+  const groupedLogs = useMemo(() => {
       if (groupBy === 'none') return { 'All Logs': filteredLogs };
       const groups: Record<string, FlatTimeLog[]> = {};
       filteredLogs.forEach(log => {
@@ -575,26 +527,9 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
           {/* View Actions */}
           <div className="flex items-center gap-2 shrink-0">
               <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-lg">
-                  <button 
-                    onClick={() => setGroupBy('none')} 
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${groupBy === 'none' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-                  >
-                    Flat
-                  </button>
-                  <button 
-                    onClick={() => setGroupBy('user')} 
-                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${groupBy === 'user' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-                  >
-                    User
-                  </button>
-                  {!isProjectMode && (
-                    <button 
-                        onClick={() => setGroupBy('project')} 
-                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors ${groupBy === 'project' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}
-                    >
-                        Project
-                    </button>
-                  )}
+                  <button onClick={() => setGroupBy('none')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'none' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>Flat</button>
+                  <button onClick={() => setGroupBy('user')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'user' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>User</button>
+                  {!isProjectMode && <button onClick={() => setGroupBy('project')} className={`px-3 py-1.5 text-xs font-bold rounded-md ${groupBy === 'project' ? 'bg-white dark:bg-slate-700 shadow-sm' : 'text-slate-500'}`}>Project</button>}
               </div>
               <button onClick={handleExport} disabled={filteredLogs.length === 0} className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"><Download size={18} /></button>
           </div>
@@ -672,14 +607,14 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
       {/* Data Table */}
       <div className="flex-1 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col min-h-[400px]">
           <div className="flex-1 overflow-auto custom-scrollbar">
-              <table className="w-full text-left border-collapse table-fixed">
+              <table className="w-full text-left border-collapse">
                   <thead className="bg-slate-50 dark:bg-slate-900/50 sticky top-0 z-10 shadow-sm">
                       <tr>
                           <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-32">Date</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-48">Employee</th>
-                          {!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-40">Project</th>}
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-auto">Task / Notes</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-center w-32">Duration</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Employee</th>
+                          {!isProjectMode && <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Project</th>}
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Task / Notes</th>
+                          <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">Duration</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
@@ -700,24 +635,24 @@ const TimeReportsView: React.FC<TimeReportsViewProps> = ({ projectId, projects =
                               )}
                               {(logs as FlatTimeLog[]).map(log => (
                                   <tr key={log.logId} className="hover:bg-slate-50 dark:hover:bg-slate-700/20 transition-colors group">
-                                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-mono truncate">{log.date.toLocaleDateString()}</td>
+                                      <td className="px-6 py-4 text-sm text-slate-600 dark:text-slate-300 font-mono">{log.date.toLocaleDateString()}</td>
                                       <td className="px-6 py-4">
-                                          <div className="flex items-center gap-3 overflow-hidden">
-                                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm shrink-0 ${getAvatarColor(log.user.name)}`}>{getAvatarInitials(log.user.name)}</div>
-                                              <div className="min-w-0"><div className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{log.user.name}</div></div>
+                                          <div className="flex items-center gap-3">
+                                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm ${getAvatarColor(log.user.name)}`}>{getAvatarInitials(log.user.name)}</div>
+                                              <div><div className="text-sm font-bold text-slate-700 dark:text-slate-200">{log.user.name}</div></div>
                                           </div>
                                       </td>
                                       {!isProjectMode && (
-                                          <td className="px-6 py-4"><span className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800 truncate block max-w-full">{log.project.name}</span></td>
+                                          <td className="px-6 py-4"><span className="px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold border border-indigo-100 dark:border-indigo-800">{log.project.name}</span></td>
                                       )}
                                       <td className="px-6 py-4">
-                                          <div className="flex flex-col min-w-0">
-                                              <span className="text-sm font-bold text-slate-800 dark:text-white truncate">{log.task.title}</span>
-                                              {log.notes && <span className="text-xs text-slate-500 italic flex items-center gap-1 mt-0.5 truncate"><FileText size={10}/> {log.notes}</span>}
+                                          <div className="flex flex-col">
+                                              <span className="text-sm font-bold text-slate-800 dark:text-white truncate max-w-[300px]">{log.task.title}</span>
+                                              {log.notes && <span className="text-xs text-slate-500 italic flex items-center gap-1 mt-0.5"><FileText size={10}/> {log.notes}</span>}
                                               <span className="text-[10px] text-slate-400 mt-0.5 font-mono">{new Date(log.time.start).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})} - {new Date(log.time.end).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
                                           </div>
                                       </td>
-                                      <td className="px-6 py-4 text-center">
+                                      <td className="px-6 py-4 text-right">
                                           <span className="font-mono font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded">{(log.time.duration / 3600).toFixed(2)}h</span>
                                       </td>
                                   </tr>
